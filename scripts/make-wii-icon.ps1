@@ -51,16 +51,16 @@ $fmt.LineAlignment = [System.Drawing.StringAlignment]::Center
 $privateFonts = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPath = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Pricedown Bl.otf'
 $privateFonts.AddFontFile($fontPath)
-$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](62.0))
+$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](74.0))
 
-$vcRect = New-Object System.Drawing.RectangleF(0, [float](-1*$S), [float]$W, [float](34*$S))
+$vcRect = New-Object System.Drawing.RectangleF(0, [float](-6*$S), [float]$W, [float](40*$S))
 # The box-art trick: a hot-pink shadow behind white letters gives the neon
 # depth the official Vice City logotype has, instead of a plain black drop.
 $pinkShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(220, 236, 32, 152))
-$pinkShadowRect = New-Object System.Drawing.RectangleF([float](2.0*$S), [float](0.0*$S), [float]$W, [float](34*$S))
+$pinkShadowRect = New-Object System.Drawing.RectangleF([float](2.0*$S), [float](-5.0*$S), [float]$W, [float](40*$S))
 $gfx.DrawString('VC', $fontBig, $pinkShadowBrush, $pinkShadowRect, $fmt)
 $darkShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(190, 10, 2, 28))
-$darkShadowRect = New-Object System.Drawing.RectangleF([float](1.0*$S), [float](-0.6*$S), [float]$W, [float](34*$S))
+$darkShadowRect = New-Object System.Drawing.RectangleF([float](1.0*$S), [float](-6.6*$S), [float]$W, [float](40*$S))
 $gfx.DrawString('VC', $fontBig, $darkShadowBrush, $darkShadowRect, $fmt)
 $whiteBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 252, 255))
 $gfx.DrawString('VC', $fontBig, $whiteBrush, $vcRect, $fmt)
@@ -68,19 +68,19 @@ $gfx.DrawString('VC', $fontBig, $whiteBrush, $vcRect, $fmt)
 $fontRage = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPathRage = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Rage.ttf'
 $fontRage.AddFontFile($fontPathRage)
-$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](24.0))
+$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](26.0))
 
 # VICE CITY centered under the mark, in the Rage face (the scratch script
 # logotype the actual Vice City box art uses), with a hot-pink shadow under a
 # near-white fill to match the mark above it.
 $capShadowBrushPink = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(200, 236, 32, 152))
-$capShadowRectPink = New-Object System.Drawing.RectangleF([float](1.6*$S), [float](28.4*$S), [float]$W, [float](20*$S))
+$capShadowRectPink = New-Object System.Drawing.RectangleF([float](1.6*$S), [float](29.6*$S), [float]$W, [float](20*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capShadowBrushPink, $capShadowRectPink, $fmt)
 $capShadowBrushDark = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(160, 10, 2, 28))
-$capShadowRectDark = New-Object System.Drawing.RectangleF([float](0.8*$S), [float](27.7*$S), [float]$W, [float](20*$S))
+$capShadowRectDark = New-Object System.Drawing.RectangleF([float](0.8*$S), [float](28.9*$S), [float]$W, [float](20*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capShadowBrushDark, $capShadowRectDark, $fmt)
 $capsBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(245, 250, 236, 250))
-$capRect = New-Object System.Drawing.RectangleF(0, [float](28.6*$S), [float]$W, [float](20*$S))
+$capRect = New-Object System.Drawing.RectangleF(0, [float](29.2*$S), [float]$W, [float](20*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capsBrush, $capRect, $fmt)
 
 # 1px highlight frame
