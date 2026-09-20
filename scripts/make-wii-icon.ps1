@@ -45,23 +45,23 @@ $gfx.FillEllipse($sunBrush, [int](118*$S), [int](32*$S), [int](11*$S), [int](11*
 # 3. Palm silhouette, left third. Crown radius list keeps the fronds
 # symmetric around the trunk tip so the silhouette reads as one tree.
 $dark = [System.Drawing.Color]::FromArgb(255, 15, 5, 38)
-$trunkX = 24.0*$S
-$topX = 33.0*$S; $topY = 10.0*$S; $baseY = 47.5*$S
-$trunkPen = New-Object System.Drawing.Pen($dark, [float](3.4*$S))
+$trunkX = 20.0*$S
+$topX = 29.0*$S; $topY = 9.0*$S; $baseY = 47.5*$S
+$trunkPen = New-Object System.Drawing.Pen($dark, [float](4.2*$S))
 $trunkPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
 $trunkPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-$gfx.DrawBezier($trunkPen, $trunkX, $baseY, ($trunkX+2.2*$S), ($baseY-14*$S), ($trunkX-2.8*$S), ($topY+9*$S), $topX, $topY)
+$gfx.DrawBezier($trunkPen, $trunkX, $baseY, ($trunkX+3.0*$S), ($baseY-16*$S), ($trunkX-4.0*$S), ($topY+10*$S), $topX, $topY)
 $trunkPen.Dispose()
-$frondPen = New-Object System.Drawing.Pen($dark, [float](2.6*$S))
+$frondPen = New-Object System.Drawing.Pen($dark, [float](3.0*$S))
 $frondPen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
 $frondPen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
 $fronds = @(
-    @(0, -8, -19, 5),       # upper-left droop
-    @(5, -11, 17, -3),     # upper-right droop
-    @(19, -4, 28, 3),      # right droop
-    @(-16, 3, -24, 12),    # left-down droop
-    @(13, 5, 20, 14),      # right-down droop
-    @(-5, -12, 5, -11)      # straight-up frond
+    @(0, -9, -22, 6),       # upper-left droop
+    @(6, -13, 20, -4),     # upper-right droop
+    @(22, -5, 33, 4),      # right droop
+    @(-19, 3, -28, 13),    # left-down droop
+    @(15, 6, 23, 16),      # right-down droop
+    @(-6, -14, 6, -13)      # straight-up frond
 )
 foreach ($f in $fronds) {
     $a = @($topX, $topY)
@@ -72,7 +72,7 @@ foreach ($f in $fronds) {
 }
 $frondPen.Dispose()
 # crown knot joins the fronds
-$gfx.FillEllipse((New-Object System.Drawing.SolidBrush($dark)), [float]($topX-2.4*$S), [float]($topY-2.4*$S), [float](4.8*$S), [float](4.8*$S))
+$gfx.FillEllipse((New-Object System.Drawing.SolidBrush($dark)), [float]($topX-2.6*$S), [float]($topY-2.6*$S), [float](5.2*$S), [float](5.2*$S))
 
 # 4. Wordmark
 $fmt = New-Object System.Drawing.StringFormat
@@ -83,9 +83,9 @@ $fmt.LineAlignment = [System.Drawing.StringAlignment]::Center
 $privateFonts = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPath = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Pricedown Bl.otf'
 $privateFonts.AddFontFile($fontPath)
-$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](58.0), [System.Drawing.FontStyle]::Bold)
-$vcX = 46.0*$S
-$vcRect = New-Object System.Drawing.RectangleF([float]$vcX, [float](5.0*$S), [float](74.0*$S), [float](36.0*$S))
+$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](56.0), [System.Drawing.FontStyle]::Bold)
+$vcX = 48.0*$S
+$vcRect = New-Object System.Drawing.RectangleF([float]$vcX, [float](7.0*$S), [float](78.0*$S), [float](34.0*$S))
 $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(190, 10, 2, 28))
 $shadowRect = New-Object System.Drawing.RectangleF([float]($vcRect.X + 2.5*$S), [float]($vcRect.Y + 2.5*$S), $vcRect.Width, $vcRect.Height)
 $gfx.DrawString('VC', $fontBig, $shadowBrush, $shadowRect, $fmt)
@@ -96,13 +96,13 @@ $gfx.DrawString('VC', $fontBig, $whiteBrush, $vcRect, $fmt)
 $fontRage = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPathRage = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Rage.ttf'
 $fontRage.AddFontFile($fontPathRage)
-$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](17.0), [System.Drawing.FontStyle]::Bold)
+$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](19.0), [System.Drawing.FontStyle]::Bold)
 # soft shadow behind the caps so they read on both the violet and teal bands
 $capsShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(150, 10, 2, 28))
-$capShadowRect = New-Object System.Drawing.RectangleF([float](57.0*$S + 1.2*$S), [float](40.0*$S + 1.2*$S), [float](68.0*$S), [float](10.0*$S))
+$capShadowRect = New-Object System.Drawing.RectangleF([float](62.0*$S + 1.2*$S), [float](41.0*$S + 1.2*$S), [float](62.0*$S), [float](10.0*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capsShadowBrush, $capShadowRect, $fmt)
 $capsBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(240, 250, 236, 250))
-$capRect = New-Object System.Drawing.RectangleF([float](57.0*$S), [float](40.0*$S), [float](68.0*$S), [float](10.0*$S))
+$capRect = New-Object System.Drawing.RectangleF([float](62.0*$S), [float](41.0*$S), [float](62.0*$S), [float](10.0*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capsBrush, $capRect, $fmt)
 
 # 5. 1px highlight frame
