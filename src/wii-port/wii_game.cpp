@@ -369,7 +369,13 @@ void _InputInitialiseJoys() {}
 void InitialiseLanguage() {}
 void _psSelectScreenVM(RwInt32) {}
 RwBool _psSetVideoMode(RwInt32, RwInt32) { return TRUE; }
-RwChar **_psGetVideoModeList() { return nullptr; }
+
+// The PC frontend lists its video modes through this pointer and derefs it
+// blindly inside MENUACTION_SCREENRES drawing (Frontend.cpp), so a nullptr
+// stub crashed the Display/Graphics page the first time it drew the row.  The
+// Wii has exactly one hardware video mode, which is what the list says.
+const char *wiiVideoModes[] = { "480i", nullptr };
+RwChar **_psGetVideoModeList() { return const_cast<RwChar **>(wiiVideoModes); }
 RwInt32 _psGetNumVideModes() { return 1; }
 
 void

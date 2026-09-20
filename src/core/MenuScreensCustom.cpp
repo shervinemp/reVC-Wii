@@ -230,12 +230,15 @@ void MultiSamplingButtonPress(int8 action) {
 		if (FrontEndMenuManager.m_bGameNotLoaded) {
 			FrontEndMenuManager.m_nDisplayMSAALevel += (action == FEOPTION_ACTION_RIGHT ? 1 : -1);
 
-			int i = 0;
-			int maxAA = RwD3D8EngineGetMaxMultiSamplingLevels();
-			while (maxAA != 1) {
-				i++;
-				maxAA >>= 1;
-			}
+	// The GX device reports no multisampling through the engine query (zero
+	// capability); the driver's shift-loop below hangs forever on that, so a
+	// zero result clamps the whole row to one level instead.
+	int i = 0;
+	int maxAA = RwD3D8EngineGetMaxMultiSamplingLevels();
+	while (maxAA != 1 && maxAA != 0) {
+		i++;
+		maxAA >>= 1;
+	}
 
 			if (FrontEndMenuManager.m_nDisplayMSAALevel < 0)
 				FrontEndMenuManager.m_nDisplayMSAALevel = i;
@@ -769,15 +772,25 @@ CMenuScreenCustom aScreens[] = {
 	{ "FET_GFX", MENUPAGE_OPTIONS, new CCustomScreenLayout({40, 78, 25, true, true}), GraphicsGoBack,
 
 #ifndef GTA_HANDHELD
+	// The Resolution row and the video-mode selector are PC plumbing: on the
+	// Wii the GX mode is one fixed 480i framebuffer, so both rows read
+	// hardware that does not exist.  Multisampling is the same story -- the GX
+	// engine reports no MSAA levels at all.
+#ifndef NINTENDO_WII
 		MENUACTION_SCREENRES,	"FED_RES", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
 #endif
+#endif
 		MENUACTION_WIDESCREEN,	"FED_WIS", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+#ifndef NINTENDO_WII
 		VIDEOMODE_SELECTOR
+#endif
 #ifdef LEGACY_MENU_OPTIONS
 		MENUACTION_FRAMESYNC,	"FEM_VSC", {nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS}, 0, 0, MENUALIGN_LEFT,
 #endif
 		MENUACTION_FRAMELIMIT,	"FEM_FRM", { nil, SAVESLOT_NONE, MENUPAGE_GRAPHICS_SETTINGS }, 0, 0, MENUALIGN_LEFT,
+#ifndef NINTENDO_WII
 		MULTISAMPLING_SELECTOR
+#endif
 		ISLAND_LOADING_SELECTOR
 		DUALPASS_SELECTOR
 #ifdef EXTENDED_COLOURFILTER
