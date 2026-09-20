@@ -372,9 +372,6 @@ bool CGame::InitialiseOnceAfterRW(void)
 		FrontEndMenuManager.m_PrefsSpeakers = 0;
 		FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = DMAudio.AutoDetect3DProviders();
 	}
-#ifdef NINTENDO_WII
-	WiiTraceReport("WII init: provider picked %d\n", FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
-#endif
 
 	DMAudio.SetCurrent3DProvider(FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
 #ifdef NINTENDO_WII

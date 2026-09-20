@@ -85,13 +85,9 @@ CText::Load(void)
 	}
 
 	file = CFileMgr::OpenFile(filename, "rb");
-#ifdef NINTENDO_WII
-	wiiLog("WII text: open %s fd=%d\n", filename, file);
-#endif
 	// The open failure convention is -1 in FileMgr (fd 0 was the old 0-return
 	// protocol); a -1 here used to fall to fread and crash the boot.
 	if(file <= 0){
-		wiiLog("WII text: open failed for %s\n", filename);
 		CFileMgr::SetDir("");
 		return;
 	}

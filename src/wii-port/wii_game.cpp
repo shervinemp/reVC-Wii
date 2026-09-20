@@ -72,14 +72,10 @@ onVerticalRetrace(u32)
 bool
 fileExists(const char *path)
 {
-	bootPrintf("WII fileexists: fopen %s\n", path);
 	FILE *file = std::fopen(path, "rb");
-	bootPrintf("WII fileexists: fopen=%p\n", (void *)file);
 	if(file == nullptr)
 		return false;
-	bootPrintf("WII fileexists: fclose %p\n", (void *)file);
 	std::fclose(file);
-	bootPrintf("WII fileexists: closed\n");
 	return true;
 }
 
@@ -101,29 +97,22 @@ elfDirectory(int argc, char **argv, char *out, size_t size)
 	return true;
 }
 
-// Each miss is reported rather than counted, because the failure this guards
-// against is a correct install under a name the list below cannot know, and the
-// paths actually tried are the only thing that distinguishes that from data that
-// is genuinely absent.
+// The failure this guards against is a correct install under a name the list
+// below cannot know; only the outcome reaches the log, not each probe.
 bool
 tryInstallDirectory(const char *directory)
 {
 	char path[192];
-	bootPrintf("WII game boot: probing %s\n", directory);
 	std::snprintf(path, sizeof(path), "%s/DATA/GTA_VC.DAT", directory);
-	bootPrintf("WII game boot: testing %s\n", path);
-	if(!fileExists(path)){
-		bootPrintf("WII game boot: no data at %s\n", path);
+	if(!fileExists(path))
 		return false;
-	}
-	bootPrintf("WII game boot: data found at %s, chdir\n", directory);
 	if(chdir(directory) != 0){
 		bootPrintf("WII game boot: chdir failed for %s\n", directory);
 		return false;
 	}
 
 	std::snprintf(s_installDirectory, sizeof(s_installDirectory), "%s", directory);
-	bootPrintf("WII game boot: install=%s\n", directory);
+	bootPrintf("WII game boot: data found at %s\n", directory);
 	return true;
 }
 
@@ -495,9 +484,9 @@ mountUsbStorage()
 	// USB mass storage registers a beat or two behind the SD on real hardware,
 	// especially after a launch straight out of HBC.  Retry tight: 50 checks at
 	// 100 ms keeps the worst case near five seconds without the coarse 1 s
-	// steps that made a slow stick look like a hang.  Every cycle is logged:
-	// the lines flush out per write, so wherever a device call spins to a halt,
-	// the last line on the card names it.
+	// steps that made a slow stick look like a hang.  Only the outcomes reach
+	// the log, so a mount that works is one line and a total failure lists the
+	// two attempts that got furthest.
 	for(int attempt = 0; attempt < 50; attempt++){
 		if(attempt > 0)
 			usleep(100000);
@@ -505,7 +494,6 @@ mountUsbStorage()
 			bootPrintf("WII storage: usb: mounted as FAT on attempt %d\n", attempt + 1);
 			return true;
 		}
-		bootPrintf("WII storage: usb: FAT attempt %d failed\n", attempt + 1);
 
 		// libogc's FAT driver only speaks FAT: an NTFS stick (the most common
 		// thing to plug in) stays invisible to every fallback path below.  The
@@ -513,11 +501,9 @@ mountUsbStorage()
 		// partition explicitly, because ntfsMount needs a start sector; most
 		// sticks carry exactly one NTFS volume, so that is what gets used.
 		if((attempt & 3) == 3){
-			bootPrintf("WII storage: usb: NTFS probe attempt %d\n", attempt + 1);
 			sec_t *ntfsPartitions = nullptr;
 			int partitionCount =
 				ntfsFindPartitions(&__io_usbstorage, &ntfsPartitions);
-			bootPrintf("WII storage: usb: ntfsFindPartitions=%d\n", partitionCount);
 			bool ntfsMounted = false;
 			if(partitionCount > 0 && ntfsPartitions != nullptr) {
 				// ntfsInit has run by now (behind ntfsFindPartitions), so the
@@ -546,15 +532,12 @@ mountUsbStorage()
 				                        CACHE_DEFAULT_PAGE_COUNT,
 				                        CACHE_DEFAULT_PAGE_SIZE,
 				                        NTFS_FORCE | NTFS_READ_ONLY | NTFS_IGNORE_CASE);
-				if(!ntfsMounted)
-					bootPrintf("WII storage: usb: NTFS errno=%d\n", errno);
 			}
 			std::free(ntfsPartitions);
 			if(ntfsMounted){
 				bootPrintf("WII storage: usb: mounted as NTFS on attempt %d\n", attempt + 1);
 				return true;
 			}
-			bootPrintf("WII storage: usb: NTFS mount attempt %d failed\n", attempt + 1);
 		}
 	}
 	bootPrintf("WII storage: usb: could not be mounted\n");
