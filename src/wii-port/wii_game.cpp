@@ -203,8 +203,11 @@ initializeVideo()
 	return true;
 }
 
-// The on-screen counterpart for the boot trace: the log still gets the full
-// text, and where the boot sits still is shown live on the television.
+// The boot console: under CREATE_LOG 0 the report half is a no-op and this
+// moves printf bytes through the (silent) console device, so a normal boot
+// logs and screens nothing.  It stays for the failure paths -- haltBoot only
+// has the television -- where the stage name shows live instead of hiding a
+// wedged device behind a silent black frame.
 void
 bootPrintf(const char *format, ...)
 {
