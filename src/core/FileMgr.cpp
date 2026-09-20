@@ -71,6 +71,7 @@ myfopen(const char *filename, const char *mode)
 	for(fd = 1; fd < NUMFILES; fd++)
 		if(myfiles[fd].file == nil)
 			goto found;
+	printf("WII filemgr: no free slots for %s\n", filename);
 	return 0;	// no free fd
 found:
 	myfiles[fd].isText = strchr(mode, 'b') == nil;
@@ -84,8 +85,14 @@ found:
 	*p = '\0';
 	
 	myfiles[fd].file = fcaseopen(filename, realmode);
-	if(myfiles[fd].file == nil)
+	// Failure must be 0, not -1: every loader in the engine tests `if (f)`,
+	// which -1 passes.  That was the New Game DSI (DAR 0x6c) on missing
+	// gta3.ini — ReadLine fgetc through the garbage slot.  Myfgetc likewise
+	// indexes with the raw fd, so a bad one has to be caught before deref.
+	if(myfiles[fd].file == nil) {
+		printf("WII filemgr: open FAILED \"%s\" errno=%d\n", filename, errno);
 		return 0;
+	}
 	return fd;
 }
 
@@ -94,6 +101,8 @@ myfclose(int fd)
 {
 	int ret;
 	assert(fd < NUMFILES);
+	if(fd <= 0 || fd >= NUMFILES)
+		return EOF;
 	if(myfiles[fd].file){
 		ret = fclose(myfiles[fd].file);
 		myfiles[fd].file = nil;
@@ -153,6 +162,10 @@ myfgets(char *buf, int len, int fd)
 static size_t
 myfread(void *buf, size_t elt, size_t n, int fd)
 {
+	// fd<=0 / closed slot guard: with myfopen returning -1 on failure, handle
+	// misuse must not fread through nil pointers.
+	if(fd <= 0 || fd >= NUMFILES || myfiles[fd].file == nil)
+		return 0;
 	if(myfiles[fd].isText){
 		unsigned char *p;
 		size_t i;
@@ -174,6 +187,9 @@ myfread(void *buf, size_t elt, size_t n, int fd)
 static size_t
 myfwrite(void *buf, size_t elt, size_t n, int fd)
 {
+	// fd<=0 / nil-file guard mirrors myfread.
+	if(fd <= 0 || fd >= NUMFILES || myfiles[fd].file == nil)
+		return 0;
 	if(myfiles[fd].isText){
 		unsigned char *p;
 		size_t i;
@@ -195,12 +211,18 @@ myfwrite(void *buf, size_t elt, size_t n, int fd)
 static int
 myfseek(int fd, long offset, int whence)
 {
+	// fd 0 or a closed slot: something upstream misuses the handle id; feof
+	// through nil here used to be the disable-logging crash (DAR 0x6c).
+	if(fd <= 0 || fd >= NUMFILES || myfiles[fd].file == nil)
+		return -1;
 	return fseek(myfiles[fd].file, offset, whence);
 }
 
 static int
 myfeof(int fd)
 {
+	if(fd <= 0 || fd >= NUMFILES || myfiles[fd].file == nil)
+		return -1;
 	return feof(myfiles[fd].file);
 //	return ferror(myfiles[fd].file);
 }
@@ -285,7 +307,7 @@ CFileMgr::LoadFile(const char *file, uint8 *buf, int maxlen, const char *mode)
 	ssize_t n, len;
 
 	fd = myfopen(file, mode);
-	if(fd == 0)
+	if(fd <= 0)
 		return -1;
 	len = 0;
 	do{

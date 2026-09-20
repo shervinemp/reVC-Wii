@@ -143,7 +143,16 @@ CVisibilityPlugins::InsertAtomicIntoBoatSortedList(RpAtomic *a, float dist)
 void
 CVisibilityPlugins::SetRenderWareCamera(RwCamera *camera)
 {
+	// Loading screens can run before a camera exists (e.g. ValidateVersion in
+	// the boot path); a nil camera here must skip, not deref, so the loading
+	// screen instead falls back to a plain splash draw.  A zeroed anchor
+	// keeps distance culling sane while no camera exists.
+	static RwV3d kCameralessAnchor = { 0.0f, 0.0f, 0.0f };
 	ms_pCamera = camera;
+	if (!camera) {
+		ms_pCameraPosn = &kCameralessAnchor;
+		return;
+	}
 	ms_pCameraPosn = RwMatrixGetPos(RwFrameGetMatrix(RwCameraGetFrame(camera)));
 
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||

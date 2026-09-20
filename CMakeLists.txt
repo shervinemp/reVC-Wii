@@ -7,6 +7,21 @@ project(${EXECUTABLE} C CXX)
 set(${PROJECT}_AUTHOR "${PROJECT} Team")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
+if(NINTENDO_WII AND NOT COMMAND ogc_create_dol)
+    # Newer devkitPro (2026/Catnip) toolchains no longer auto-load the
+    # NintendoWii platform module nor propagate its variables into project
+    # scope, so seed everything here explicitly.
+    list(APPEND CMAKE_MODULE_PATH "$ENV{DEVKITPRO}/cmake" "/opt/devkitpro/cmake")
+    include(Platform/NintendoWii)
+
+    set(REVC_WII_CFLAGS "-mrvl -mcpu=750 -meabi -mhard-float -ffunction-sections -fdata-sections -D__wii__ -DGEKKO -isystem /opt/devkitpro/libogc/include")
+    set(CMAKE_C_FLAGS "${REVC_WII_CFLAGS}" CACHE STRING "" FORCE)
+    set(CMAKE_CXX_FLAGS "${REVC_WII_CFLAGS}" CACHE STRING "" FORCE)
+    set(CMAKE_EXE_LINKER_FLAGS
+        "-L/opt/devkitpro/libogc/lib/wii -L/opt/devkitpro/portlibs/wii/lib -L/opt/devkitpro/portlibs/ppc/lib"
+        CACHE STRING "" FORCE)
+endif()
+
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1 "ALLOW_LOOKING_ABOVE_CMAKE_SOURCE_DIR")
 message(STATUS "Building ${CMAKE_PROJECT_NAME} GIT SHA1: ${GIT_SHA1}")
@@ -48,6 +63,9 @@ if(${PROJECT}_VENDORED_LIBRW)
     add_subdirectory(vendor/librw)
 else()
     find_package(librw REQUIRED)
+endif()
+if(NINTENDO_WII)
+    add_subdirectory(vendor/libntfs)
 endif()
 add_subdirectory(src)
 

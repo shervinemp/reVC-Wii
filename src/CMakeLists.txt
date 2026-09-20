@@ -22,8 +22,12 @@ if(NINTENDO_WII)
             "${CMAKE_CURRENT_BINARY_DIR}/extras/GitSHA1.cpp" @ONLY)
         list(APPEND WII_GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/extras/GitSHA1.cpp")
 
-        find_path(WII_MPG123_INCLUDE_DIR NAMES mpg123.h)
-        find_library(WII_MPG123_LIBRARY NAMES mpg123)
+find_path(WII_MPG123_INCLUDE_DIR NAMES mpg123.h
+    HINTS "$ENV{DEVKITPRO}/portlibs/ppc" "$ENV{DEVKITPRO}/portlibs/wii" "/opt/devkitpro/portlibs/ppc" "C:/devkitPro/portlibs/ppc"
+    PATH_SUFFIXES include)
+find_library(WII_MPG123_LIBRARY NAMES mpg123
+    HINTS "$ENV{DEVKITPRO}/portlibs/ppc" "$ENV{DEVKITPRO}/portlibs/wii" "/opt/devkitpro/portlibs/ppc" "C:/devkitPro/portlibs/ppc"
+    PATH_SUFFIXES lib)
         if(NOT WII_MPG123_INCLUDE_DIR OR NOT WII_MPG123_LIBRARY)
             message(FATAL_ERROR
                 "Wii game audio requires ppc-mpg123; install it with "
@@ -45,18 +49,43 @@ if(NINTENDO_WII)
         list(REMOVE_DUPLICATES WII_GAME_INCLUDE_DIRS)
 
         add_executable(${EXECUTABLE} ${WII_GAME_SOURCES})
+        # A per-build stamp header keeps the on-console "built ..." banner from
+        # silently going stale: __TIME__ only refreshes when the source file
+        # itself changes, which vendor-only edits can leave untouched for many
+        # builds while the hardware runs a different revision than the banner
+        # claims.  The stamp is rewritten before every reVC build, forcing
+        # just the banner's object to recompile.
+        set(WII_BUILD_STAMP_HEADER "${CMAKE_BINARY_DIR}/wii_build_stamp.h")
+        # Also run it right now so the file exists before the first compile
+        # (builds that die before the custom target runs still need the
+        # header to be readable as an object dependency).
+        execute_process(COMMAND ${CMAKE_COMMAND} -DSTAMP_H=${WII_BUILD_STAMP_HEADER}
+                    -P "${PROJECT_SOURCE_DIR}/scripts/write-build-stamp.cmake"
+        )
+        # Runs on every build: the stamp target has no OUTPUT, so Ninja's
+        # phony rule always fires; the fresh stamp content recompiles
+        # wii_game.o, refreshing the console banner each time.
+        add_custom_target(reVC_wii_build_stamp ALL
+            COMMAND ${CMAKE_COMMAND} -DSTAMP_H=${WII_BUILD_STAMP_HEADER}
+                    -P "${PROJECT_SOURCE_DIR}/scripts/write-build-stamp.cmake"
+        )
+        set_source_files_properties(${WII_GAME_SOURCES} PROPERTIES
+            OBJECT_DEPENDS "${WII_BUILD_STAMP_HEADER}"
+        )
         # wiiuse and bte carry WPAD, and both resolve against libogc, so they
         # have to precede it in the link order the toolchain appends.
         target_link_libraries(${EXECUTABLE} PRIVATE
-            librw::librw asnd wiiuse bte fat ${WII_MPG123_LIBRARY} m
+            librw::librw asnd wiiuse bte fat lwntfs ${WII_MPG123_LIBRARY} m
         )
         target_include_directories(${EXECUTABLE} PRIVATE
             ${WII_GAME_INCLUDE_DIRS}
             ${WII_MPG123_INCLUDE_DIR}
+            ${CMAKE_BINARY_DIR}
         )
         target_compile_definitions(${EXECUTABLE} PRIVATE
             NINTENDO_WII RW_GX AUDIO_WII LIBRW CMAKE_BUILD USE_OUR_VERSIONING NDEBUG
             BIGENDIAN rwBIGENDIAN
+            REVC_WII_PLATFORM="wii libogc"
         )
         target_compile_options(${EXECUTABLE} PRIVATE -w -fshort-wchar)
         set_target_properties(${EXECUTABLE} PROPERTIES

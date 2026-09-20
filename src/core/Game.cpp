@@ -3,6 +3,9 @@
 
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
+#ifdef NINTENDO_WII
+#include "wii-port/WiiTrace.h"
+#endif
 #endif
 
 #include "Game.h"
@@ -195,7 +198,6 @@ void ReplaceAtomicPipeCallback();
 bool
 CGame::InitialiseRenderWare(void)
 {
-	ValidateVersion();
 #ifdef USE_TEXTURE_POOL
 	_TexturePoolsInitialise();
 #endif
@@ -220,7 +222,11 @@ CGame::InitialiseRenderWare(void)
 	{
 		return (false);
 	}
-	
+
+	// Probe the CD image only once a camera exists: ValidateVersion draws a
+	// loading screen through DoRWStuffStartOfFrame whenever any of its file
+	// checks fail, and that path uses Scene.camera.
+	ValidateVersion();
 	RwCameraSetFarClipPlane(Scene.camera, 2000.0f);
 	RwCameraSetNearClipPlane(Scene.camera, 0.9f);
 	
@@ -324,37 +330,36 @@ void CGame::ShutdownRenderWare(void)
 
 bool CGame::InitialiseOnceAfterRW(void)
 {
-#ifdef NINTENDO_WII
-	wiiLog("WII game init: text\n");
-#endif
+	// Wii boot used to be a ~53s black gap with zero log lines after the audio
+	// banner, so the gap's owner was unmeasurable.  RenderWare is already up
+	// here, so the PS2-style splash draws between steps like the desktop
+	// skeletons do, and plain step markers give the log timestamps to read.
 	TheText.Load();
 #ifdef NINTENDO_WII
-	wiiLog("WII game init: timer and collision\n");
+	WiiTraceReport("WII init: text done\n");
 #endif
 	CTimer::Initialise();
 	CTempColModels::Initialise();
-#ifdef NINTENDO_WII
-	wiiLog("WII game init: handling\n");
-#endif
 	mod_HandlingManager.Initialise();
-#ifdef NINTENDO_WII
-	wiiLog("WII game init: surfaces\n");
-#endif
 	CSurfaceTable::Initialise("DATA\\SURFACE.DAT");
-#ifdef NINTENDO_WII
-	wiiLog("WII game init: ped stats\n");
-#endif
 	CPedStats::Initialise();
-#ifdef NINTENDO_WII
-	wiiLog("WII game init: timecycle\n");
-#endif
 	CTimeCycle::Initialise();
+#ifdef NINTENDO_WII
+	WiiTraceReport("WII init: static tables done\n");
+#endif
 #ifdef GTA_PS2
+	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
+#endif
+#ifdef NINTENDO_WII
 	LoadingScreen("Loading the Game", "Initialising audio", GetRandomSplashScreen());
 #endif
 	DMAudio.Initialise();
 #ifdef NINTENDO_WII
-	wiiLog("WII game init: audio\n");
+	WiiTraceReport("WII init: DMAudio done\n");
+	// The 53s black gap lived between the audio banner and the provider line.
+	// A frame here keeps the splash visible while the provider selection
+	// below runs, and the two markers either side of it split the gap.
+	LoadingScreen("Loading the Game", "Configuring audio", nil);
 #endif
 
 #ifndef GTA_PS2
@@ -367,8 +372,14 @@ bool CGame::InitialiseOnceAfterRW(void)
 		FrontEndMenuManager.m_PrefsSpeakers = 0;
 		FrontEndMenuManager.m_nPrefsAudio3DProviderIndex = DMAudio.AutoDetect3DProviders();
 	}
+#ifdef NINTENDO_WII
+	WiiTraceReport("WII init: provider picked %d\n", FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
+#endif
 
 	DMAudio.SetCurrent3DProvider(FrontEndMenuManager.m_nPrefsAudio3DProviderIndex);
+#ifdef NINTENDO_WII
+	WiiTraceReport("WII init: 3D provider set\n");
+#endif
 	DMAudio.SetSpeakerConfig(FrontEndMenuManager.m_PrefsSpeakers);
 #endif
 	DMAudio.SetDynamicAcousticModelingStatus(FrontEndMenuManager.m_PrefsDMA);
@@ -378,7 +389,7 @@ bool CGame::InitialiseOnceAfterRW(void)
 	DMAudio.SetMusicFadeVol(127);
 #endif
 #ifdef NINTENDO_WII
-	wiiLog("WII game init: once-after-RW complete\n");
+	WiiTraceReport("WII init: once-after-RW complete\n");
 #endif
 	return true;
 }

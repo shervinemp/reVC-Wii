@@ -432,7 +432,7 @@ bool
 ReadInSizeofSaveFileBuffer(int32 &file, uint32 &size)
 {
 	file = CFileMgr::OpenFile(LoadFileName, "rb");
-	if (file == 0) {
+	if ((file) <= 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
 		return false;
 	}
@@ -449,7 +449,7 @@ ReadInSizeofSaveFileBuffer(int32 &file, uint32 &size)
 bool
 ReadDataFromFile(int32 file, uint8 *buf, uint32 size)
 {
-	if (file == 0) {
+	if ((file) <= 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
 		return false;
 	}
@@ -557,7 +557,7 @@ CheckDataNotCorrupt(int32 slot, char *name)
 	uint32 bytes_processed = 0;
 	sprintf(filename, "%s%i%s", DefaultPCSaveFileName, slot + 1, ".b");
 	int file = CFileMgr::OpenFile(filename, "rb");
-	if (file == 0)
+	if ((file) <= 0)
 		return false;
 	strcpy(name, filename);
 	while (SIZE_OF_ONE_GAME_IN_BYTES - sizeof(uint32) > bytes_processed && blocknum < 40) {
@@ -609,7 +609,7 @@ RestoreForStartLoad()
 	uint8 buf[999];
 
 	int file = CFileMgr::OpenFile(LoadFileName, "rb");
-	if (file == 0) {
+	if ((file) <= 0) {
 		PcSaveHelper.nErrorCode = SAVESTATUS_ERR_LOAD_OPEN;
 		return false;
 	}

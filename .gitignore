@@ -383,3 +383,7 @@ build-wii/
 # Local deploy packages (binaries + user assets)
 deploy/
 
+
+dist/
+vendor/libntfs/
+vendor/libntfs

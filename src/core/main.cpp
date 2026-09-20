@@ -172,6 +172,14 @@ Error(char *fmt, ...)
 void
 ValidateVersion()
 {
+#ifdef USE_OUR_VERSIONING
+	// USE_OUR_VERSIONING makes the game spell its own build tag on screen
+	// (DRAW_GAME_VERSION_TEXT), so the old R*-dev-build marker check against
+	// peds.col serves no purpose; a stock Rockstar peds.col never carries the
+	// obfuscated version marker and would fail the probe and park the boot
+	// forever in the "Invalid version" loading trap.
+	return;
+#else
 	int32 file = CFileMgr::OpenFile("models\\coll\\peds.col", "rb");
 	char buff[128];
 
@@ -202,11 +210,17 @@ ValidateVersion()
 	{
 		;
 	}
+#endif
 }
 
 bool
 DoRWStuffStartOfFrame(int16 TopRed, int16 TopGreen, int16 TopBlue, int16 BottomRed, int16 BottomGreen, int16 BottomBlue, int16 Alpha)
 {
+	// The boot can run loading screens before the game camera exists; those
+	// splash draws must not build on a nil camera.
+	if (Scene.camera == nil)
+		return false;
+
 	CRGBA TopColor(TopRed, TopGreen, TopBlue, Alpha);
 	CRGBA BottomColor(BottomRed, BottomGreen, BottomBlue, Alpha);
 

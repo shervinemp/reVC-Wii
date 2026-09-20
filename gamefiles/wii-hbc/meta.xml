@@ -1,10 +1,28 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <app version="1">
-  <name>GTA Vice City Wii</name>
-  <coder>OptiJuegos / reVC contributors</coder>
-  <version>1.1.2</version>
-  <release_date>20260827000000</release_date>
-  <short_description>GTA Vice City on the Wii!</short_description>
-  <long_description>reVC Wii v1.1.2: modo PS2/Classic, auto-apuntado y velocidad de caminar corregida.</long_description>
+  <name>reVC: Vice City Wii</name>
+  <coder>OptiJuegos / sherv / reVC contributors</coder>
+  <version>1.2.0</version>
+  <release_date>20260920000000</release_date>
+  <short_description>GTA Vice City port for Wii</short_description>
+  <long_description>
+reVC Wii port (reverse-engineered Vice City) running on libogc.
+
+Assets: stock PC Vice City data on USB (NTFS ok) or SD at {device}:/apps/reVC.
+Character roster, radio and scripted audio open straight from the PC install; no
+conversion step.
+
+Hardware: GameCube controller, Wiimote+Nunchuck (auto-aim) and Classic
+Controller supported.
+
+Audio: MP3/ADPCM streams decoded natively, waveform lengths cached on SD
+(wii_sound.cache) after the first boot.
+
+Diagnostics: an on-screen boot banner prints the build it is running, and
+debug.log beside the DOL records the boot ladder, VFS failures, streaming
+progress and heap state - leave it on the SD when reporting a hang.
+
+HOLD HOME to exit. Saves write to sd:/apps/reVC.
+  </long_description>
   <ahb_access/>
 </app>

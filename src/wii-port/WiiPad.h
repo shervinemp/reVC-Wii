@@ -56,8 +56,4 @@ void WiiPadUpdateRumble(void);
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);
 
-// Full-screen boot splash naming the active controller.  Call after video and
-// WiiPadInitialise; holdSeconds is wall time on a ~60 Hz display.
-void WiiPadShowControllerSplash(void *xfb, GXRModeObj *rmode, int holdSeconds);
-
 #endif

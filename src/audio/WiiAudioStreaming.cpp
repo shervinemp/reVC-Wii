@@ -9,6 +9,10 @@
 #include "WiiAudioDecoder.h"
 #include "WiiAudioStreaming.h"
 
+// The audio length cache is a WRITE artifact and must live on writable storage
+// (sd:) even when the assets tree itself is a read-only NTFS mount.
+extern const char *WiiUserCachePath(const char *relative);
+
 #ifdef WII_AUDIO_DEBUG
 #define WII_AUDIO_TRACE_LOG(...) wiiLog(__VA_ARGS__)
 #else
@@ -311,7 +315,7 @@ WiiAudioStreaming::ApplyVolume(uint32 stream, uint32 effectsVolume,
 bool
 WiiAudioStreaming::LoadLengthCache()
 {
-	FILE *file = fcaseopen(LengthCacheFilename, "rb");
+	FILE *file = fcaseopen(WiiUserCachePath(LengthCacheFilename), "rb");
 	if(file == nil)
 		return false;
 	char magic[sizeof(LengthCacheMagic)];
@@ -337,7 +341,7 @@ WiiAudioStreaming::WriteLengthCache()
 {
 	if(m_lengthCacheWritten || m_resolvedLengths != TOTAL_STREAMED_SOUNDS)
 		return;
-	FILE *file = fcaseopen(LengthCacheFilename, "wb");
+	FILE *file = fcaseopen(WiiUserCachePath(LengthCacheFilename), "wb");
 	if(file == nil){
 		wiiLog("[WII][AUDIO][STREAMING] cannot create length cache path=%s\n",
 		       LengthCacheFilename);

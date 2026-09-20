@@ -199,7 +199,13 @@ WiiTraceReport(const char *format, ...)
 	va_end(arguments);
 
 	WiiTraceLogLine(message);
+#ifdef WII_CONSOLE_REPORT
+	// Off for the console device: on the Wii SYS_Report draws every byte onto
+	// the framebuffer, which scrolled the menus and the game image around.
+	// The card copy below is the log; a cable reader can have its output back
+	// by defining WII_CONSOLE_REPORT.
 	SYS_Report("%s", message);
+#endif
 #else
 	(void)format;
 #endif

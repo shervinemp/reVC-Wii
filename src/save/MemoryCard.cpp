@@ -1224,7 +1224,7 @@ CMemoryCard::CreateMemCardFileReadWrite(int32 cardID, char *filename)
 	char path[512];
 	sprintf(path, "%s\\%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], CardCurDir[cardID], filename);
 	int32 file = CFileMgr::OpenFile(path, "wb+");
-	if (file == 0)
+	if ((file) <= 0)
 	{
 		sprintf(path, "%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], filename);
 		file = CFileMgr::OpenFile(path, "wb+");
@@ -1307,7 +1307,7 @@ CMemoryCard::OpenMemCardFileForReading(int32 cardID, char *filename)
 	char path[512];
 	sprintf(path, "%s\\%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], CardCurDir[cardID], filename);
 	int32 file = CFileMgr::OpenFile(path, "rb");
-	if (file == 0)
+	if ((file) <= 0)
 	{
 		sprintf(path, "%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], filename);
 		file = CFileMgr::OpenFile(path, "rb");
@@ -1450,7 +1450,7 @@ CMemoryCard::DeleteMemoryCardFile(int32 cardID, char *filename)
 	char path[512];
 	sprintf(path, "%s\\%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], CardCurDir[cardID], filename);
 	int32 file = CFileMgr::OpenFile(path, "rb");
-	if (file == 0)
+	if ((file) <= 0)
 	{
 		sprintf(path, "%s\\%s\\%s", PCCardsPath, PCCardDir[cardID], filename);
 		file = CFileMgr::OpenFile(path, "rb");
