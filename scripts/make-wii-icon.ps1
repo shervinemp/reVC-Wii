@@ -30,16 +30,17 @@ $blend.Positions = [float[]]@(0.0, 0.40, 0.74, 1.0)
 $skyBrush.InterpolationColors = $blend
 $gfx.FillRectangle($skyBrush, $skyRect)
 
-# 2. Low sun with soft glow rings, drawn first so everything sits above
+# 2. Low sun with soft glow rings, drawn first so everything sits above.  It
+#    sits half-off the right edge at horizon height, out of the wordmark's way.
 for($i = 6; $i -ge 1; $i--){
     $alpha = [int](6 + 9 * (6 - $i))
-    $r = [int]($i * 3.2 * $S)
-    $glowPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($alpha, 255, 216, 132), [float](3.4*$S))
-    $gfx.DrawEllipse($glowPen, [int](97*$S - $r), [int](30*$S - $r/2), $r*2, $r)
+    $r = [int]($i * 2.6 * $S)
+    $glowPen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb($alpha, 255, 216, 132), [float](3.0*$S))
+    $gfx.DrawEllipse($glowPen, [int](120*$S - $r), [int](36*$S - $r/2), $r*2, $r)
     $glowPen.Dispose()
 }
 $sunBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 238, 160))
-$gfx.FillEllipse($sunBrush, [int](99*$S), [int](28*$S), [int](11*$S), [int](11*$S))
+$gfx.FillEllipse($sunBrush, [int](116*$S), [int](32*$S), [int](9*$S), [int](9*$S))
 
 # 3. Palm silhouette, left third. Crown radius list keeps the fronds
 # symmetric around the trunk tip so the silhouette reads as one tree.
@@ -82,34 +83,29 @@ $fmt.LineAlignment = [System.Drawing.StringAlignment]::Center
 $privateFonts = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPath = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Pricedown Bl.otf'
 $privateFonts.AddFontFile($fontPath)
-$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](44.0), [System.Drawing.FontStyle]::Bold)
-$vcX = 46.0*$S
-$vcRect = New-Object System.Drawing.RectangleF([float]$vcX, [float](16.0*$S), [float](44.0*$S), [float](26.0*$S))
+$fontBig = New-Object System.Drawing.Font($privateFonts.Families[0], [float](48.0), [System.Drawing.FontStyle]::Bold)
+$vcX = 52.0*$S
+$vcRect = New-Object System.Drawing.RectangleF([float]$vcX, [float](8.0*$S), [float](50.0*$S), [float](30.0*$S))
 $shadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(190, 10, 2, 28))
 $shadowRect = New-Object System.Drawing.RectangleF([float]($vcRect.X + 2.5*$S), [float]($vcRect.Y + 2.5*$S), $vcRect.Width, $vcRect.Height)
 $gfx.DrawString('VC', $fontBig, $shadowBrush, $shadowRect, $fmt)
 $whiteBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 255, 252, 255))
 $gfx.DrawString('VC', $fontBig, $whiteBrush, $vcRect, $fmt)
-# VICE CITY caps ribbon under the mark, tight tracking via Arial Narrow
 # VICE CITY caps ribbon under the mark in the Rage face (the scratch script
 # logotype the actual Vice City box art uses)
 $fontRage = New-Object System.Drawing.Text.PrivateFontCollection
 $fontPathRage = Join-Path $PSScriptRoot '..\gamefiles\wii-hbc\fonts\Rage.ttf'
 $fontRage.AddFontFile($fontPathRage)
-$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](20.0), [System.Drawing.FontStyle]::Bold)
+$fontCap = New-Object System.Drawing.Font($fontRage.Families[0], [float](15.0), [System.Drawing.FontStyle]::Bold)
 # soft shadow behind the caps so they read on both the violet and teal bands
 $capsShadowBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(150, 10, 2, 28))
-$capShadowRect = New-Object System.Drawing.RectangleF([float](57.0*$S + 1.2*$S), [float](37.0*$S + 1.2*$S), [float](70.0*$S), [float](9.0*$S))
+$capShadowRect = New-Object System.Drawing.RectangleF([float](59.0*$S + 1.2*$S), [float](38.0*$S + 1.2*$S), [float](64.0*$S), [float](9.0*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capsShadowBrush, $capShadowRect, $fmt)
 $capsBrush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(240, 250, 236, 250))
-$capRect = New-Object System.Drawing.RectangleF([float](52.0*$S), [float](36.0*$S), [float](72.0*$S), [float](11.0*$S))
+$capRect = New-Object System.Drawing.RectangleF([float](59.0*$S), [float](38.0*$S), [float](64.0*$S), [float](9.0*$S))
 $gfx.DrawString('VICE CITY', $fontCap, $capsBrush, $capRect, $fmt)
 
-# 5. Wii indicator dot near top-left
-$wiiGreen = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 132, 252, 148))
-$gfx.FillEllipse($wiiGreen, [int](7*$S), [int](7*$S), [int](5*$S), [int](5*$S))
-
-# 6. 1px highlight frame
+# 5. 1px highlight frame
 $edgePen = New-Object System.Drawing.Pen(([System.Drawing.Color]::FromArgb(150, 255, 255, 255)), $S)
 $gfx.DrawRectangle($edgePen, 0, 0, $W-1, $H-1)
 

@@ -623,8 +623,19 @@ CMenuScreenCustom aScreens[] = {
 	// MENUPAGE_CONTROLLER_PC = 26
 	{ "FET_CTL", MENUPAGE_OPTIONS, new CCustomScreenLayout({0, 0, MENU_DEFAULT_LINE_HEIGHT, false, false, 150}), nil,
 #ifdef PC_PLAYER_CONTROLS
+		// The control-method toggle ("Standard"/"Classic" mouse-third-person
+		// scheme) and the keyboard-binding page are PC plumbing: on the Wii the
+		// method row is a dead lever (both handlers are stubs under
+		// NINTENDO_WII) and the keyboard page is rows of GETKEY binds that no
+		// keyboard can ever answer -- entering it leaves the menu waiting on
+		// the nonexistent device.  The remaining rows are real: mouse/IR
+		// settings and the restore-defaults lever.
+#ifndef NINTENDO_WII
 		MENUACTION_CTRLMETHOD,	"FET_STI", {nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_PC}, 320, 150, MENUALIGN_CENTER,
 		MENUACTION_KEYBOARDCTRLS,"FEC_RED", {nil, SAVESLOT_NONE, MENUPAGE_KEYBOARD_CONTROLS}, 0, 0, MENUALIGN_CENTER,
+#else
+		MENUACTION_CHANGEMENU,	"FEC_MOU", {nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 320, 135, MENUALIGN_CENTER,
+#endif
 #else
 		MENUACTION_KEYBOARDCTRLS,"FEC_RED", {nil, SAVESLOT_NONE, MENUPAGE_KEYBOARD_CONTROLS}, 320, 150, MENUALIGN_CENTER,
 #endif
@@ -634,7 +645,9 @@ CMenuScreenCustom aScreens[] = {
 #ifdef DETECT_JOYSTICK_MENU
 		MENUACTION_CHANGEMENU,	"FEC_JOD", {nil, SAVESLOT_NONE, MENUPAGE_DETECT_JOYSTICK}, 0, 0, MENUALIGN_CENTER,
 #endif
+#ifndef NINTENDO_WII
 		MENUACTION_CHANGEMENU,	"FEC_MOU", {nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_CENTER,
+#endif
 		MENUACTION_RESTOREDEF,	"FET_DEF", {nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_PC}, 320, 0, MENUALIGN_CENTER,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
    },
