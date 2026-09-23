@@ -46,6 +46,11 @@ const uint32 CPlayerPed::nSaveStructSize =
 
 int32 idleAnimBlockIndex;
 
+// GTA5-style soft assist: how long an aim press holds the lock-on snap before it
+// releases back to free aim. Only used when m_bUseMouse3rdPerson (Standard mode).
+static const unsigned kSoftAimHoldMs = 200;
+static uint32 s_softAimReleaseTime = 0;
+
 CPad*
 GetPadFromPlayer(CPlayerPed*)
 {
@@ -1426,7 +1431,10 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			// what??
 			if (!m_pPointGunAt
 #ifdef FREE_CAM
-				|| (!CCamera::bFreeCam && CCamera::m_bUseMouse3rdPerson)
+				// Free aim holds the lock only for the soft-assist snap window; once the
+				// timer is up the target releases and aim is free again.
+				|| (CCamera::m_bUseMouse3rdPerson && !CCamera::bFreeCam &&
+					CTimer::GetTimeInMilliseconds() >= s_softAimReleaseTime)
 #else
 #ifndef NINTENDO_WII
 				|| CCamera::m_bUseMouse3rdPerson
@@ -1469,8 +1477,12 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 			|| padUsed->GetTarget()
 #endif
 		) {
-			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget)
-				FindWeaponLockOnTarget();
+			if (padUsed->TargetJustDown() || TheCamera.m_bJustJumpedOutOf1stPersonBecauseOfTarget) {
+				// In free aim (Standard) the lock is only a momentary GTA5-style snap;
+				// record when to let go so the maintenance block above releases it.
+				if (FindWeaponLockOnTarget() && CCamera::m_bUseMouse3rdPerson)
+					s_softAimReleaseTime = CTimer::GetTimeInMilliseconds() + kSoftAimHoldMs;
+			}
 		}
 	} else if (m_pPointGunAt) {
 		ClearWeaponTarget();

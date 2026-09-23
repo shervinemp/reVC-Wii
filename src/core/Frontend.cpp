@@ -513,6 +513,12 @@ CMenuManager::CMenuManager()
 #else
 	CCamera::m_bUseMouse3rdPerson = false;
 #endif
+#ifdef NINTENDO_WII
+	// Safe lock-on default on Wii. The player can opt into Standard (free aim +
+	// GTA5-style soft assist) via the control-method toggle, which now persists.
+	m_ControlMethod = CONTROL_CLASSIC;
+	CCamera::m_bUseMouse3rdPerson = false;
+#endif
 	m_lastWorking3DAudioProvider = 0;
 	m_nFirstVisibleRowOnList = 0;
 	m_nScrollbarTopMargin = 0.0f;
@@ -3283,10 +3289,6 @@ CMenuManager::SaveSettings()
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsFrameLimiter, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_nPrefsVideoMode, 1);
 		CFileMgr::Write(fileHandle, m_PrefsSkinFile, 256);
-#ifdef NINTENDO_WII
-		m_ControlMethod = CONTROL_CLASSIC;
-		CCamera::m_bUseMouse3rdPerson = false;
-#endif
 		CFileMgr::Write(fileHandle, (char*)&m_ControlMethod, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsLanguage, 1);
 		CFileMgr::Write(fileHandle, (char*)&m_PrefsShowHud, 1);
@@ -4998,7 +5000,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				SetHelperText(2);
 				break;
 			case MENUACTION_CTRLMETHOD:
-#ifndef NINTENDO_WII
 				if (m_ControlMethod == CONTROL_CLASSIC) {
 					CCamera::m_bUseMouse3rdPerson = true;
 					m_ControlMethod = CONTROL_STANDARD;
@@ -5007,6 +5008,8 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					m_ControlMethod = CONTROL_CLASSIC;
 				}
 				SaveSettings();
+#ifdef LOAD_INI_SETTINGS
+				SaveINIControllerSettings();
 #endif
 				break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
@@ -5167,10 +5170,11 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				}
 				break;
 			case MENUACTION_CTRLMETHOD:
-#ifndef NINTENDO_WII
 				m_ControlMethod = !m_ControlMethod;
 				CCamera::m_bUseMouse3rdPerson = !m_ControlMethod;
 				SaveSettings();
+#ifdef LOAD_INI_SETTINGS
+				SaveINIControllerSettings();
 #endif
 				break;
 #ifdef CUSTOM_FRONTEND_OPTIONS

@@ -599,8 +599,10 @@ WiiPadInitialise(int pointerWidth, int pointerHeight)
 void
 WiiPadApplyControlDefaults(void)
 {
-	FrontEndMenuManager.m_ControlMethod = CONTROL_CLASSIC;
-	CCamera::m_bUseMouse3rdPerson = false;
+	// Control method (Standard/Classic) is deliberately NOT forced here: it is
+	// owned by the normal settings load/save so the player's choice persists.
+	// This only re-asserts the Wii input tuning (called at boot and again after
+	// the INI load so the tuned values win over generic ones).
 	// PC gta_vc.set often stores a 0.3 deadzone for XInput.  Classic Zelda walk reads
 	// stick magnitude directly; with our gate normalisation that deadzone leaves barely
 	// any deflection and movement feels like a nudge of the stick.
