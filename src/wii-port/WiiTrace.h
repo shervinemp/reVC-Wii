@@ -25,7 +25,7 @@
 // copies each of those strings again; WiiTraceHeap walks the whole heap through
 // mallinfo; and the watchdog is a thread with an 8KB stack waking once a
 // second.  At 0 none of that is compiled in, and the watchdog is never started.
-#define CREATE_LOG 0
+#define CREATE_LOG 1
 
 // Opens debug.log inside the given directory, and does nothing if one is already
 // open, so it can be called again later with a better guess.  Does nothing at

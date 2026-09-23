@@ -10,6 +10,7 @@
 #include "Cranes.h"
 #include "Clock.h"
 #include "Date.h"
+#include "WiiTrace.h"
 #include "FileMgr.h"
 #include "Font.h"
 #include "Frontend.h"
@@ -275,10 +276,12 @@ GenericSave(int file)
 		if (!CloseFile(file))
 			PcSaveHelper.nErrorCode = SAVESTATUS_ERR_SAVE_CLOSE;
 
+		WiiTraceReport("[SAVEDEBUG] GenericSave checksum write FAILED handle=%d errno=%d\n", file, errno);
 		return false;
 	}
 
-	CPad::FixPadsAfterSave();	
+	CPad::FixPadsAfterSave();
+	WiiTraceReport("[SAVEDEBUG] GenericSave OK totalSize=%u\n", totalSize);
 	return true;
 }
 

@@ -12,6 +12,8 @@
 #include "PCSave.h"
 #include "Text.h"
 
+#include "WiiTrace.h"
+
 const char* _psGetUserFilesFolder();
 
 C_PcSave PcSaveHelper;
@@ -28,6 +30,7 @@ C_PcSave::SetSaveDirectory(const char *path)
 	// starts sd:/ or usb:/, and mixing the two halves reads badly in a log even
 	// where the filesystem would have accepted it.
 	sprintf(DefaultPCSaveFileName, "%s/%s", path, "GTAVCsf");
+	WiiTraceReport("[SAVEDEBUG] SetSaveDirectory path=%s\n", path);
 #else
     sprintf(DefaultPCSaveFileName, "%s\\%s", path, "GTAVCsf");
 #endif
@@ -56,6 +59,7 @@ C_PcSave::SaveSlot(int32 slot)
 	PcSaveHelper.nErrorCode = SAVESTATUS_SUCCESSFUL;
 	_psGetUserFilesFolder();
 	int file = CFileMgr::OpenFile(ValidSaveName, "wb");
+	WiiTraceReport("[SAVEDEBUG] SaveSlot slot=%d name=%s handle=%d errno=%d\n", slot, ValidSaveName, file, errno);
 	if (file != 0) {
 #ifdef MISSION_REPLAY
 		if (!IsQuickSave)
@@ -121,6 +125,7 @@ C_PcSave::PopulateSlotInfo()
 		} header;
 		sprintf(savename, "%s%i%s", DefaultPCSaveFileName, i + 1, ".b");
 		int file = CFileMgr::OpenFile(savename, "rb");
+		WiiTraceReport("[SAVEDEBUG] Probe slot=%d name=%s handle=%d errno=%d\n", i, savename, file, errno);
 		if (file != 0) {
 			CFileMgr::Read(file, (char*)&header, sizeof(header));
 			if (strncmp((char*)&header, TopLineEmptyFile, sizeof(TopLineEmptyFile)-1) != 0) {

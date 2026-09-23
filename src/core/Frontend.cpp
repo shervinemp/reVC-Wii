@@ -32,6 +32,7 @@
 #include "Radar.h"
 #include "Stats.h"
 #include "Messages.h"
+#include "WiiTrace.h"
 #include "FileLoader.h"
 #include "User.h"
 #include "sampman.h"
@@ -4820,6 +4821,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			case MENUACTION_SAVEGAME:
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
+				WiiTraceReport("[SAVEDEBUG] SAVEGAME option=%d slot=%d\n", m_nCurrOption, saveSlot);
 
 				if (saveSlot >= 2 && saveSlot <= 9) {
 					m_nCurrSaveSlot = m_nCurrOption;
@@ -5684,6 +5686,7 @@ CMenuManager::SwitchMenuOnAndOff()
 
 	// Just entered the save/safe zone
 	if (m_bActivateSaveMenu) {
+		WiiTraceReport("[SAVEDEBUG] save zone opened (cheated=%d)\n", CPad::bHasPlayerCheated);
 		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
 		DoRWStuffEndOfFrame();
 		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
