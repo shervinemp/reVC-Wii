@@ -4075,7 +4075,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			m_nSelectedListRow = m_nTotalListRow - 1;
 	}
 
-	if (CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) {
+	if ((CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) && m_nCurrScreen != MENUPAGE_MAP) {
 		m_bShowMouse = 0;
 		optionSelected = true;
 	}
@@ -4393,7 +4393,7 @@ CMenuManager::UserInput(void)
 				optionSelected = true;
 			}
 		} else {
-			if (CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) {
+			if ((CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) && m_nCurrScreen != MENUPAGE_MAP) {
 				m_bShowMouse = false;
 				optionSelected = true;
 			}
