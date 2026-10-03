@@ -240,6 +240,25 @@ void CHud::Draw()
 		eWeaponType WeaponType = playerPed->GetWeapon()->m_eWeaponType;
 		int32 Mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 
+#ifdef NINTENDO_WII
+		// A small dot wherever the Wiimote pointer is, whenever the pointer owns the
+		// crosshair (WiiPad steers it with or without a gun).  This is the "where am
+		// I pointing" mark: without it there is nothing on screen to aim with until a
+		// weapon is drawn.  Drawn before the reticle so the real crosshair sits over
+		// it.  This block does not exist on other platforms.
+		if (playerPed && TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam()
+			&& playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
+			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
+			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+			float dotX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
+			float dotY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
+			const float r = SCREEN_SCALE_X(2.0f);
+			Sprites[HUD_SITEM16].Draw(CRect(dotX - r, dotY - r, dotX + r, dotY + r),
+				CRGBA(255, 255, 255, 255),
+				0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+		}
+#endif
+
 		if ((Mode == CCam::MODE_SNIPER || Mode == CCam::MODE_ROCKETLAUNCHER || Mode == CCam::MODE_M16_1STPERSON || Mode == CCam::MODE_HELICANNON_1STPERSON || Mode == CCam::MODE_CAMERA)
 			&& playerPed && !playerPed->GetWeapon()->IsTypeMelee())
 			DrawCrossHair = true;

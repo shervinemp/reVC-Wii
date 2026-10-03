@@ -103,7 +103,7 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //   curve       how much of the response is linear rather than quadratic.  The
 //               quadratic part is what keeps small offsets slow enough to aim
 //               with; the linear part stops the first third from doing nothing.
-constexpr float kPointerDeadzone = 0.13f;
+constexpr float kPointerDeadzone = 0.18f;
 constexpr float kPointerSaturation = 0.75f;
 constexpr float kPointerCurveLinear = 0.45f;
 
@@ -120,7 +120,7 @@ constexpr float kPointerCurveLinear = 0.45f;
 // pointer with it, which is the control to reach for rather than this number:
 // Frontend.cpp clamps it between 1/3200 and 1/200, so the pointer can be tuned
 // across a factor of sixteen without touching the source.
-constexpr float kPointerRatePerSec = 400.0f;
+constexpr float kPointerRatePerSec = 330.0f;
 
 // The same delta pitches further than it yaws: Cam.cpp scales the vertical one
 // by 4.0*m_fMouseAccelVertical against 2.5*m_fMouseAccelHorzntl for the
@@ -157,7 +157,7 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // then swallows the rebound at the end of the flick, which is itself an
 // acceleration spike and would otherwise fire a second, phantom jump.
 static bool s_flickJumpPulse = false;
-static const int kFlickDelta = 300;			// per-frame drop that counts as a flick
+static const int kFlickDelta = 160;			// per-frame drop that counts as a flick
 static const u64 kFlickRefractoryUsec = 350000;	// 350 ms deaf after a flick
 
 // --- the pointer as a crosshair ---------------------------------------------
@@ -613,9 +613,13 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
 	setButton(state.Triangle, buttons & WPAD_BUTTON_2); // 2: exit vehicle
-	// Jump is the Nunchuk flick (measured in WiiPadScan), which lands here as a
-	// one-frame Square pulse; the 1 button does nothing on foot.
-	setButton(state.Square, s_flickJumpPulse);
+	// Jump has two triggers: the Nunchuk flick (measured in WiiPadScan) or the 1
+	// button on foot.  The flick alone proved janky and easy to miss in testing,
+	// so 1 is the reliable way in -- on foot 1 is otherwise idle, and in a car 1 is
+	// the radio and deliberately does not jump.  Both feed the one Square pulse
+	// JumpJustDown reads, so a jump is a jump whichever you use.
+	const bool jumpByOne = (buttons & WPAD_BUTTON_1) && !inCar;
+	setButton(state.Square, s_flickJumpPulse || jumpByOne);
 
 	// 1 is the radio station in a car, and nothing on foot: jump is the Nunchuk
 	// flick (WiiSpeakerService/WiiPadScan), and sniper scope entry already comes
@@ -748,9 +752,12 @@ pointerAimWanted(void)
 		return false;
 	if(!TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
 		return false;
-	const eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
-	return (weapon >= WEAPONTYPE_COLT45 && weapon <= WEAPONTYPE_RUGER) ||
-		weapon == WEAPONTYPE_M60 || weapon == WEAPONTYPE_MINIGUN || weapon == WEAPONTYPE_FLAMETHROWER;
+	// No weapon required.  The crosshair follows the pointer whether or not a gun
+	// is out, so the pointer position is always visible (the HUD draws a small dot
+	// when unarmed) and the shot ray keeps tracing through the same point.  The
+	// weapon used to gate this, which is why there was nothing to aim with until
+	// you drew a gun.
+	return true;
 }
 
 // Gives the crosshair back to the game.
@@ -895,9 +902,28 @@ WiiPadScan(void)
 	WiiSpeakerService();
 	WiiTraceService();
 
-	// HOME is the pause button (routed to Start in captureWiimote) and is left
-	// to the console's own system menu; the old in-game "quit game?" prompt on
-	// HOME fought with that and is gone.
+	// HOME returns to the Wii system menu (the native "home"), the way a console
+	// title does.  A homebrew cannot just let the system take HOME -- that is why
+	// it did nothing here -- so this asks SYS_ResetSystem to load the Wii Channels
+	// menu directly.  It is worth warning first: returning resets the app and
+	// throws away everything since the last save, so from a running game it asks
+	// through the frontend's own "quit game?" screen and quits outright from the
+	// title screens (nothing at risk).  SYS_RETURNTOMENU needs the IOS to allow it;
+	// if it refuses, fall back to HandleExit so HOME always gets you out.
+	if(WPAD_ButtonsDown(WPAD_CHAN_0) & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)){
+		const bool onQuitScreen = FrontEndMenuManager.m_bMenuActive &&
+			FrontEndMenuManager.m_nCurrScreen == MENUPAGE_EXIT;
+		if(FrontEndMenuManager.m_bGameNotLoaded || FrontEndMenuManager.m_bQuitPromptRequested || onQuitScreen){
+			WiiTraceReport("WII pad: HOME pressed, returning to the Wii menu\n");
+			// Best effort: straight to the Wii Channels menu.
+			SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+			// If that did not take us out, fall back to the loader.
+			HandleExit();
+		}else{
+			WiiTraceReport("WII pad: HOME pressed, asking\n");
+			FrontEndMenuManager.RequestQuitPrompt();
+		}
+	}
 
 	// Nunchuk flick-down = jump.  The gesture is read here, once per scan, and
 	// published as a one-frame Square pulse that captureWiimote folds into the
