@@ -25,6 +25,7 @@
 #include "main.h"
 #include "General.h"
 #include "VarConsole.h"
+#include "AimAssist.h"
 
 #if defined(FIX_BUGS)
 	#define SCREEN_SCALE_X_FIX(a) SCREEN_SCALE_X(a)
@@ -270,6 +271,12 @@ void CHud::Draw()
 			float fMultBright = SpriteBrightness * 0.03f * (0.25f * fStep + 0.75f);
 			CRect rect;
 			if (DrawCrossHairPC && TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam()) {
+#ifdef AIM_ASSIST
+				// Turns red while the aim assist has a target near the crosshair.
+				CRGBA chairColour = CAimAssist::IsEngaged() ? CRGBA(255, 70, 70, 255) : CRGBA(255, 255, 255, 255);
+#else
+				CRGBA chairColour(255, 255, 255, 255);
+#endif
 				float f3rdX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
 				float f3rdY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
 #ifdef ASPECT_RATIO_SCALE
@@ -281,7 +288,7 @@ void CHud::Draw()
 					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.6f);
 					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.6f);
 
-					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
+					Sprites[HUD_SITEM16].Draw(CRect(rect), chairColour,
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
 				}
 				else {
@@ -290,7 +297,7 @@ void CHud::Draw()
 					rect.right = f3rdX + SCREEN_SCALE_X(32.0f * 0.4f);
 					rect.bottom = f3rdY + SCREEN_SCALE_Y(32.0f  * 0.4f);
 
-					Sprites[HUD_SITEM16].Draw(CRect(rect), CRGBA(255, 255, 255, 255),
+					Sprites[HUD_SITEM16].Draw(CRect(rect), chairColour,
 						0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
 				}
 			} else {

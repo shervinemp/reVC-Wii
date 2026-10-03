@@ -14632,6 +14632,9 @@ WIIMOTE-LAUTSPRECHER
 [WII_AIM]
 ZIELHILFE
 
+[WII_SDF]
+Speichern fehlgeschlagen! SD-Karte pruefen: eingelegt, nicht schreibgeschuetzt, nicht voll.
+
 { Linux joy detection }
 [FEC_JOD]
 JOYSTICK ERKENNEN

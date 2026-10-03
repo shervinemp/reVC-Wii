@@ -5496,6 +5496,22 @@ CMenuManager::DrawOverlays(void)
 }
 #endif
 
+#ifndef XBOX_MESSAGE_SCREEN
+// The line the save-failed page shows.  On the Wii a save that cannot be created,
+// written or closed is a storage problem, nearly always the SD card (missing,
+// locked or full), and the generic "try again" hides that.
+static const char *
+SaveFailedText()
+{
+#ifdef NINTENDO_WII
+	if (PcSaveHelper.nErrorCode == SAVESTATUS_ERR_SAVE_CREATE || PcSaveHelper.nErrorCode == SAVESTATUS_ERR_SAVE_WRITE ||
+	    PcSaveHelper.nErrorCode == SAVESTATUS_ERR_SAVE_CLOSE)
+		return "WII_SDF";
+#endif
+	return "FES_CMP";
+}
+#endif
+
 void
 CMenuManager::ProcessFileActions()
 {
@@ -5601,7 +5617,7 @@ CMenuManager::ProcessFileActions()
 				if (SaveSlot) {
 					SwitchToNewScreen(MENUPAGE_SAVE_CUSTOM_WARNING);
 					strncpy(aScreens[m_nCurrScreen].m_ScreenName, "FET_SG", 8);
-					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, "FES_CMP", 8);
+					strncpy(aScreens[m_nCurrScreen].m_aEntries[0].m_EntryName, SaveFailedText(), 8);
 				} else
 					SwitchToNewScreen(MENUPAGE_SAVE_SUCCESSFUL);
 

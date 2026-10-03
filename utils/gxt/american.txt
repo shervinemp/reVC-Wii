@@ -14343,6 +14343,9 @@ REMOTE SPEAKER
 [WII_AIM]
 AIM ASSIST
 
+[WII_SDF]
+Save failed! Check the SD card: it must be inserted, unlocked and not full.
+
 { Linux joy detection }
 [FEC_JOD]
 DETECT JOYSTICK

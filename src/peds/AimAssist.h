@@ -25,6 +25,10 @@ public:
 	// The "Aim Assist" option; persisted to the INI.
 	static int8 bEnabled;
 
+	// True while the assist is holding a target near the crosshair, for the HUD to
+	// show it.  Time-based because Process only runs while the mouse camera does.
+	static bool IsEngaged(void);
+
 	// Called by CCam::Process_FollowPedWithMouse with the offsets (radians) it is
 	// about to add to the camera's Alpha (pitch) and Beta (yaw); bends them in place.
 	static void Process(const CVector &source, const CVector &front, const CVector &up, float fov,

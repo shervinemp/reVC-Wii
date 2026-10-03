@@ -48,6 +48,12 @@ const float kSwitchRatio = 0.7f;
 // How often the held target's line of sight is rechecked; it is a world ray cast.
 const uint32 kSightIntervalMs = 250;
 
+// Engaged means the crosshair is well inside the target's cone, not merely in it.
+const float kEngagedRatio = 0.6f;
+const uint32 kEngagedHoldMs = 100;
+
+uint32 s_engagedTime = 0;
+bool s_everEngaged = false;
 int32 s_targetHandle = -1;
 bool s_targetVisible = false;
 uint32 s_sightCheckTime = 0;
@@ -91,6 +97,12 @@ ToAngles(const CVector &direction, float &alpha, float &beta)
 	beta = Atan2(-direction.y, -direction.x);
 }
 
+}
+
+bool
+CAimAssist::IsEngaged(void)
+{
+	return s_everEngaged && CTimer::GetTimeInMilliseconds() - s_engagedTime < kEngagedHoldMs;
 }
 
 void
@@ -180,6 +192,10 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 
 	// 1 on the target, 0 at the rim of its cone.
 	float closeness = 1.0f - bestRatio;
+	if(bestRatio < kEngagedRatio){
+		s_engagedTime = CTimer::GetTimeInMilliseconds();
+		s_everEngaged = true;
+	}
 
 	float slow = 1.0f - (1.0f - kFrictionMin)*closeness;
 	alphaOffset *= slow;

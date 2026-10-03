@@ -14632,6 +14632,9 @@ HAUT-PARLEUR WIIMOTE
 [WII_AIM]
 AIDE A LA VISEE
 
+[WII_SDF]
+Echec de la sauvegarde ! Verifiez la carte SD : inseree, deverrouillee et non pleine.
+
 { Linux joy detection }
 [FEC_JOD]
 DETECT JOYSTICK
