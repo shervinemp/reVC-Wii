@@ -213,6 +213,20 @@ char* casepath(char const* path, bool checkPathFirst)
         strlcpy(deviceNamePath, p, deviceNameOffset);
         deviceNamePath[deviceNameOffset] = 0;
         d = opendir(deviceNamePath);
+        // Keep the device prefix ("sd:", "usb:", ...) in the rebuilt path.
+        //
+        // It used to be dropped here, so every path casepath() rebuilt came
+        // back as a bare absolute path with no volume -- "sd:/apps/x/y.b"
+        // returned "/apps/x/y.b" -- and fopen() on the result hit ENOENT. That
+        // stayed invisible for every file that already exists on disk, because
+        // casepath() returns early for those (checkPathFirst) and the original
+        // path is used verbatim. It only ever surfaced when CREATING a file,
+        // and saving is the one place the game opens a path that does not exist
+        // yet: every save open failed, so no GTAVCsf*.b was ever written and the
+        // slot list stayed empty.
+        const size_t prefixLen = (size_t)(c - p) + 1; // includes the ':'
+        memcpy(out, p, prefixLen);
+        rl = prefixLen;
         p = c + 1;
     }
     else

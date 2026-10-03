@@ -600,15 +600,10 @@ WiiStdoutHookInstall(void)
 int
 main(int argc, char **argv)
 {
-	// Print the banner as the very first area on the television once the
-	// console exists: a build with the wrong devkitPro/libogc pairing then
-	// announces itself (GCC rev mirrors the toolchain install) instead of
-	// hiding behind a silent black screen.
-	if(!initializeVideo()){
-		WiiTraceReport("WII game boot: video=failed\n");
-		haltBoot("video");
-	}
-
+	// Storage and logging come up before the video.  fatInitDefault and
+	// elfDirectory need neither the framebuffer nor GX, and putting the log first
+	// means a boot that dies in initializeVideo still leaves its last words in
+	// the file instead of on a console that never got drawn.
 	if(!fatInitDefault())
 		haltBoot("storage mount");
 
@@ -625,6 +620,16 @@ main(int argc, char **argv)
 	// Engine printf()/debug() lines land in the log from here on, so the
 	// console and the file narrate the same boot.
 	WiiStdoutHookInstall();
+
+	// Print the banner as the very first area on the television once the
+	// console exists: a build with the wrong devkitPro/libogc pairing then
+	// announces itself (GCC rev mirrors the toolchain install) instead of
+	// hiding behind a silent black screen.
+	if(!initializeVideo()){
+		WiiTraceReport("WII game boot: video=failed\n");
+		haltBoot("video");
+	}
+
 	// The stamp is on the screen AND in the log: whichever medium reaches the
 	// user carries the exact build that ran, so a stale DOL can no longer pose.
 	bootPrintf("build " REVC_WII_PLATFORM " gcc " __VERSION__ "\n");
