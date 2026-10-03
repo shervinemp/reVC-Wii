@@ -22,6 +22,7 @@
 #include "audio_enums.h"
 #include "DMAudio.h"
 #include "FileMgr.h"
+#include "Font.h"
 #include "Frontend.h"
 #include "Game.h"
 #include "main.h"
@@ -31,6 +32,7 @@
 #include "skeleton.h"
 #include "WiiLog.h"
 #include "WiiPad.h"
+#include "WiiSpeaker.h"
 #include "WiiTrace.h"
 #include "WiiStdout.h"
 // Per-build stamp: refreshed on every link so the banner never lies about the
@@ -656,6 +658,79 @@ WiiStdoutHookInstall(void)
 	devoptab_list[1] = wrapper;
 }
 
+// The port requires a Nunchuk: the stick does all walking and steering, so
+// without one there is nothing to move with.  Rather than drop the player into a
+// game they cannot control, block here with a centered notice -- the same idea
+// as a Wii game that needs an accessory -- and re-check every frame, so plugging
+// a Nunchuk in walks straight past it with no keypress.  Returns true once one is
+// present.  The screen is drawn with the game's own font on the dark background,
+// matching how a console title shows such a notice.
+static bool
+waitForNunchuk(void)
+{
+	static bool logged;
+	if(!logged){
+		logged = true;
+		WiiTraceReport("WII pad: waiting for a Nunchuk controller\n");
+	}
+
+	// The frontend textures carry the font, and this runs before the menu would
+	// have loaded them, so pull them in first.
+	FrontEndMenuManager.LoadAllTextures();
+
+	static wchar title[64];
+	static wchar body[128];
+	static bool stringsBuilt = false;
+	if(!stringsBuilt){
+		const char *a = "This game requires a Nii Remote(TM) Nunchuk Controller";
+		const char *b = "Please connect a Nunchuk to your Wii Remote, then continue.";
+		for(int i = 0; a[i] && i < 63; i++) title[i] = (wchar)a[i];
+		title[63] = 0;
+		for(int i = 0; b[i] && i < 127; i++) body[i] = (wchar)b[i];
+		body[127] = 0;
+		stringsBuilt = true;
+	}
+
+	while(!RsGlobal.quit && !WiiPadNunchukConnected()){
+		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
+
+		CFont::SetBackgroundOff();
+		CFont::SetScale(SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(1.35f));
+		CFont::SetJustifyOn();
+		CFont::SetFontStyle(FONT_HEADING);
+		CFont::SetColor(CRGBA(255, 255, 255, 255));
+		CFont::SetDropShadowPosition(2);
+		CFont::PrintString(SCREEN_WIDTH / 2 - SCREEN_SCALE_X(1.0f),
+		                   SCREEN_SCALE_Y(32.0f) + SCREEN_SCALE_Y(2.0f), title);
+		CFont::SetColor(CRGBA(0, 0, 0, 255));
+		CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(1.0f),
+		                   SCREEN_SCALE_Y(32.0f) + SCREEN_SCALE_Y(2.0f), title);
+
+		CFont::SetScale(SCREEN_SCALE_X(0.8f), SCREEN_SCALE_Y(1.35f));
+		CFont::SetFontStyle(FONT_STANDARD);
+		CFont::SetColor(CRGBA(0, 0, 0, 255));
+		CFont::PrintString(SCREEN_WIDTH / 2 - SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(22.0f), body);
+		CFont::SetColor(CRGBA(255, 255, 255, 255));
+		CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(22.0f), body);
+
+		CFont::DrawFonts();
+		DoRWStuffEndOfFrame();
+		VIDEO_WaitVSync();
+
+		// Keep the input stack ticking so the Nunchuk is seen the instant it is
+		// plugged in, and so HOME/quit still work while we wait.
+		WiiPadScan();
+		WiiSpeakerService();
+		WiiTraceService();
+	}
+
+	if(!RsGlobal.quit){
+		WiiTraceReport("WII pad: Nunchuk connected, continuing\n");
+		return true;
+	}
+	return false;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -751,6 +826,11 @@ main(int argc, char **argv)
 	FrontEndMenuManager.m_bStartUpFrontEndRequested = true;
 	gGameState = GS_FRONTEND;
 	WiiTraceReport("WII game boot: entering frontend\n");
+
+	// No Nunchuk, no game.  This blocks on a centered notice and returns as soon
+	// as one is plugged in; RsGlobal.quit (power/reset/HOME-to-exit) still breaks.
+	if(!waitForNunchuk())
+		return 0;
 
 	while(!RsGlobal.quit){
 		switch(gGameState){

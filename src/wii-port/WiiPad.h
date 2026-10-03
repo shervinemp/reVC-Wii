@@ -58,4 +58,10 @@ void WiiPadUpdateRumble(void);
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);
 
+// True while a Nunchuk is plugged into the Wiimote on channel 0.  The port
+// requires one (the stick does all movement), so the boot screen uses this to
+// block until one is attached.  It never selects the Wiimote as the primary
+// pad; a Nunchuk is required in addition to, not instead of, whatever is held.
+bool WiiPadNunchukConnected(void);
+
 #endif

@@ -515,6 +515,7 @@ probeExpansion(int channel, const WPADData &data)
 	return expansion;
 }
 
+
 void
 captureClassic(const WPADData &data, CControllerState &state,
 	StickAccumulator &sticks, const StickSettings &settings)
@@ -833,6 +834,21 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 1;
+
+// Outside the anonymous namespace: the boot gate in wii_game.cpp calls this.
+bool
+WiiPadNunchukConnected(void)
+{
+	const WPADData *data = WPAD_Data(WPAD_CHAN_0);
+	if(data == nullptr || data->err != WPAD_ERR_NONE)
+		return false;
+	u32 expansion = WPAD_EXP_NONE;
+	if(WPAD_Probe(WPAD_CHAN_0, &expansion) != WPAD_ERR_NONE)
+		return false;
+	if(expansion == WPAD_EXP_NONE)
+		expansion = (u32)data->exp.type;
+	return expansion == WPAD_EXP_NUNCHUK;
+}
 
 void
 WiiPadInitialise(int pointerWidth, int pointerHeight)
