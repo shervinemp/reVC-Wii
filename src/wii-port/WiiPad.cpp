@@ -10,13 +10,16 @@
 #include "Camera.h"
 #include "ControllerConfig.h"
 #include "Frontend.h"
+#include "ModelIndices.h"
 #include "Pad.h"
 #include "PlayerPed.h"
 #include "Timer.h"
+#include "Vehicle.h"
 #include "WiiPad.h"
 #include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
 #include "WiiTrace.h"
+#include "World.h"
 #include "platform.h"
 #include "skeleton.h"
 
@@ -393,6 +396,30 @@ playerInVehicle(void)
 	return ped != nil && ped->bInVehicle;
 }
 
+// Circle is the vehicle's own weapon button: the Hunter's rockets and guns, the Rhino's
+// cannon, the fire truck's water cannon, the Sea Sparrow's guns, a car bomb's trigger,
+// and every drive-by.  Taking it for the brake would lose all of those, so where the
+// vehicle has one the pad keeps Circle on the weapon and the brake stays on its own
+// button.  An ordinary car or bike has nothing on it but the drive-by.
+bool
+vehicleKeepsFireButton(void)
+{
+	CVehicle *vehicle = FindPlayerVehicle();
+	if(vehicle == nullptr)
+		return false;
+	// Boats, helicopters, planes and trains.
+	if(!vehicle->IsCar() && !vehicle->IsBike())
+		return true;
+	switch(vehicle->GetModelIndex()){
+	case MI_RHINO:
+	case MI_FIRETRUCK:
+	case MI_HUNTER:
+	case MI_SEASPAR:
+		return true;
+	}
+	return vehicle->m_bombType != CARBOMB_NONE;
+}
+
 bool
 captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	StickAccumulator &sticks, const StickSettings &settings)
@@ -536,20 +563,22 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	const bool dpadIsShoulders = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
 	const bool lookingOut = inCar && dpadIsShoulders && (dpadLeft || dpadRight);
 
-	// B is the trigger, Circle, on foot.  In a vehicle it brakes and reverses, the
-	// way Mario Kart has it, because the 1 button (which still does too) is a long
-	// stretch for the thumb that is already on A.  The exception is looking out of
-	// a side window, where B fires the drive-by instead.
+	// B is the trigger, Circle, on foot.  In an ordinary car or bike it brakes and
+	// reverses, the way Mario Kart has it, because the 1 button (which still does too)
+	// is a long stretch for the thumb that is already on A.  Two exceptions keep B on
+	// Circle: a vehicle with a weapon of its own (vehicleKeepsFireButton), and looking
+	// out of a side window, where B fires the drive-by.
 	const bool b = (buttons & WPAD_BUTTON_B) != 0;
-	setButton(state.Circle, b && (!inCar || lookingOut));
+	const bool brakeOnB = inCar && !vehicleKeepsFireButton();
+	setButton(state.Circle, b && (!brakeOnB || lookingOut));
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);
-	setButton(state.Square, (buttons & WPAD_BUTTON_1) || (inCar && b && !lookingOut));
+	setButton(state.Square, (buttons & WPAD_BUTTON_1) || (brakeOnB && b && !lookingOut));
 
 	// One event-log line per press of brake/reverse in a vehicle, so a report that
 	// "reverse does nothing" can be settled from debug.log: the line says the pad layer
 	// saw the press and sent Square, which leaves the car code as the only suspect.
 	static bool s_brakeLogged;
-	const bool braking = inCar && ((buttons & WPAD_BUTTON_1) || (b && !lookingOut));
+	const bool braking = inCar && ((buttons & WPAD_BUTTON_1) || (brakeOnB && b && !lookingOut));
 	if(braking != s_brakeLogged){
 		s_brakeLogged = braking;
 		if(braking)
