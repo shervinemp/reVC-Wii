@@ -149,6 +149,17 @@ constexpr float kPointerHoldSeconds = 2.0f;
 constexpr float kMinPointerDt = 1.0f/240.0f;
 constexpr float kMaxPointerDt = 1.0f/15.0f;
 
+// --- Nunchuk flick-down jump -------------------------------------------------
+// WiiPadScan measures the gesture and raises s_flickJumpPulse for exactly one
+// frame; captureWiimote folds that into Square, the field JumpJustDown reads.
+// The flick is a sharp downward change in the Nunchuk's Y acceleration between
+// frames (not a tilt angle, so a held pose never reads), and a refractory window
+// then swallows the rebound at the end of the flick, which is itself an
+// acceleration spike and would otherwise fire a second, phantom jump.
+static bool s_flickJumpPulse = false;
+static const int kFlickDelta = 300;			// per-frame drop that counts as a flick
+static const u64 kFlickRefractoryUsec = 350000;	// 350 ms deaf after a flick
+
 // --- the pointer as a crosshair ---------------------------------------------
 // Standard aiming draws a crosshair at a fixed point and traces the shot through
 // it, so aiming is steering the camera, and with the rate camera above that means
@@ -598,16 +609,22 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / gas (car)
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint / fire in car
 	setButton(state.Triangle, buttons & WPAD_BUTTON_2); // 2: exit vehicle
-	setButton(state.Square, buttons & WPAD_BUTTON_1);   // 1: jump
+	// Jump is the Nunchuk flick (measured in WiiPadScan), which lands here as a
+	// one-frame Square pulse; the 1 button does nothing on foot.
+	setButton(state.Square, s_flickJumpPulse);
 
-	// + and - move off their old jobs.  + is the radio station in a car (and the
-	// scoped zoom-in, which cannot overlap it: you are in a car or behind a
-	// scope, never both), - is the camera mode on foot and the scoped zoom-out.
-	// Pause moves to HOME, which is also where a Wii player expects it.  These are
-	// not Nunchuk-only, so they are wired before the expansion check below.
-	setButton(state.LeftShock, buttons & WPAD_BUTTON_PLUS);
+	// 1 is the radio station in a car, and nothing on foot: jump is the Nunchuk
+	// flick (WiiSpeakerService/WiiPadScan), and sniper scope entry already comes
+	// from the aim button (Z, which feeds RightShoulder1 -- PlayerPed.cpp:1281
+	// reads TargetJustDown), so a second way into the scope would only duplicate
+	// a state Z already owns.
+	setButton(state.LeftShock, buttons & WPAD_BUTTON_1);   // 1: radio (car)
+	// - is the camera mode on foot (the engine only reads it for a pedestrian
+	// camera, so it is simply dead in a car).  Pause is + (the Wii menu button)
+	// and is unconditional; HOME is left alone so the console's own HOME opens
+	// the system menu instead of fighting an in-game handler.
 	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
-	setButton(state.Start, (buttons & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)) != 0);
+	setButton(state.Start, buttons & WPAD_BUTTON_PLUS);
 
 	// One event-log line per brake press, so a report that "reverse does nothing"
 	// can be settled from debug.log instead of guessed at.
@@ -860,11 +877,55 @@ WiiPadScan(void)
 	WiiSpeakerService();
 	WiiTraceService();
 
-	// HOME is the pause button now (routed to Start in captureWiimote), which is
-	// also where a Wii player expects it.  The old "quit game?" prompt on HOME is
-	// gone on purpose: the console's own HOME opens the system menu for us, and
-	// an in-game prompt underneath it just fought with that.  Leaving the game is
-	// HOME -> system menu -> exit, the same as any other Wii game.
+	// HOME is the pause button (routed to Start in captureWiimote) and is left
+	// to the console's own system menu; the old in-game "quit game?" prompt on
+	// HOME fought with that and is gone.
+
+	// Nunchuk flick-down = jump.  The gesture is read here, once per scan, and
+	// published as a one-frame Square pulse that captureWiimote folds into the
+	// pad state (JumpJustDown reads Square).  Three things keep it honest:
+	//   - it is the change in the Nunchuk's Y acceleration between frames, not a
+	//     tilt angle, so a held pose never reads as a flick;
+	//   - it only fires when that change is downward and sharp, which is the
+	//     direction the gesture actually goes;
+	//   - a refractory window swallows the rebound at the end of every flick
+	//     (the snap back to rest is itself an acceleration spike, which without
+	//     this would fire a second, phantom jump).
+	// It is on foot only and idle while the stick is deflected, because steering
+	// and running shake the Nunchuk constantly.
+	{
+		static bool   s_jumpPulse = false;
+		static s16    s_prevAccelY = 0;
+		static bool   s_haveAccel = false;
+		static u64    s_lastFlick = 0;
+		s_jumpPulse = false;
+
+		const WPADData *wd = WPAD_Data(WPAD_CHAN_0);
+		CPlayerPed *ped = FindPlayerPed();
+		const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
+			wd->exp.type == WPAD_EXP_NUNCHUK;
+		const bool onFoot = ped != nullptr && !ped->bInVehicle;
+
+		if(!nunchukReady || !onFoot){
+			s_haveAccel = false;
+		}else{
+			const s16 accelY = wd->exp.nunchuk.accel.y;
+			if(s_haveAccel){
+				const u64 now = gettime();
+				const int dy = (int)accelY - (int)s_prevAccelY;
+				const bool pastRefractory = (now - s_lastFlick) > kFlickRefractoryUsec;
+				// Downward: on this pad gravity pulls toward -y, so a flick down
+				// drives accel.y more negative, i.e. a drop in the value.
+				if(dy < -kFlickDelta && pastRefractory){
+					s_jumpPulse = true;
+					s_lastFlick = now;
+				}
+			}
+			s_prevAccelY = accelY;
+			s_haveAccel = true;
+		}
+		s_flickJumpPulse = s_jumpPulse;
+	}
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which
 	// is monotonic and always alive here, unlike CTimer, which stops with the

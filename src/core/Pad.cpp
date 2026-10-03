@@ -3321,10 +3321,11 @@ bool CPad::SniperZoomIn(void)
 	{
 		case 0:
 		{
-			// Wii v3: zoom in is + while scoped.  This only ever runs in the
-			// sniper mode, where the radio (+) is not in play, so one field can
-			// serve both without them ever colliding.
-			return !!NewState.LeftShock;
+			// Wii v3: zoom in is Z (RightShoulder1) while scoped.  Z is the brake in a
+			// car, but a scoped player is never driving, so one field serves both
+			// without the two ever colliding.  Scope entry itself is also Z
+			// (TargetJustDown), which is why the button does the whole scope job.
+			return !!NewState.RightShoulder1;
 
 			break;
 		}
@@ -3357,8 +3358,10 @@ bool CPad::SniperZoomOut(void)
 	{
 		case 0:
 		{
-			// Wii v3: zoom out is - while scoped, next to + for zoom in.
-			return !!NewState.Select;
+			// Wii v3: zoom out is C (LeftShoulder1) while scoped, beside Z for in.
+			// C is the horn in a car, which a scoped player is not driving, so the
+			// two never overlap.
+			return !!NewState.LeftShoulder1;
 
 			break;
 		}
