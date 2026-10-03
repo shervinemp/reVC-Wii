@@ -430,34 +430,45 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	const u16 buttons = PAD_ButtonsHeld(channel);
 	const bool inCar = playerInVehicle();
 
-	// Face buttons: A=Cross (accelerate / sprint), B=Circle (Mode 0 GetWeapon =
-	// shoot / brake).  Keep that so B is always fire on foot.
-	setButton(state.Cross, buttons & PAD_BUTTON_A);
-	setButton(state.Circle, buttons & PAD_BUTTON_B);
-	setButton(state.Square, buttons & PAD_BUTTON_X);
-	setButton(state.Triangle, buttons & PAD_BUTTON_Y);
+	// Face buttons: A=Cross, B=Circle, X=Square, Y=Triangle.  In v3, B is the gas
+	// (Circle) and A the fire (Cross).  Same field layout the Wiimote gets, so the
+	// Mode 0 rebinds read the same whichever pad is in hand.
+	setButton(state.Circle, buttons & PAD_BUTTON_B);   // B: fire (foot) / gas (car)
+	setButton(state.Cross, buttons & PAD_BUTTON_A);    // A: enter+sprint / fire in car
+	setButton(state.Square, buttons & PAD_BUTTON_X);   // X: jump
+	setButton(state.Triangle, buttons & PAD_BUTTON_Y); // Y: exit vehicle
 	setButton(state.Start, buttons & PAD_BUTTON_START);
 
-	// Mode 0 GetTarget / auto-aim reads RightShoulder1.  L owns that now; R is
-	// free of aim so it does not double up.  Horn (LeftShock) moves to Z so L
-	// is not shared with radio/aim again.
+	// L is the brake (RightShoulder1), Z the horn (LeftShoulder1), R the radio.
 	setButton(state.RightShoulder1, buttons & PAD_TRIGGER_L);
-	setButton(state.LeftShock, buttons & PAD_TRIGGER_Z);
+	setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_Z);
+	setButton(state.LeftShock, buttons & PAD_TRIGGER_R);
 
-	if(inCar){
-		// Only in a vehicle: D-Pad is remapped away from steering.
-		// Radio = ChangeStationJustDown -> LeftShoulder1 <- D-Pad Up.
-		// Look L/R = LeftShoulder2 / RightShoulder2 <- D-Pad Left / Right.
-		setButton(state.LeftShoulder1, buttons & PAD_BUTTON_UP);
-		setButton(state.LeftShoulder2, buttons & PAD_BUTTON_LEFT);
-		setButton(state.RightShoulder2, buttons & PAD_BUTTON_RIGHT);
+	{
+		static bool s_brakeLogged;
+		const bool braking = inCar && (buttons & PAD_TRIGGER_L) != 0;
+		if(braking != s_brakeLogged){
+			s_brakeLogged = braking;
+			if(braking)
+				WiiTraceReport("WII pad: vehicle brake/reverse pressed (L)\n");
+		}
+	}
+
+	const bool dpadLeft = (buttons & PAD_BUTTON_LEFT) != 0;
+	const bool dpadRight = (buttons & PAD_BUTTON_RIGHT) != 0;
+	const bool dpadDown = (buttons & PAD_BUTTON_DOWN) != 0;
+	const bool dpadUp = (buttons & PAD_BUTTON_UP) != 0;
+	if(!FrontEndMenuManager.m_bMenuActive){
+		// vehicle cluster
+		setButton(state.LeftShoulder2, dpadLeft || dpadUp);
+		setButton(state.RightShoulder2, dpadRight || dpadUp);
+		setButton(state.DPadDown, dpadDown);
+		setButton(state.RightShock, dpadUp);
 	}else{
-		// On foot: leave state.DPad* unset so the pad does not walk / steer.
-		// CycleWeaponLeft/Right read L2/R2 -- bind those to D-Pad Left / Right.
-		setButton(state.LeftShoulder2, buttons & PAD_BUTTON_LEFT);
-		setButton(state.RightShoulder2, buttons & PAD_BUTTON_RIGHT);
-		// CollectPickupJustDown Mode 0 still wants LeftShoulder1; R fills it on foot.
-		setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_R);
+		setButton(state.DPadUp, dpadUp);
+		setButton(state.DPadDown, dpadDown);
+		setButton(state.DPadLeft, dpadLeft);
+		setButton(state.DPadRight, dpadRight);
 	}
 
 	// PAD_Stick* report raw counts offset from the calibrated origin, so the gate
@@ -499,33 +510,44 @@ captureClassic(const WPADData &data, CControllerState &state,
 	const u32 buttons = data.btns_h;
 	const bool inCar = playerInVehicle();
 
-	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_B);
-	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_A);
-	setButton(state.Square, buttons & WPAD_CLASSIC_BUTTON_Y);
-	setButton(state.Triangle, buttons & WPAD_CLASSIC_BUTTON_X);
-	setButton(state.LeftShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_L);
-	setButton(state.RightShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_R);
-	setButton(state.LeftShoulder2, buttons & WPAD_CLASSIC_BUTTON_ZL);
-	setButton(state.RightShoulder2, buttons & WPAD_CLASSIC_BUTTON_ZR);
-	// Mode 0 GetHorn reads LeftShock (PS2 L3).  D-Pad Up is the horn; do not
-	// also write state.DPadUp or steering will fire with the horn.
-	setButton(state.LeftShock, buttons & WPAD_CLASSIC_BUTTON_UP);
+	// Same v3 field layout as the Wiimote and the GameCube pad, so the Mode 0
+	// rebinds read the same whichever pad is in hand.  Classic's A is the gas
+	// (Circle), B the fire (Cross), L the brake (RightShoulder1), R the horn
+	// (LeftShoulder1), and the D-pad the vehicle cluster when it has two sticks
+	// of its own to walk with.
+	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_A);   // A: fire (foot) / gas (car)
+	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_B);    // B: enter+sprint / fire in car
+	setButton(state.Square, buttons & WPAD_CLASSIC_BUTTON_Y);   // Y: jump
+	setButton(state.Triangle, buttons & WPAD_CLASSIC_BUTTON_X); // X: exit vehicle
+	setButton(state.RightShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_L); // L: brake
+	setButton(state.LeftShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_R);  // R: horn
 	setButton(state.Start, buttons & WPAD_CLASSIC_BUTTON_PLUS);
 	setButton(state.Select, buttons & WPAD_CLASSIC_BUTTON_MINUS);
 
-	if(inCar){
-		// In a vehicle: D-Pad L/R look (GetLookLeft/Right) without dropping ZL/ZR.
-		setButton(state.LeftShoulder2, (buttons & WPAD_CLASSIC_BUTTON_ZL) ||
-			(buttons & WPAD_CLASSIC_BUTTON_LEFT));
-		setButton(state.RightShoulder2, (buttons & WPAD_CLASSIC_BUTTON_ZR) ||
-			(buttons & WPAD_CLASSIC_BUTTON_RIGHT));
+	static bool s_brakeLogged;
+	const bool braking = inCar && (buttons & WPAD_CLASSIC_BUTTON_FULL_L) != 0;
+	if(braking != s_brakeLogged){
+		s_brakeLogged = braking;
+		if(braking)
+			WiiTraceReport("WII pad: vehicle brake/reverse pressed (L)\n");
+	}
+
+	if(!FrontEndMenuManager.m_bMenuActive){
+		// Two sticks of their own walk and steer, so the D-pad is free to be the
+		// vehicle cluster whenever it is not driving a menu.
+		const bool dpadLeft = (buttons & WPAD_CLASSIC_BUTTON_LEFT) != 0;
+		const bool dpadRight = (buttons & WPAD_CLASSIC_BUTTON_RIGHT) != 0;
+		const bool dpadDown = (buttons & WPAD_CLASSIC_BUTTON_DOWN) != 0;
+		const bool dpadUp = (buttons & WPAD_CLASSIC_BUTTON_UP) != 0;
+		setButton(state.LeftShoulder2, dpadLeft || dpadUp);
+		setButton(state.RightShoulder2, dpadRight || dpadUp);
+		setButton(state.DPadDown, dpadDown);
+		setButton(state.RightShock, dpadUp);
 	}else{
-		// On foot: D-Pad L/R change weapons; other D-Pad bits stay unmapped.
-		setButton(state.LeftShoulder2, (buttons & WPAD_CLASSIC_BUTTON_ZL) ||
-			(buttons & WPAD_CLASSIC_BUTTON_LEFT));
-		setButton(state.RightShoulder2, (buttons & WPAD_CLASSIC_BUTTON_ZR) ||
-			(buttons & WPAD_CLASSIC_BUTTON_RIGHT));
+		setButton(state.DPadUp, buttons & WPAD_CLASSIC_BUTTON_UP);
 		setButton(state.DPadDown, buttons & WPAD_CLASSIC_BUTTON_DOWN);
+		setButton(state.DPadLeft, buttons & WPAD_CLASSIC_BUTTON_LEFT);
+		setButton(state.DPadRight, buttons & WPAD_CLASSIC_BUTTON_RIGHT);
 	}
 
 	// readJoystick already normalises to -1..1 with +Y upwards, so only the sign
@@ -551,55 +573,69 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	const u32 buttons = data.btns_h;
 	const bool hasNunchuk = expansion == WPAD_EXP_NUNCHUK;
 	const bool inCar = playerInVehicle();
+
 	const bool dpadLeft = (buttons & WPAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & WPAD_BUTTON_RIGHT) != 0;
 	const bool dpadDown = (buttons & WPAD_BUTTON_DOWN) != 0;
+	const bool dpadUp = (buttons & WPAD_BUTTON_UP) != 0;
 
-	// With a Nunchuk the stick walks and steers, which frees the D-pad for what the
-	// L2 and R2 buttons do on other pads and a Wiimote has no way to press: cycle
-	// weapons on foot, and in a vehicle look left and right (down looks behind,
-	// which is both at once).  The GameCube pad is mapped the same way.  Menus
-	// still get the D-pad as a D-pad.
-	const bool dpadIsShoulders = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
-	const bool lookingOut = inCar && dpadIsShoulders && (dpadLeft || dpadRight);
+	// v3 layout, Wiimote + Nunchuk:
+	//   A  enter vehicle / sprint (foot)   fire, drive-by, car gun (car)
+	//   B  fire (foot)                    accelerate (car)
+	//   Z  -- (the pointer aims)         brake and reverse (car)
+	//   1  jump
+	//   2  --                             exit vehicle (car)
+	//   C  --                             horn (car)
+	//   D-pad   cycle weapon / look behind (foot)
+	//           handbrake / look L-R / look behind (car)
+	//   +  radio (car); zoom in while scoped
+	//   -  camera mode (foot); zoom out while scoped
+	//   HOME  pause
+	// The Nunchuk stick walks and steers, which is what frees the D-pad to be the
+	// vehicle cluster. In the menus the D-pad goes back to being a D-pad.
+	const bool dpadIsCluster = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
 
-	// B is the trigger, Circle, on foot.  In an ordinary car or bike it brakes and
-	// reverses, the way Mario Kart has it, because the 1 button (which still does too)
-	// is a long stretch for the thumb that is already on A.  Two exceptions keep B on
-	// Circle: a vehicle with a weapon of its own (vehicleKeepsFireButton), and looking
-	// out of a side window, where B fires the drive-by.
-	const bool b = (buttons & WPAD_BUTTON_B) != 0;
-	const bool brakeOnB = inCar && !vehicleKeepsFireButton();
-	setButton(state.Circle, b && (!brakeOnB || lookingOut));
-	setButton(state.Cross, buttons & WPAD_BUTTON_A);
-	setButton(state.Square, (buttons & WPAD_BUTTON_1) || (brakeOnB && b && !lookingOut));
+	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / gas (car)
+	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint / fire in car
+	setButton(state.Triangle, buttons & WPAD_BUTTON_2); // 2: exit vehicle
+	setButton(state.Square, buttons & WPAD_BUTTON_1);   // 1: jump
 
-	// One event-log line per press of brake/reverse in a vehicle, so a report that
-	// "reverse does nothing" can be settled from debug.log: the line says the pad layer
-	// saw the press and sent Square, which leaves the car code as the only suspect.
+	// + and - move off their old jobs.  + is the radio station in a car (and the
+	// scoped zoom-in, which cannot overlap it: you are in a car or behind a
+	// scope, never both), - is the camera mode on foot and the scoped zoom-out.
+	// Pause moves to HOME, which is also where a Wii player expects it.  These are
+	// not Nunchuk-only, so they are wired before the expansion check below.
+	setButton(state.LeftShock, buttons & WPAD_BUTTON_PLUS);
+	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
+	setButton(state.Start, (buttons & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)) != 0);
+
+	// One event-log line per brake press, so a report that "reverse does nothing"
+	// can be settled from debug.log instead of guessed at.
 	static bool s_brakeLogged;
-	const bool braking = inCar && ((buttons & WPAD_BUTTON_1) || (brakeOnB && b && !lookingOut));
+	const bool braking = inCar && (buttons & WPAD_NUNCHUK_BUTTON_Z) != 0;
 	if(braking != s_brakeLogged){
 		s_brakeLogged = braking;
 		if(braking)
-			WiiTraceReport("WII pad: vehicle brake/reverse pressed (%s)\n",
-				(buttons & WPAD_BUTTON_1) ? "1" : "B");
+			WiiTraceReport("WII pad: vehicle brake/reverse pressed (Z)\n");
 	}
-	setButton(state.Triangle, buttons & WPAD_BUTTON_2);
-	setButton(state.Start, buttons & WPAD_BUTTON_PLUS);
-	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
 
-	if(dpadIsShoulders){
-		setButton(state.LeftShoulder2, dpadLeft || (inCar && dpadDown));
-		setButton(state.RightShoulder2, dpadRight || (inCar && dpadDown));
+	if(dpadIsCluster){
+		// Left/right: weapon cycle on foot (LeftShoulder2 / RightShoulder2), and
+		// the same two fields are what the engine reads as look left / right in a
+		// car. Up is look behind, which in a car is those same two fields held
+		// together, so it sets both. Down is the handbrake on its own field.
+		setButton(state.LeftShoulder2, dpadLeft || dpadUp);
+		setButton(state.RightShoulder2, dpadRight || dpadUp);
+		setButton(state.DPadDown, dpadDown);
+		// Look behind on foot reads RightShock, which nothing else uses now.
+		setButton(state.RightShock, dpadUp);
 	}else{
-		// CPad::GetPedWalkUpDown and GetSteeringUpDown weigh the D-pad against the
-		// left stick at 255/2, so on a bare Wiimote the D-pad alone walks and drives
-		// without any synthetic stick behind it.
-		setButton(state.DPadUp, buttons & WPAD_BUTTON_UP);
-		setButton(state.DPadDown, buttons & WPAD_BUTTON_DOWN);
-		setButton(state.DPadLeft, buttons & WPAD_BUTTON_LEFT);
-		setButton(state.DPadRight, buttons & WPAD_BUTTON_RIGHT);
+		// Menus, and a bare Wiimote with no Nunchuk to walk with: the D-pad is a
+		// D-pad, so it still walks and drives.
+		setButton(state.DPadUp, dpadUp);
+		setButton(state.DPadDown, dpadDown);
+		setButton(state.DPadLeft, dpadLeft);
+		setButton(state.DPadRight, dpadRight);
 	}
 
 	if(!hasNunchuk)
@@ -611,13 +647,9 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	// one OR and removes a whole class of "works on my Wiimote" difference.
 	const nunchuk_t &nunchuk = data.exp.nunchuk;
 	setButton(state.RightShoulder1, (buttons & WPAD_NUNCHUK_BUTTON_Z) ||
-		(nunchuk.btns_held & NUNCHUK_BUTTON_Z));
+		(nunchuk.btns_held & NUNCHUK_BUTTON_Z));   // Z: brake and reverse
 	setButton(state.LeftShoulder1, (buttons & WPAD_NUNCHUK_BUTTON_C) ||
-		(nunchuk.btns_held & NUNCHUK_BUTTON_C));
-	// Same LeftShock fill as GameCube: C already drives LeftShoulder1 and also
-	// stands in for L3 so GetHorn works in Mode 0.
-	setButton(state.LeftShock, (buttons & WPAD_NUNCHUK_BUTTON_C) ||
-		(nunchuk.btns_held & NUNCHUK_BUTTON_C));
+		(nunchuk.btns_held & NUNCHUK_BUTTON_C));    // C: horn
 
 	float x, y;
 	readJoystick(nunchuk.js, x, y);
@@ -828,27 +860,11 @@ WiiPadScan(void)
 	WiiSpeakerService();
 	WiiTraceService();
 
-	// HOME is what a Wii player reaches for to leave a game, and it is not part
-	// of any CControllerState, so it is handled here rather than mapped.  Both
-	// masks are tested together because btns_d carries the Classic Controller's
-	// buttons in its top half, so one test covers the remote and the pad on it.
-	//
-	// With a game running it asks first, through the frontend's own "quit game?"
-	// screen, because quitting raises the same RsGlobal.quit the power and reset
-	// buttons raise and throws away everything since the last save.  It quits
-	// outright from the title screens (nothing to lose), from that screen itself,
-	// and on a second press while the first is still waiting to be shown.
-	if(WPAD_ButtonsDown(WPAD_CHAN_0) & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)){
-		const bool onQuitScreen = FrontEndMenuManager.m_bMenuActive &&
-			FrontEndMenuManager.m_nCurrScreen == MENUPAGE_EXIT;
-		if(FrontEndMenuManager.m_bGameNotLoaded || FrontEndMenuManager.m_bQuitPromptRequested || onQuitScreen){
-			WiiTraceReport("WII pad: HOME pressed, quitting\n");
-			HandleExit();
-		}else{
-			WiiTraceReport("WII pad: HOME pressed, asking\n");
-			FrontEndMenuManager.RequestQuitPrompt();
-		}
-	}
+	// HOME is the pause button now (routed to Start in captureWiimote), which is
+	// also where a Wii player expects it.  The old "quit game?" prompt on HOME is
+	// gone on purpose: the console's own HOME opens the system menu for us, and
+	// an in-game prompt underneath it just fought with that.  Leaving the game is
+	// HOME -> system menu -> exit, the same as any other Wii game.
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which
 	// is monotonic and always alive here, unlike CTimer, which stops with the

@@ -2235,6 +2235,14 @@ int16 CPad::GetSteeringUpDown(void)
 	switch (CURMODE)
 	{
 		case 0:
+		{
+			// Wii v3: the D-pad is the vehicle cluster (down is the handbrake), so
+			// it must not also drive steering up/down.  The Nunchuk stick does.
+			return NewState.LeftStickY;
+
+			break;
+		}
+
 		case 2:
 		{
 			int16 axis = NewState.LeftStickY;
@@ -2482,7 +2490,9 @@ bool CPad::GetHorn(void)
 	{
 		case 0:
 		{
-			return !!NewState.LeftShock;
+			// Wii v3: horn is the Nunchuk C button alone.  The nitro-taxi jump
+			// (Automobile.cpp) reads HornJustDown, so this must stay unconditional.
+			return !!NewState.LeftShoulder1;
 
 			break;
 		}
@@ -2559,6 +2569,13 @@ bool CPad::GetCarGunFired(void)
 	switch (CURMODE)
 	{
 		case 0:
+		{
+			// Wii v3: A (Cross) fires the car gun / drive-by, so B stays the gas.
+			return !!NewState.Cross;
+
+			break;
+		}
+
 		case 1:
 		case 2:
 		{
@@ -2615,7 +2632,10 @@ int16 CPad::GetHandBrake(void)
 		case 0:
 		case 1:
 		{
-			return NewState.RightShoulder1;
+			// Wii v3: the handbrake is the D-pad down on its own.  It used to be a
+			// chord on the aim button (R1) plus 2, which made it impossible to
+			// brake and handbrake without also aiming.
+			return NewState.DPadDown;
 
 			break;
 		}
@@ -2646,16 +2666,14 @@ int16 CPad::GetBrake(void)
 	switch (CURMODE)
 	{
 		case 0:
+		case 1:
 		case 2:
 		{
-			return NewState.Square;
-
-			break;
-		}
-
-		case 1:
-		{
-			return NewState.Square;
+			// Wii v3: brake and reverse live on the Nunchuk trigger (Z,
+			// RightShoulder1).  It is the one control a player holds down for a
+			// long time while steering, and the trigger-shaped button under the
+			// index finger is the natural home for it.
+			return NewState.RightShoulder1;
 
 			break;
 		}
@@ -2811,6 +2829,14 @@ int16 CPad::GetAccelerate(void)
 	switch (CURMODE)
 	{
 		case 0:
+		{
+			// Wii v3 layout: B (Circle) is the accelerator.  The handbrake is no
+			// longer a chord on the aim button (it is 2 alone now), so B is free.
+			return NewState.Circle;
+
+			break;
+		}
+
 		case 2:
 		{
 			return NewState.Cross;
@@ -2945,7 +2971,12 @@ bool CPad::ChangeStationJustDown(void)
 	{
 		case 0:
 		{
-			return !!(NewState.LeftShoulder1 && !OldState.LeftShoulder1);
+			// Wii v3: the radio station button is + (LeftShock).  C (horn) and the
+			// shoulder buttons no longer double as the station, so the wheel and
+			// the + key each do one thing.  The same field is the scoped zoom-in,
+			// which cannot overlap: you are either in a car or looking down a
+			// scope, never both.
+			return !!(NewState.LeftShock && !OldState.LeftShock);
 
 			break;
 		}
@@ -3289,6 +3320,15 @@ bool CPad::SniperZoomIn(void)
 	switch (CURMODE)
 	{
 		case 0:
+		{
+			// Wii v3: zoom in is + while scoped.  This only ever runs in the
+			// sniper mode, where the radio (+) is not in play, so one field can
+			// serve both without them ever colliding.
+			return !!NewState.LeftShock;
+
+			break;
+		}
+
 		case 1:
 		case 3:
 		{
@@ -3316,6 +3356,13 @@ bool CPad::SniperZoomOut(void)
 	switch (CURMODE)
 	{
 		case 0:
+		{
+			// Wii v3: zoom out is - while scoped, next to + for zoom in.
+			return !!NewState.Select;
+
+			break;
+		}
+
 		case 1:
 		case 3:
 		{
