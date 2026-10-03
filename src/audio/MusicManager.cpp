@@ -20,6 +20,9 @@
 #include "Weather.h"
 #include "DMAudio.h"
 #include "GenericGameStorage.h"
+#ifdef NINTENDO_WII
+#include "WiiSpeaker.h"
+#endif
 
 #ifdef GTA_PS2
 #include <libcdvd.h>
@@ -50,10 +53,6 @@ cMusicManager MusicManager;
 int32 gNumRetunePresses;
 int32 gRetuneCounter;
 bool8 g_bAnnouncementReadPosAlready;
-#ifdef NINTENDO_WII
-extern void WiiSpeakerPlayTuneStatic(void);
-#endif
-
 uint8 RadioStaticCounter = 5;
 uint32 RadioStaticTimer;
 

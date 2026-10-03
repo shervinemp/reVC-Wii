@@ -15,6 +15,7 @@ if(NINTENDO_WII)
             "${CMAKE_CURRENT_SOURCE_DIR}/audio/WiiSfxCache.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/wii-port/wii_game.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/wii-port/WiiPad.cpp"
+            "${CMAKE_CURRENT_SOURCE_DIR}/wii-port/WiiSpeaker.cpp"
             "${CMAKE_CURRENT_SOURCE_DIR}/wii-port/WiiTrace.cpp"
         )
         list(REMOVE_DUPLICATES WII_GAME_SOURCES)

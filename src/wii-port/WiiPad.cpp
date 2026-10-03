@@ -14,6 +14,7 @@
 #include "PlayerPed.h"
 #include "Timer.h"
 #include "WiiPad.h"
+#include "WiiSpeaker.h"
 #include "WiiTrace.h"
 #include "platform.h"
 #include "skeleton.h"
@@ -609,54 +610,6 @@ WiiPadApplyControlDefaults(void)
 	ControlsManager.m_lStickDeadzone = 0.12f;
 	ControlsManager.m_lStickSensX = 1.15f;
 	ControlsManager.m_lStickSensY = 1.15f;
-}
-
-int8 WiiRemoteSpeakerEnabled = 1;
-static uint32 s_staticRemaining = 0;
-static uint32 s_staticLfsr = 0x12345678u;
-
-void
-WiiSpeakerPlayTuneStatic(void)
-{
-	if(!WiiRemoteSpeakerEnabled)
-		return;
-	// A fresh burst re-arms whatever is still draining, so a quick double retune
-	// sounds like one continuous burst rather than a stutter.
-	s_staticRemaining = 1200;
-}
-
-void
-WiiSpeakerService(void)
-{
-	if(s_staticRemaining == 0)
-		return;
-	if(!WiiRemoteSpeakerEnabled){
-		s_staticRemaining = 0;
-		return;
-	}
-	uint32 expansion;
-	if(WPAD_Probe(WPAD_CHAN_0, &expansion) != WPAD_ERR_NONE){
-		// No remote to send to: drop the burst rather than resume it the moment
-		// one is plugged in long after the player changed the station.
-		s_staticRemaining = 0;
-		return;
-	}
-	if(!WPAD_IsSpeakerEnabled(WPAD_CHAN_0))
-		WPAD_ControlSpeaker(WPAD_CHAN_0, 1);
-
-	// The remote clocks samples out at its own rate; this chunk only has to stay
-	// ahead of the playback buffer, so a modest slice a frame is plenty. The
-	// payload is raw 8-bit noise (xorshift), which is what static is anyway.
-	uint8 chunk[48];
-	uint32 n = s_staticRemaining < (uint32)sizeof(chunk) ? s_staticRemaining : (uint32)sizeof(chunk);
-	for(uint32 i = 0; i < n; i++){
-		s_staticLfsr ^= s_staticLfsr << 13;
-		s_staticLfsr ^= s_staticLfsr >> 17;
-		s_staticLfsr ^= s_staticLfsr << 5;
-		chunk[i] = (uint8)s_staticLfsr;
-	}
-	WPAD_SendStreamData(WPAD_CHAN_0, chunk, n);
-	s_staticRemaining -= n;
 }
 
 void

@@ -1,0 +1,32 @@
+#pragma once
+
+#ifdef AIM_ASSIST
+
+// Aim assist for the Standard (free aim) control method.
+//
+// In Standard the crosshair sits at a fixed point on screen and shots leave along
+// the camera's ray through it (CCamera::Find3rdPersonCamTargetVector), so aiming
+// is nothing but steering the camera.  The assist therefore works on the look
+// input the mouse camera is about to apply, with no lock-on and no camera mode
+// change: the crosshair never leaves the screen and the view never jumps.
+//
+//  - Friction: with the crosshair near a target the look speed drops, so it is
+//    easier to settle on and to stay on.
+//  - Magnetism: the crosshair is eased toward the target's chest, which also
+//    carries it along when the target moves.  It lets go the moment the player
+//    pushes away from the target.
+//
+// It acts only while the aim button is held with a gun that can aim.
+class CAimAssist
+{
+public:
+	// The "Aim Assist" option; persisted to the INI.
+	static int8 bEnabled;
+
+	// Called by CCam::Process_FollowPedWithMouse with the offsets (radians) it is
+	// about to add to the camera's Alpha (pitch) and Beta (yaw); bends them in place.
+	static void Process(const CVector &source, const CVector &front, const CVector &up, float fov,
+	                    float &alphaOffset, float &betaOffset);
+};
+
+#endif

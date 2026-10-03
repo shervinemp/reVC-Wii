@@ -30,6 +30,10 @@
 #include "IniFile.h"
 #include "CarCtrl.h"
 #include "Population.h"
+#include "AimAssist.h"
+#ifdef NINTENDO_WII
+#include "WiiSpeaker.h"
+#endif
 
 // Menu screens array is at the bottom of the file.
 
@@ -96,6 +100,12 @@
 	#define INVERT_PAD_SELECTOR
 #endif
 
+#ifdef AIM_ASSIST
+	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define AIM_ASSIST_TOGGLE
+#endif
+
 #ifdef GAMEPAD_MENU
 	#define SELECT_CONTROLLER_TYPE  MENUACTION_CFO_SELECT, "FEC_TYP", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsControllerType, "Controller", "Type", controllerTypes, ARRAY_SIZE(controllerTypes), false, ControllerTypeAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
@@ -104,10 +114,6 @@
 
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
-
-#ifdef NINTENDO_WII
-extern int8 WiiRemoteSpeakerEnabled;
-#endif
 
 void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
@@ -630,13 +636,11 @@ CMenuScreenCustom aScreens[] = {
 	// MENUPAGE_CONTROLLER_PC = 26
 	{ "FET_CTL", MENUPAGE_OPTIONS, new CCustomScreenLayout({0, 0, MENU_DEFAULT_LINE_HEIGHT, false, false, 150}), nil,
 #ifdef PC_PLAYER_CONTROLS
-		// The control-method toggle ("Standard"/"Classic" mouse-third-person
-		// scheme) and the keyboard-binding page are PC plumbing: on the Wii the
-		// method row is a dead lever (both handlers are stubs under
-		// NINTENDO_WII) and the keyboard page is rows of GETKEY binds that no
-		// keyboard can ever answer -- entering it leaves the menu waiting on
-		// the nonexistent device.  The remaining rows are real: mouse/IR
-		// settings and the restore-defaults lever.
+		// The control-method toggle (Standard free aim / Classic lock-on) is live on
+		// the Wii.  The keyboard-binding page is not: it is rows of GETKEY binds
+		// that no keyboard can ever answer, and entering it leaves the menu
+		// waiting on the nonexistent device.  Mouse/IR settings and the
+		// restore-defaults lever are real.
 #ifndef NINTENDO_WII
 		MENUACTION_CTRLMETHOD,	"FET_STI", {nil, SAVESLOT_NONE, MENUPAGE_CONTROLLER_PC}, 320, 150, MENUALIGN_CENTER,
 		MENUACTION_KEYBOARDCTRLS,"FEC_RED", {nil, SAVESLOT_NONE, MENUPAGE_KEYBOARD_CONTROLS}, 0, 0, MENUALIGN_CENTER,
@@ -702,6 +706,7 @@ CMenuScreenCustom aScreens[] = {
 #ifndef GAMEPAD_MENU
 	   INVERT_PAD_SELECTOR
 #endif
+		AIM_ASSIST_TOGGLE
 		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
 		//MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 260, MENUALIGN_CENTER, // original y

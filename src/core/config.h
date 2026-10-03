@@ -468,6 +468,9 @@ static_assert(false, "SUPPORT_XBOX_SCRIPT and SUPPORT_MOBILE_SCRIPT are mutually
 // Camera
 #define IMPROVED_CAMERA		// Better Debug cam, and maybe more in the future
 #define FREE_CAM		// Rotating cam
+#ifdef NINTENDO_WII
+#define AIM_ASSIST		// friction and magnetism toward targets for the Standard (free aim) control method
+#endif
 
 // Audio
 #define EXTERNAL_3D_SOUND // use external engine to simulate 3d audio spatialization. OpenAL would not work without it (because it works in a 3d space

@@ -23,8 +23,10 @@ enum WiiConnectedPad
 // pointer is measured against the centre of the screen by is wrong.
 void WiiPadInitialise(int pointerWidth, int pointerHeight);
 
-// Force Classic / PS2 control (Zelda walk, lock-on) and Wii stick tuning after boot
-// or LoadSettings so a PC gta_vc.set cannot leave mouse mode or a huge deadzone.
+// Wii stick tuning, re-asserted after boot and after LoadSettings so a PC
+// gta_vc.set cannot leave a huge deadzone behind.  The control method itself
+// (Classic lock-on or Standard free aim) is the player's choice and is not
+// touched here.
 void WiiPadApplyControlDefaults(void);
 
 // Latches one sample from both stacks.  Everything below reads whatever this
@@ -55,17 +57,5 @@ void WiiPadUpdateRumble(void);
 // Which controller currently owns pad 0 (GameCube preferred).
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);
-
-// Wiimote speaker: mirrors the radio-tuning static through the remote's own
-// little speaker, so the TV and the remote carry it together. The toggle is a
-// frontend option (persisted to the INI); set it to 0 to mute the remote.
-extern int8 WiiRemoteSpeakerEnabled;
-
-// Queues a short burst of static; the service below feeds it out over the next
-// few frames. No-op when the toggle is off.
-void WiiSpeakerPlayTuneStatic(void);
-// Drains any pending burst a few bytes per frame. Called once per frame from
-// WiiPadScan, after WPAD_ScanPads.
-void WiiSpeakerService(void);
 
 #endif

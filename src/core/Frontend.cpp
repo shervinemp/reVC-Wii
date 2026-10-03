@@ -36,8 +36,10 @@
 #include "FileLoader.h"
 #include "User.h"
 #include "sampman.h"
+#include "AimAssist.h"
 #ifdef NINTENDO_WII
 #include "WiiPad.h"
+#include "WiiSpeaker.h"
 #endif
 
 // Similar story to Hud.cpp:
@@ -468,6 +470,27 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
 }
 
+// The Wii starts on Classic (lock-on); Standard is free aim with the GTA5-style
+// soft assist, and is the player's to opt into from the controls page.
+#ifdef NINTENDO_WII
+#define DEFAULT_CONTROL_METHOD CONTROL_CLASSIC
+#else
+#define DEFAULT_CONTROL_METHOD CONTROL_STANDARD
+#endif
+
+// m_bUseMouse3rdPerson is the Standard method as the camera sees it, so the two
+// are only ever changed together.
+void
+CMenuManager::SetControlMethod(int8 method)
+{
+	m_ControlMethod = method;
+#ifdef PC_PLAYER_CONTROLS
+	CCamera::m_bUseMouse3rdPerson = method == CONTROL_STANDARD;
+#else
+	CCamera::m_bUseMouse3rdPerson = false;
+#endif
+}
+
 CMenuManager::CMenuManager()
 {
 	m_StatsScrollSpeed = 150.0f;
@@ -507,18 +530,7 @@ CMenuManager::CMenuManager()
 	DisplayComboButtonErrMsg = false;
 	m_PrefsDMA = 1;
 	OS_Language = LANG_ENGLISH;
-	m_ControlMethod = CONTROL_STANDARD;
-#ifdef PC_PLAYER_CONTROLS
-	CCamera::m_bUseMouse3rdPerson = true;
-#else
-	CCamera::m_bUseMouse3rdPerson = false;
-#endif
-#ifdef NINTENDO_WII
-	// Safe lock-on default on Wii. The player can opt into Standard (free aim +
-	// GTA5-style soft assist) via the control-method toggle, which now persists.
-	m_ControlMethod = CONTROL_CLASSIC;
-	CCamera::m_bUseMouse3rdPerson = false;
-#endif
+	SetControlMethod(DEFAULT_CONTROL_METHOD);
 	m_lastWorking3DAudioProvider = 0;
 	m_nFirstVisibleRowOnList = 0;
 	m_nScrollbarTopMargin = 0.0f;
@@ -4077,7 +4089,9 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			m_nSelectedListRow = m_nTotalListRow - 1;
 	}
 
-	if ((CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) && m_nCurrScreen != MENUPAGE_MAP) {
+	// On the map Cross places the waypoint (AdditionalOptionInput) and must not
+	// also select the screen's only option, Back.
+	if (CPad::GetPad(0)->GetEnterJustDown() || (CPad::GetPad(0)->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
 		m_bShowMouse = 0;
 		optionSelected = true;
 	}
@@ -4395,7 +4409,7 @@ CMenuManager::UserInput(void)
 				optionSelected = true;
 			}
 		} else {
-			if ((CPad::GetPad(0)->GetEnterJustDown() || CPad::GetPad(0)->GetCrossJustDown()) && m_nCurrScreen != MENUPAGE_MAP) {
+			if (CPad::GetPad(0)->GetEnterJustDown() || (CPad::GetPad(0)->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
 				m_bShowMouse = false;
 				optionSelected = true;
 			}
@@ -4918,6 +4932,9 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					m_PrefsMP3BoostVolume = 0;
 					m_PrefsStereoMono = 1;
 					m_PrefsSpeakers = 0;
+#ifdef NINTENDO_WII
+					WiiRemoteSpeakerEnabled = 1;
+#endif
 					DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
 					DMAudio.SetMusicMasterVolume(m_PrefsMusicVolume);
 					DMAudio.SetEffectsMasterVolume(m_PrefsSfxVolume);
@@ -4986,11 +5003,9 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #endif
 					TheCamera.m_fMouseAccelHorzntl = 0.0025f;
 					CVehicle::m_bDisableMouseSteering = true;
-					m_ControlMethod = CONTROL_STANDARD;
-#ifdef PC_PLAYER_CONTROLS
-					TheCamera.m_bUseMouse3rdPerson = true;
-#else
-					TheCamera.m_bUseMouse3rdPerson = false;
+					SetControlMethod(DEFAULT_CONTROL_METHOD);
+#ifdef AIM_ASSIST
+					CAimAssist::bEnabled = true;
 #endif
 					SaveSettings();
 #ifdef LOAD_INI_SETTINGS
@@ -5000,17 +5015,8 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				SetHelperText(2);
 				break;
 			case MENUACTION_CTRLMETHOD:
-				if (m_ControlMethod == CONTROL_CLASSIC) {
-					CCamera::m_bUseMouse3rdPerson = true;
-					m_ControlMethod = CONTROL_STANDARD;
-				} else {
-					CCamera::m_bUseMouse3rdPerson = false;
-					m_ControlMethod = CONTROL_CLASSIC;
-				}
+				SetControlMethod(m_ControlMethod == CONTROL_CLASSIC ? CONTROL_STANDARD : CONTROL_CLASSIC);
 				SaveSettings();
-#ifdef LOAD_INI_SETTINGS
-				SaveINIControllerSettings();
-#endif
 				break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 			case MENUACTION_CFO_SELECT:
@@ -5170,12 +5176,8 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 				}
 				break;
 			case MENUACTION_CTRLMETHOD:
-				m_ControlMethod = !m_ControlMethod;
-				CCamera::m_bUseMouse3rdPerson = !m_ControlMethod;
+				SetControlMethod(m_ControlMethod == CONTROL_CLASSIC ? CONTROL_STANDARD : CONTROL_CLASSIC);
 				SaveSettings();
-#ifdef LOAD_INI_SETTINGS
-				SaveINIControllerSettings();
-#endif
 				break;
 #ifdef CUSTOM_FRONTEND_OPTIONS
 			case MENUACTION_CFO_SELECT:

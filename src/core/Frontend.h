@@ -836,6 +836,7 @@ public:
 	void RequestFrontEndStartUp();
 	void ResetHelperText();
 	void SaveSettings();
+	void SetControlMethod(int8 method);
 	void SetHelperText(int text);
 	float StretchX(float);
 	float StretchY(float);

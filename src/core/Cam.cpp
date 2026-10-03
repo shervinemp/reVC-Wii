@@ -28,6 +28,7 @@
 #include "Camera.h"
 #include "DMAudio.h"
 #include "Bike.h"
+#include "AimAssist.h"
 #include "Pickups.h"
 
 bool PrintDebugCode = false;
@@ -1415,6 +1416,10 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 		else
 			AlphaOffset = 0.0f;
 	}
+
+#ifdef AIM_ASSIST
+	CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset);
+#endif
 
 	Alpha += AlphaOffset;
 	Beta += BetaOffset;
