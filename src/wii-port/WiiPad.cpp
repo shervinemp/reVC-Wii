@@ -163,8 +163,8 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // turns the rebound into "not armed yet" instead of a second, phantom jump.
 static bool s_flickJumpPulse = false;
 static const float kFlickGravityFollow = 0.04f;  // slow baseline follow, per scan
-static const float kFlickFraction = 0.30f;       // a jolt must exceed ~30% of g
-static const float kFlickRearmFraction = 0.16f;  // "settled" below ~16% of g
+static const float kFlickFraction = 0.65f;       // a jolt must exceed ~65% of g: a decisive flick only
+static const float kFlickRearmFraction = 0.35f;  // "settled" below ~35% of g
 static const float kFlickSettleSec = 0.09f;      // stay deaf this long after a flick
 static const float kFlickDownAlign = 0.55f;      // must still point into gravity: down-flick only
 
