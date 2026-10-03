@@ -523,12 +523,12 @@ captureClassic(const WPADData &data, CControllerState &state,
 	const bool inCar = playerInVehicle();
 
 	// Same v3 field layout as the Wiimote and the GameCube pad, so the Mode 0
-	// rebinds read the same whichever pad is in hand.  Classic's A is the gas
-	// (Circle), B the fire (Cross), L the brake (RightShoulder1), R the horn
-	// (LeftShoulder1), and the D-pad the vehicle cluster when it has two sticks
-	// of its own to walk with.
-	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_A);   // A: fire (foot) / fire+drive-by (car)
-	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_B);    // B: enter+sprint (foot) / gas (car)
+	// rebinds read the same whichever pad is in hand.  Physical A is the gas
+	// (Cross, the "commit" button) and B the fire (Circle, the "shoot" button),
+	// L the brake (RightShoulder1), R the horn (LeftShoulder1), and the D-pad the
+	// vehicle cluster when it has two sticks of its own to walk with.
+	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
+	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
 	setButton(state.Square, buttons & WPAD_CLASSIC_BUTTON_Y);   // Y: jump
 	setButton(state.Triangle, buttons & WPAD_CLASSIC_BUTTON_X); // X: exit vehicle
 	setButton(state.RightShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_L); // L: brake
@@ -603,9 +603,11 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	//   +  pause (always)
 	//   -  camera mode (foot)
 	//   flick  jump; HOME is the system menu, not the game
-	// The Nunchuk stick walks and steers, which is what frees the D-pad to be the
-	// vehicle cluster. In the menus the D-pad goes back to being a D-pad.
-	const bool dpadIsCluster = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
+	// The Nunchuk is required: the stick does all movement, so without one there is
+	// nothing to walk or steer with.  Rather than pretend a bare Wiimote works, the
+	// D-pad is always the cluster in-game and the boot screen blocks until a
+	// Nunchuk is plugged in.  In the menus the D-pad goes back to being a D-pad.
+	const bool dpadIsCluster = !FrontEndMenuManager.m_bMenuActive;
 
 	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
@@ -648,8 +650,7 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 		// Look behind on foot reads RightShock, which nothing else uses now.
 		setButton(state.RightShock, dpadUp);
 	}else{
-		// Menus, and a bare Wiimote with no Nunchuk to walk with: the D-pad is a
-		// D-pad, so it still walks and drives.
+		// Menus only: the D-pad navigates as a D-pad.
 		setButton(state.DPadUp, dpadUp);
 		setButton(state.DPadDown, dpadDown);
 		setButton(state.DPadLeft, dpadLeft);
@@ -906,8 +907,13 @@ WiiPadScan(void)
 		const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
 			wd->exp.type == WPAD_EXP_NUNCHUK;
 		const bool onFoot = ped != nullptr && !ped->bInVehicle;
+		// Menus run with the player ped still alive on foot, so without this the
+		// flick would pulse Square behind an open menu.  Gameplay input is paused
+		// in menus anyway, so the pulse would go nowhere -- this just keeps the
+		// gesture honest.
+		const bool inMenu = FrontEndMenuManager.m_bMenuActive;
 
-		if(!nunchukReady || !onFoot){
+		if(!nunchukReady || !onFoot || inMenu){
 			s_haveAccel = false;
 		}else{
 			const s16 accelY = wd->exp.nunchuk.accel.y;
