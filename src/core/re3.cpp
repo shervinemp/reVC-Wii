@@ -545,6 +545,16 @@ bool LoadINISettings()
 #endif
 	ReadIniIfExists("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
 	ReadIniIfExists("Controller", "Method", &FrontEndMenuManager.m_ControlMethod);
+#ifdef NINTENDO_WII
+	// This port's default moved to Standard (free aim and pointer aim).  A settings file
+	// saved before that still says Classic and would hide the new aiming for good, so
+	// the method is set to Standard once; the version written back marks it done, and
+	// the controls page switches it from then on.
+	int8 aimDefaults = 0;
+	ReadIniIfExists("Wii", "AimDefaults", &aimDefaults);
+	if (aimDefaults < 1)
+		FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
+#endif
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
 	ReadIniIfExists("Display", "RadarMode", &FrontEndMenuManager.m_PrefsRadarMode);
@@ -654,6 +664,9 @@ void SaveINISettings()
 	StoreIni("Graphics", "FrameLimiter", FrontEndMenuManager.m_PrefsFrameLimiter);
 	StoreIni("General", "SkinFile", FrontEndMenuManager.m_PrefsSkinFile, 256);
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
+#ifdef NINTENDO_WII
+	StoreIni("Wii", "AimDefaults", (int8)1);
+#endif
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);
 	StoreIni("Display", "RadarMode", FrontEndMenuManager.m_PrefsRadarMode);

@@ -522,22 +522,46 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	StickAccumulator &sticks, const StickSettings &settings)
 {
 	const u32 buttons = data.btns_h;
-	setButton(state.Circle, buttons & WPAD_BUTTON_B);
+	const bool hasNunchuk = expansion == WPAD_EXP_NUNCHUK;
+	const bool inCar = playerInVehicle();
+	const bool dpadLeft = (buttons & WPAD_BUTTON_LEFT) != 0;
+	const bool dpadRight = (buttons & WPAD_BUTTON_RIGHT) != 0;
+	const bool dpadDown = (buttons & WPAD_BUTTON_DOWN) != 0;
+
+	// With a Nunchuk the stick walks and steers, which frees the D-pad for what the
+	// L2 and R2 buttons do on other pads and a Wiimote has no way to press: cycle
+	// weapons on foot, and in a vehicle look left and right (down looks behind,
+	// which is both at once).  The GameCube pad is mapped the same way.  Menus
+	// still get the D-pad as a D-pad.
+	const bool dpadIsShoulders = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
+	const bool lookingOut = inCar && dpadIsShoulders && (dpadLeft || dpadRight);
+
+	// B is the trigger, Circle, on foot.  In a vehicle it brakes and reverses, the
+	// way Mario Kart has it, because the 1 button (which still does too) is a long
+	// stretch for the thumb that is already on A.  The exception is looking out of
+	// a side window, where B fires the drive-by instead.
+	const bool b = (buttons & WPAD_BUTTON_B) != 0;
+	setButton(state.Circle, b && (!inCar || lookingOut));
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);
-	setButton(state.Square, buttons & WPAD_BUTTON_1);
+	setButton(state.Square, (buttons & WPAD_BUTTON_1) || (inCar && b && !lookingOut));
 	setButton(state.Triangle, buttons & WPAD_BUTTON_2);
 	setButton(state.Start, buttons & WPAD_BUTTON_PLUS);
 	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
 
-	// CPad::GetPedWalkUpDown and GetSteeringUpDown weigh the D-pad against the
-	// left stick at 255/2, so on a bare Wiimote the D-pad alone walks and drives
-	// without any synthetic stick behind it.
-	setButton(state.DPadUp, buttons & WPAD_BUTTON_UP);
-	setButton(state.DPadDown, buttons & WPAD_BUTTON_DOWN);
-	setButton(state.DPadLeft, buttons & WPAD_BUTTON_LEFT);
-	setButton(state.DPadRight, buttons & WPAD_BUTTON_RIGHT);
+	if(dpadIsShoulders){
+		setButton(state.LeftShoulder2, dpadLeft || (inCar && dpadDown));
+		setButton(state.RightShoulder2, dpadRight || (inCar && dpadDown));
+	}else{
+		// CPad::GetPedWalkUpDown and GetSteeringUpDown weigh the D-pad against the
+		// left stick at 255/2, so on a bare Wiimote the D-pad alone walks and drives
+		// without any synthetic stick behind it.
+		setButton(state.DPadUp, buttons & WPAD_BUTTON_UP);
+		setButton(state.DPadDown, buttons & WPAD_BUTTON_DOWN);
+		setButton(state.DPadLeft, buttons & WPAD_BUTTON_LEFT);
+		setButton(state.DPadRight, buttons & WPAD_BUTTON_RIGHT);
+	}
 
-	if(expansion != WPAD_EXP_NUNCHUK)
+	if(!hasNunchuk)
 		return;
 
 	// libogc reports the expansion's buttons twice: merged into the Wiimote mask
@@ -761,6 +785,7 @@ WiiPadScan(void)
 	s_connectedGameCubePads = (uint32)PAD_ScanPads();
 	WPAD_ScanPads();
 	WiiSpeakerService();
+	WiiTraceService();
 
 	// HOME is what a Wii player reaches for to leave a game, and it is not part
 	// of any CControllerState, so it is handled here rather than mapped.  Both

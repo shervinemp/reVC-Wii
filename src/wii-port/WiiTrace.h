@@ -8,28 +8,30 @@
 // answer is the one that stopped.  So the step is recorded by the game thread
 // and reported by a separate one.
 
-// The one switch for diagnostics on this port.  At 1 every line goes into
-// debug.log beside the ELF; at 0 NOTHING below runs at all.
+// The one switch for diagnostics on this port.
+//
+//   0  nothing runs at all.
+//   1  an EVENT log: debug.log beside the ELF (or on the SD card when the ELF is on a
+//      read-only stick) gets the rare lines -- boot, saves, HOME, errors -- and nothing
+//      else.  Nothing is done per asset or per frame, no thread runs, and the file is
+//      committed to the card at most once a second from the frame loop, so it costs
+//      nothing while playing.  This is the setting to leave on.
+//   2  full diagnostics: also a line for every model, texture and stream the game
+//      touches, a watchdog thread that reports stalls and samples the heap, and the
+//      renderer's frame trace.  For chasing a freeze or a leak, and expensive: the
+//      watchdog runs above the game thread and walks the whole heap, and every asset
+//      line is formatted, written and flushed.  It is what made the game hitch mid-play.
 //
 // The console copy is deliberately absent in a normal build: on the Wii both
-// printf through the console device and SYS_Report draw onto the framebuffer,
-// which scrolled the menus and the game image around, so screen output only
-// exists while the boot is too early to read a log card.  debug.log beside the
-// ELF is the one medium, which makes a freeze on real hardware legible without
-// touching what is on screen.
-//
-// Turning it off is worth real time rather than just a quieter screen.  The
-// expensive part was never the screen itself: it is the work done to reach it.
-// wiiLog formats into a 512 byte buffer for every model, texture and stream the
-// game touches, and streaming touches thousands while driving; WiiTraceNote
-// copies each of those strings again; WiiTraceHeap walks the whole heap through
-// mallinfo; and the watchdog is a thread with an 8KB stack waking once a
-// second.  At 0 none of that is compiled in, and the watchdog is never started.
+// printf through the console device and SYS_Report draw onto the framebuffer, which
+// scrolled the menus and the game image around, so screen output only exists while
+// the boot is too early to read a log card.  debug.log is the one medium, which
+// makes a freeze on real hardware legible without touching what is on screen.
 #define CREATE_LOG 1
 
 // Opens debug.log inside the given directory, and does nothing if one is already
 // open, so it can be called again later with a better guess.  Does nothing at
-// all unless CREATE_LOG is 1.
+// all unless CREATE_LOG is 1 or more.
 void WiiTraceOpenLog(const char *directory);
 
 // Commits the log and closes it.  Only matters for a clean exit: the watchdog
@@ -50,7 +52,11 @@ void WiiTraceReport(const char *format, ...) __attribute__((format(printf, 1, 2)
 // watchdog sees fine grained progress without the log carrying it.
 void WiiTraceNote(const char *message);
 
-// Starts the reporting thread.  It names the current step and reports the heap
+// Commits what the event log has written to the card, at most once a second.  Called
+// once a frame; only does anything at CREATE_LOG 1 (at 2 the watchdog does it).
+void WiiTraceService(void);
+
+// Starts the reporting thread (CREATE_LOG 2 only).  It names the current step and reports the heap
 // whenever that step has not changed for a while, so a main thread stuck in a
 // loop or blocked on storage still gets described.
 void WiiTraceStartWatchdog(void);

@@ -320,7 +320,7 @@ RwUInt32 gGameState = 0;
 extern "C" void
 wiiLog(const char *format, ...)
 {
-#if !CREATE_LOG
+#if CREATE_LOG < 2
 	// The one that actually costs something.  The engine calls this for every
 	// model, texture, collision file and audio stream it touches, and streaming
 	// touches thousands of them while driving -- each one formatting into the
@@ -356,7 +356,7 @@ psInitialize(void)
 
 	// librw is built as its own target and cannot see CREATE_LOG, so the switch
 	// is carried across here rather than compiled in over there.
-	rw::gx::setFrameTrace(CREATE_LOG != 0);
+	rw::gx::setFrameTrace(CREATE_LOG >= 2);
 
 // Saves land beside the game data, which is where the desktop skeletons put
 // them too -- glfw.cpp, sdl2.cpp and win.cpp all make this same call from

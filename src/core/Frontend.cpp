@@ -471,13 +471,10 @@ CMenuManager::SwitchToNewScreen(int8 screen)
 	m_LastScreenSwitch = CTimer::GetTimeInMillisecondsPauseMode();
 }
 
-// The Wii starts on Classic (lock-on); Standard is free aim with the GTA5-style
-// soft assist, and is the player's to opt into from the controls page.
-#ifdef NINTENDO_WII
-#define DEFAULT_CONTROL_METHOD CONTROL_CLASSIC
-#else
+// Standard is free aim (the pointer moves the crosshair, with aim assist), which is
+// what the Wii port's aiming is built around; Classic is the lock-on, and the first row
+// of the controls page switches between them.
 #define DEFAULT_CONTROL_METHOD CONTROL_STANDARD
-#endif
 
 // m_bUseMouse3rdPerson is the Standard method as the camera sees it, so the two
 // are only ever changed together.

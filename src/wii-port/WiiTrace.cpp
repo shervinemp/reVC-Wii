@@ -212,9 +212,27 @@ WiiTraceReport(const char *format, ...)
 }
 
 void
+WiiTraceService(void)
+{
+#if CREATE_LOG == 1
+	// Events are rare, so this is almost always a single flag test.  When one has
+	// been written it is committed on a later frame than the one it happened in,
+	// and no more than once a second.
+	static u64 s_lastCommit;
+	if(!s_logDirty)
+		return;
+	const u64 now = gettime();
+	if(ticks_to_millisecs(now - s_lastCommit) < 1000)
+		return;
+	s_lastCommit = now;
+	commitLog();
+#endif
+}
+
+void
 WiiTraceNote(const char *message)
 {
-#if !CREATE_LOG
+#if CREATE_LOG < 2
 	// Nothing reads s_step with the watchdog gone, so this would be a strlen and
 	// a copy per model streamed, written into a buffer no one looks at.
 	(void)message;
@@ -234,7 +252,7 @@ WiiTraceNote(const char *message)
 void
 WiiTraceHeap(const char *tag)
 {
-#if !CREATE_LOG
+#if CREATE_LOG < 2
 	// mallinfo walks every free block to build its answer, so this is not a cheap
 	// call to leave in on a console that has already run short of memory.
 	(void)tag;
@@ -256,7 +274,7 @@ WiiTraceHeap(const char *tag)
 void
 WiiTraceStartWatchdog(void)
 {
-#if !CREATE_LOG
+#if CREATE_LOG < 2
 	// The watchdog exists to report, so with nothing to report to it is a thread
 	// and an 8KB stack spent on waking up once a second to decide to stay quiet.
 #else
