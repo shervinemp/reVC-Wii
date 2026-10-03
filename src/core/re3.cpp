@@ -197,7 +197,26 @@ CustomFrontendOptionsPopulate(void)
 #define MINI_CASE_SENSITIVE
 #include "ini.h"
 
-mINI::INIFile ini("reVC.ini");
+#ifdef NINTENDO_WII
+const char *_psGetUserFilesFolder();
+
+// The settings are a user file.  A bare "reVC.ini" is looked up and written in the
+// working directory, which is the install folder, and on a read-only install (the
+// NTFS stick) that means they are never saved.  The user-files folder is the one
+// place that takes writes, so read and write there; an ini beside the game is still
+// read as a seed when none has been saved yet.
+static mINI::INIFile
+IniFile(void)
+{
+	return mINI::INIFile(std::string(_psGetUserFilesFolder()) + "/reVC.ini");
+}
+#else
+static mINI::INIFile
+IniFile(void)
+{
+	return mINI::INIFile("reVC.ini");
+}
+#endif
 mINI::INIStructure cfg;
 
 bool ReadIniIfExists(const char *cat, const char *key, uint32 *out)
@@ -479,13 +498,18 @@ void SaveINIControllerSettings()
 #endif
 	StoreIni("Controller", "PadButtonsInited", ControlsManager.ms_padButtonsInited);
 
-	ini.write(cfg);
+	IniFile().write(cfg);
 }
 
 bool LoadINISettings()
 {
-	if (!ini.read(cfg))
+#ifdef NINTENDO_WII
+	if (!IniFile().read(cfg) && !mINI::INIFile("reVC.ini").read(cfg))
 		return false;
+#else
+	if (!IniFile().read(cfg))
+		return false;
+#endif
 
 #ifdef IMPROVED_VIDEOMODE
 	ReadIniIfExists("VideoMode", "Width", &FrontEndMenuManager.m_nPrefsWidth);
@@ -682,7 +706,7 @@ void SaveINISettings()
 	}
 #endif
 
-	ini.write(cfg);
+	IniFile().write(cfg);
 }
 
 #endif
