@@ -5,6 +5,7 @@
 #include <cstring>
 #include <malloc.h>
 
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <fat.h>
@@ -133,6 +134,64 @@ selectInstallDirectory(const char *launchDirectory)
 	// deberia tirar algun mensaje en vez de un logging para la gente gaga en el dolphin!!
 	bootPrintf("WII game boot: DATA/GTA_VC.DAT not found\n");
 	return false;
+}
+
+// The one reliable test of whether a volume takes writes: a read-only NTFS
+// mount and an absent SD card both simply fail the create.
+bool
+directoryAcceptsWrites(const char *directory)
+{
+	char path[192];
+	std::snprintf(path, sizeof(path), "%s/writetest.tmp", directory);
+	FILE *file = std::fopen(path, "wb");
+	if(file == nullptr)
+		return false;
+	std::fclose(file);
+	std::remove(path);
+	return true;
+}
+
+// mkdir -p for a "device:/a/b" path; whatever already exists is left alone.
+void
+makeDirectories(const char *path)
+{
+	char partial[128];
+	std::snprintf(partial, sizeof(partial), "%s", path);
+	char *scan = std::strchr(partial, ':');
+	scan = scan != nullptr ? scan + 1 : partial;
+	while(*scan == '/')
+		scan++;
+	for(; *scan != '\0'; scan++){
+		if(*scan != '/')
+			continue;
+		*scan = '\0';
+		mkdir(partial, 0777);
+		*scan = '/';
+	}
+	mkdir(partial, 0777);
+}
+
+// Saves and settings live beside the game when the game is on the SD card, as
+// they always have.  A game on USB keeps them on the SD card too, which is the
+// only place they can go when the stick is NTFS (mounted read-only), so the
+// folder is created if the card does not have it yet: nothing else would, and
+// every save would fail on the missing directory.  Only when the card does not
+// take writes do they follow the game onto the stick, if that is writable.
+// When nothing does, the SD default stays and the failure is the plain "cannot
+// save" rather than a path nobody expected.
+void
+selectUserFilesDirectory()
+{
+	if(std::strncmp(s_installDirectory, "sd:", 3) == 0){
+		std::snprintf(s_userFilesDirectory, sizeof(s_userFilesDirectory),
+		              "%s", s_installDirectory);
+		return;
+	}
+	makeDirectories(s_userFilesDirectory);
+	if(!directoryAcceptsWrites(s_userFilesDirectory) &&
+	   directoryAcceptsWrites(s_installDirectory))
+		std::snprintf(s_userFilesDirectory, sizeof(s_userFilesDirectory),
+		              "%s", s_installDirectory);
 }
 
 bool
@@ -353,7 +412,7 @@ const char *
 WiiUserCachePath(const char *relative)
 {
 	static char path[192];
-	if(strncmp(s_installDirectory, "sd:", 3) == 0)
+	if(std::strcmp(s_installDirectory, s_userFilesDirectory) == 0)
 		return relative;
 	const char *leaf = relative;
 	for(const char *scan = relative; (scan = strchr(scan, '/')) != nullptr; scan++)
@@ -600,10 +659,21 @@ WiiStdoutHookInstall(void)
 int
 main(int argc, char **argv)
 {
-	// Storage and logging come up before the video.  fatInitDefault and
-	// elfDirectory need neither the framebuffer nor GX, and putting the log first
-	// means a boot that dies in initializeVideo still leaves its last words in
-	// the file instead of on a console that never got drawn.
+	// Print the banner as the very first area on the television once the
+	// console exists: a build with the wrong devkitPro/libogc pairing then
+	// announces itself (GCC rev mirrors the toolchain install) instead of
+	// hiding behind a silent black screen.
+	//
+	// Video stays ahead of storage.  initializeVideo ends in console_init, which
+	// installs libogc's console as stdout and so overwrites the silent writer
+	// WiiStdoutHookInstall puts there; with the hook installed first, every
+	// engine printf lands back on the screen.  And a haltBoot before VIDEO_Init
+	// would wait on a VSync nothing has set up.
+	if(!initializeVideo()){
+		WiiTraceReport("WII game boot: video=failed\n");
+		haltBoot("video");
+	}
+
 	if(!fatInitDefault())
 		haltBoot("storage mount");
 
@@ -617,18 +687,12 @@ main(int argc, char **argv)
 	// and lines written before open go nowhere.  The second call covers a loader
 	// that passed no argv, and is a no-op once the first has already opened the file.
 	WiiTraceOpenLog(launchDirectory);
+	// A DOL launched from a read-only stick cannot keep its log beside itself;
+	// the SD card's app folder is the fallback, when it exists yet.
+	WiiTraceOpenLog(s_userFilesDirectory);
 	// Engine printf()/debug() lines land in the log from here on, so the
 	// console and the file narrate the same boot.
 	WiiStdoutHookInstall();
-
-	// Print the banner as the very first area on the television once the
-	// console exists: a build with the wrong devkitPro/libogc pairing then
-	// announces itself (GCC rev mirrors the toolchain install) instead of
-	// hiding behind a silent black screen.
-	if(!initializeVideo()){
-		WiiTraceReport("WII game boot: video=failed\n");
-		haltBoot("video");
-	}
 
 	// The stamp is on the screen AND in the log: whichever medium reaches the
 	// user carries the exact build that ran, so a stale DOL can no longer pose.
@@ -644,12 +708,8 @@ main(int argc, char **argv)
 		haltBoot("game data lookup");
 	WiiTraceOpenLog(s_installDirectory);
 
-	// Whole-install-on-SD layouts keep saving inside the install tree as
-	// always; a read-only USB assets mount relocates the user files onto the
-	// SD card (already the s_userFilesDirectory default).
-	if(strncmp(s_installDirectory, "sd:", 3) == 0)
-		std::snprintf(s_userFilesDirectory, sizeof(s_userFilesDirectory),
-		              "%s", s_installDirectory);
+	selectUserFilesDirectory();
+	WiiTraceOpenLog(s_userFilesDirectory);
 	bootPrintf("WII game boot: user files dir=%s\n", s_userFilesDirectory);
 
 	// psInitialize stores exactly these two into RsGlobal, and the pointer has to
