@@ -10261,6 +10261,11 @@ cAudioManager::ProcessMissionAudioSlot(uint8 slot)
 #ifdef GTA_PS2
 					SampleManager.StartChannel(nChannel + slot);
 #else
+#ifdef AUDIO_WII
+					// A phone call plays through the Wiimote as well (see WiiSpeaker.h).
+					SampleManager.SetStreamRemoteCall(m_nMissionAudioSampleIndex[slot] >= SFX_MISSION_MOB_01A &&
+						m_nMissionAudioSampleIndex[slot] <= SFX_MISSION_MOB_99A, slot + 1);
+#endif
 					SampleManager.StartPreloadedStreamedFile(slot + 1);
 #endif
 				}

@@ -14647,6 +14647,15 @@ MITTEL
 [WII_LRG]
 GROSS
 
+[WII_PHN]
+TELEFONATE
+
+[WII_RMT]
+WIIMOTE
+
+[WII_BTH]
+BEIDE
+
 [WII_SDF]
 Speichern fehlgeschlagen! SD-Karte pruefen: eingelegt, nicht schreibgeschuetzt, nicht voll.
 

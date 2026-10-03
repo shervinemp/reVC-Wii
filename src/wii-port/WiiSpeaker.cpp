@@ -1,5 +1,8 @@
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+
+#include <malloc.h>
 
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>
@@ -8,6 +11,7 @@
 #include "WiiSpeaker.h"
 
 int8_t WiiRemoteSpeakerEnabled = 1;
+int8_t WiiPhoneRemoteMode = 2;
 
 // How libogc streams to the remote, which is what the rest of this file is shaped
 // around (read off libwiiuse's disassembly, because none of it is documented):
@@ -85,6 +89,42 @@ u64 s_clipEnd = 0;
 u64 s_deadline = 0;	// warm-up timeout while warming, power-down time while on
 
 u32 s_noise = 0x2545F491u;
+
+// --- phone calls ----------------------------------------------------------------
+// A phone call is not a clip: it is a line of speech from the mission audio, as long
+// as it is, and it arrives as the game decodes it.  So it gets a buffer of its own,
+// sized for the whole line and pre-filled with ADPCM silence, handed to libogc ONCE
+// and then filled in from the front as the audio is decoded.  The decoder runs
+// ahead of what the TV is playing and the remote starts reading when the first of it
+// arrives, so the write position stays ahead of the read position and nothing has to
+// be re-armed mid-line.  The allocation is exactly the line's length plus a little
+// slack, which is also what ends the stream: libogc stops when it runs off the end.
+constexpr u32 kCallBytesPerMs = 3;			// 3000 bytes a second
+constexpr u32 kCallSlackBytes = 20*kPacketBytes;	// about 130 ms past the stated length
+constexpr u32 kCallMaxBytes = 120*1000*kCallBytesPerMs;
+constexpr u8 kAdpcmSilence = 0x08;			// +1/8 step then -1/8 step, around zero
+constexpr u32 kCallTvDuckPercent = 25;			// TV level in the "both" mode
+constexpr u32 kWakeLingerMs = 8000;			// keeps the speaker up for a call about to start
+
+struct Call
+{
+	u8 *buffer;
+	u32 capacity;
+	u32 written;
+	u32 sourceRate;
+	u32 phase;		// decimator: accumulates the output rate, emits at the input rate
+	float accumulator;
+	u32 accumulated;
+	s16 carry;
+	bool hasCarry;
+	bool encoderFresh;
+	bool active;
+	bool started;
+	WPADEncStatus encoder;
+};
+Call s_call;
+u64 s_callFreeTime = 0;	// when the buffer libogc may still be reading can be freed
+u64 s_wakeUntil = 0;
 
 // White noise in -1..1.
 float
@@ -201,6 +241,56 @@ powerDown(void)
 	WPAD_ControlSpeaker(kChannel, 0);
 	s_state = STATE_OFF;
 	s_pending = CLIP_NONE;
+	// A call routed to the remote is over with it; the TV takes the rest of the line
+	// (the stream asks WiiSpeakerCallActive every frame).
+	s_call.active = false;
+}
+
+// Frees the call buffer once libogc cannot still be reading it.
+void
+releaseCallBuffer(void)
+{
+	if(s_call.buffer != nullptr && !s_call.active && gettime() > s_callFreeTime){
+		std::free(s_call.buffer);
+		s_call.buffer = nullptr;
+	}
+}
+
+// Encodes whatever has been resampled so far into the call buffer.  ADPCM packs
+// two samples a byte, so an odd one out is carried to the next call.
+void
+encodeCall(const s16 *samples, u32 count)
+{
+	s16 work[1026];
+	u32 total = 0;
+	if(s_call.hasCarry){
+		work[total++] = s_call.carry;
+		s_call.hasCarry = false;
+	}
+	for(u32 i = 0; i < count && total < 1025; i++)
+		work[total++] = samples[i];
+	const u32 pairs = total & ~1u;
+	if(total != pairs){
+		s_call.carry = work[total - 1];
+		s_call.hasCarry = true;
+	}
+	if(pairs == 0 || s_call.written + pairs/2 > s_call.capacity - kCallSlackBytes/2)
+		return;
+
+	WPAD_EncodeData(&s_call.encoder, s_call.encoderFresh ? 0 : 1, work, (s32)pairs,
+		s_call.buffer + s_call.written);
+	s_call.encoderFresh = false;
+	s_call.written += pairs/2;
+
+	if(!s_call.started){
+		// The first of the line is in place: let libogc start reading.
+		const u64 now = gettime();
+		WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
+		s_call.started = true;
+		s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
+		s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
+		s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
+	}
 }
 
 // Asks for a clip, powering the speaker up if it is off.  A request that is still
@@ -248,8 +338,122 @@ WiiSpeakerPlayRing(void)
 }
 
 void
+WiiSpeakerWake(void)
+{
+	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode)
+		return;
+	u32 expansion;
+	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
+		return;
+	s_wakeUntil = gettime() + millisecs_to_ticks(kWakeLingerMs);
+	if(s_state == STATE_OFF){
+		WPAD_ControlSpeaker(kChannel, 1);
+		s_state = STATE_WARMING;
+		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
+	}
+}
+
+bool
+WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
+{
+	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate)
+		return false;
+	releaseCallBuffer();
+	// Only a speaker that is already up, and nothing else still streaming: a line
+	// that cannot start at its first word is better left on the TV than joined late.
+	if(s_call.active || s_call.buffer != nullptr || s_state != STATE_ON || gettime() < s_clipEnd)
+		return false;
+	u32 expansion;
+	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
+		return false;
+
+	u32 bytes = lengthMs*kCallBytesPerMs + kCallSlackBytes;
+	if(bytes > kCallMaxBytes)
+		bytes = kCallMaxBytes;
+	bytes = (bytes + kPacketBytes - 1)/kPacketBytes*kPacketBytes;
+	u8 *buffer = (u8*)memalign(32, bytes);
+	if(buffer == nullptr)
+		return false;
+	std::memset(buffer, kAdpcmSilence, bytes);
+
+	std::memset(&s_call, 0, sizeof(s_call));
+	s_call.buffer = buffer;
+	s_call.capacity = bytes;
+	s_call.sourceRate = sampleRate;
+	s_call.encoderFresh = true;
+	s_call.active = true;
+	s_pending = CLIP_NONE;
+	return true;
+}
+
+void
+WiiSpeakerFeedCall(const s16 *pcm, u32 frames, u32 channels)
+{
+	if(!s_call.active || pcm == nullptr || channels == 0)
+		return;
+
+	// Down to the remote's 6 kHz mono by averaging: every input sample adds the
+	// output rate to a running total, and each time that passes the input rate one
+	// output sample leaves, the mean of the input since the last.  Averaging is also
+	// the low pass that keeps the rest from folding back down as hiss.
+	s16 out[1024];
+	u32 n = 0;
+	for(u32 frame = 0; frame < frames; frame++){
+		float sample = 0.0f;
+		for(u32 channel = 0; channel < channels; channel++)
+			sample += (float)pcm[frame*channels + channel];
+		s_call.accumulator += sample/(float)channels;
+		s_call.accumulated++;
+		s_call.phase += kSampleRate;
+		if(s_call.phase >= s_call.sourceRate){
+			s_call.phase -= s_call.sourceRate;
+			out[n++] = toSample(s_call.accumulator/(float)s_call.accumulated/32000.0f);
+			s_call.accumulator = 0.0f;
+			s_call.accumulated = 0;
+			if(n == 1024){
+				encodeCall(out, n);
+				n = 0;
+			}
+		}
+	}
+	if(n != 0)
+		encodeCall(out, n);
+}
+
+void
+WiiSpeakerEndCall(void)
+{
+	// The line is over (or stopped): stop writing.  Whatever was written plays out on
+	// the remote, and the buffer is freed once libogc is done with it.
+	s_call.active = false;
+}
+
+void
+WiiSpeakerAbortCall(void)
+{
+	if(!s_call.active)
+		return;
+	// The TV stream was paused, which the remote cannot follow: it would run on and
+	// finish early.  Silence it and let the TV carry the rest.
+	powerDown();
+}
+
+bool
+WiiSpeakerCallActive(void)
+{
+	return s_call.active;
+}
+
+uint32_t
+WiiSpeakerCallTvPercent(void)
+{
+	return WiiPhoneRemoteMode == 1 ? 0 : kCallTvDuckPercent;
+}
+
+void
 WiiSpeakerService(void)
 {
+	releaseCallBuffer();
 	if(s_state == STATE_OFF)
 		return;
 
@@ -282,7 +486,7 @@ WiiSpeakerService(void)
 		s_pending = CLIP_NONE;
 		s_clipEnd = now + microsecs_to_ticks((kClipBytes[clip]/kPacketBytes + kGuardPackets)*kPacketMicros);
 		s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
-	}else if(s_pending == CLIP_NONE && now > s_deadline){
+	}else if(s_pending == CLIP_NONE && !s_call.active && now > s_deadline && now > s_wakeUntil){
 		powerDown();
 	}
 }

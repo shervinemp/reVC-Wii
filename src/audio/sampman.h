@@ -262,6 +262,11 @@ public:
 	int32 GetStreamedFileLength                                                (tTrack nStream = 0);
 	bool8 IsStreamPlaying                                                      (uint8 nStream = 0);
 	void  SetStreamedFileLoopFlag                             (bool8 nLoopFlag, uint8 nStream = 0);
+#ifdef AUDIO_WII
+	// Marks the stream's next line as a phone call, to be played through the Wiimote
+	// speaker as well.
+	void  SetStreamRemoteCall                                 (bool8 nOn, uint8 nStream);
+#endif
 #ifndef AUDIO_MSS
 	void  Service(void);
 #endif

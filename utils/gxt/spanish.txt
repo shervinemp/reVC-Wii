@@ -14342,6 +14342,15 @@ MEDIA
 [WII_LRG]
 AMPLIA
 
+[WII_PHN]
+LLAMADAS
+
+[WII_RMT]
+WIIMOTE
+
+[WII_BTH]
+AMBOS
+
 [WII_SDF]
 Error al guardar! Revisa la tarjeta SD: insertada, sin bloqueo y con espacio.
 

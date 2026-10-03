@@ -4944,6 +4944,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					m_PrefsSpeakers = 0;
 #ifdef NINTENDO_WII
 					WiiRemoteSpeakerEnabled = 1;
+					WiiPhoneRemoteMode = 2;
 #endif
 					DMAudio.SetMP3BoostVolume(m_PrefsMP3BoostVolume);
 					DMAudio.SetMusicMasterVolume(m_PrefsMusicVolume);

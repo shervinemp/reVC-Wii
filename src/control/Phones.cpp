@@ -120,6 +120,11 @@ CPhoneInfo::Update(void)
 								player->m_fRotationDest = angleToFace;
 								player->SetHeading(angleToFace);
 								player->SetPedState(PED_MAKE_CALL);
+#ifdef NINTENDO_WII
+								// A call can only go to a speaker that is already on, and the pick-up
+								// animation is the time to bring it up.
+								WiiSpeakerWake();
+#endif
 								CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_PHONE);
 								TheCamera.SetWideScreenOn();
 								playerInfo->MakePlayerSafe(true);

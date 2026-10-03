@@ -939,6 +939,13 @@ cSampleManager::IsStreamPlaying(uint8 stream)
 }
 
 void
+cSampleManager::SetStreamRemoteCall(bool8 on, uint8 stream)
+{
+	ASSERT(stream < MAX_STREAMS);
+	audioStreaming.SetRemoteCall(on != FALSE, stream);
+}
+
+void
 cSampleManager::SetStreamedFileLoopFlag(bool8 loop, uint8 stream)
 {
 	ASSERT(stream < MAX_STREAMS);

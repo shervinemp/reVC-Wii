@@ -26,6 +26,11 @@ public:
 	uint32_t GetLength(tTrack track);
 	bool IsPlaying(uint32_t stream) const;
 	void SetLoop(bool loop, uint32_t stream);
+	void SetRemoteCall(bool on, uint32_t stream)
+	{
+		if(stream < MAX_STREAMS)
+			m_streams[stream].SetRemoteCall(on);
+	}
 	void SetVolumeAndPan(uint32_t volume, uint32_t pan, bool effect,
 	                     uint32_t stream, uint32_t effectsVolume,
 	                     uint32_t effectsFadeVolume, uint32_t musicVolume,

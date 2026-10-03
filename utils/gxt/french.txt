@@ -14647,6 +14647,15 @@ MOYENNE
 [WII_LRG]
 GRANDE
 
+[WII_PHN]
+APPELS TELEPHONIQUES
+
+[WII_RMT]
+WIIMOTE
+
+[WII_BTH]
+LES DEUX
+
 [WII_SDF]
 Echec de la sauvegarde ! Verifiez la carte SD : inseree, deverrouillee et non pleine.
 

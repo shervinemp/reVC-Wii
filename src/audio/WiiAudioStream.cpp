@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "wii-port/WiiLog.h"
+#include "wii-port/WiiSpeaker.h"
 #include "WiiAudioDecoder.h"
 #include "WiiAudioStream.h"
 
@@ -22,7 +23,8 @@ WiiAudioStream::WiiAudioStream()
 	m_timerOffset(0), m_decodedBuffers(0), m_queuedBuffers(0),
 	m_restartCount(0), m_loop(false), m_decoderEnded(false),
 	m_prepared(false), m_playing(false), m_paused(false),
-	m_voiceStarted(false), m_finishLogged(false)
+	m_voiceStarted(false), m_finishLogged(false), m_remoteCall(false),
+	m_routed(false)
 {
 	memset(m_buffers, 0, sizeof(m_buffers));
 }
@@ -103,6 +105,10 @@ WiiAudioStream::Close()
 		       m_playing ? "yes" : "no", m_prepared ? "yes" : "no",
 		       GetPosition(), m_decodedBuffers, m_queuedBuffers,
 		       m_restartCount);
+	if(m_routed)
+		WiiSpeakerEndCall();
+	m_routed = false;
+	m_remoteCall = false;
 	if(m_voice >= 0)
 		ASND_StopVoice(m_voice);
 	delete m_decoder;
@@ -176,6 +182,10 @@ WiiAudioStream::StartPrepared()
 	m_playing = true;
 	m_paused = false;
 	m_timerOffset = 0;
+	// Decided before the first buffer is queued, because that is where each buffer is
+	// copied across to the remote.
+	m_routed = m_remoteCall &&
+		WiiSpeakerBeginCall(GetLength(), m_decoder->GetSampleRate());
 	if(!BeginVoice()){
 		wiiLog("[WII][AUDIO][STREAM %d] ASND start failed\n", m_voice);
 		m_playing = false;
@@ -193,6 +203,13 @@ WiiAudioStream::Pause(bool pause)
 		WII_AUDIO_TRACE_LOG("[WII][AUDIO][STREAM %d] pause=%s position=%ums\n",
 		       m_voice, pause ? "yes" : "no", GetPosition());
 	m_paused = pause;
+	if(pause && m_routed){
+		// The remote runs on regardless, so it would finish the line early: hand the
+		// rest of it back to the TV.
+		WiiSpeakerAbortCall();
+		m_routed = false;
+		ApplyVolume();
+	}
 	if(m_voiceStarted)
 		ASND_PauseVoice(m_voice, pause ? 1 : 0);
 }
@@ -200,6 +217,11 @@ WiiAudioStream::Pause(bool pause)
 void
 WiiAudioStream::Service()
 {
+	if(m_routed && !WiiSpeakerCallActive()){
+		// The remote was switched off or lost: the TV has the rest of the line.
+		m_routed = false;
+		ApplyVolume();
+	}
 	if(!m_playing || m_paused || m_decoder == 0)
 		return;
 	ReclaimPlayedBuffers();
@@ -252,7 +274,7 @@ WiiAudioStream::SetVolume(uint32_t left, uint32_t right)
 			WII_AUDIO_TRACE_LOG("[WII][AUDIO][STREAM %d] output %s volume=%u/%u\n",
 			       m_voice, muted ? "muted" : "unmuted",
 			       m_leftVolume, m_rightVolume);
-		ASND_ChangeVolumeVoice(m_voice, m_leftVolume, m_rightVolume);
+		ASND_ChangeVolumeVoice(m_voice, Scaled(m_leftVolume), Scaled(m_rightVolume));
 	}
 }
 
@@ -355,7 +377,7 @@ WiiAudioStream::BeginVoice()
 	int32_t result = ASND_SetVoice(m_voice, GetAsndFormat(),
 	                               m_decoder->GetSampleRate(), 0,
 	                               buffer.data, buffer.size,
-	                               m_leftVolume, m_rightVolume, 0);
+	                               Scaled(m_leftVolume), Scaled(m_rightVolume), 0);
 	if(result != SND_OK){
 		wiiLog("[WII][AUDIO][STREAM %d] ASND_SetVoice result=%d "
 		       "format=%d rate=%u bytes=%u volume=%u/%u\n", m_voice,
@@ -364,6 +386,7 @@ WiiAudioStream::BeginVoice()
 		return false;
 	}
 	buffer.state = BUFFER_QUEUED;
+	TapBuffer(buffer);
 	m_queuedBuffers++;
 	m_queueIndex = (m_queueIndex + 1) % BufferCount;
 	m_voiceStarted = true;
@@ -393,8 +416,51 @@ WiiAudioStream::QueueNextBuffer()
 			return;
 		}
 		buffer.state = BUFFER_QUEUED;
+		TapBuffer(buffer);
 		m_queuedBuffers++;
 		m_queueIndex = (m_queueIndex + 1) % BufferCount;
+	}
+}
+
+// A line on the remote plays on the TV at a lower level or not at all.  The TV voice
+// keeps running either way, which is what keeps the line paced in real time.
+uint32_t
+WiiAudioStream::Scaled(uint32_t volume) const
+{
+	return m_routed ? volume * WiiSpeakerCallTvPercent() / 100 : volume;
+}
+
+void
+WiiAudioStream::ApplyVolume()
+{
+	if(m_voiceStarted)
+		ASND_ChangeVolumeVoice(m_voice, Scaled(m_leftVolume), Scaled(m_rightVolume));
+}
+
+// Copies a buffer that has just been queued to the TV across to the remote.  Buffers
+// are queued once each and in order, so the remote hears the line as the TV would.
+void
+WiiAudioStream::TapBuffer(const Buffer &buffer)
+{
+	if(!m_routed)
+		return;
+	const uint32_t channels = m_decoder->GetChannels();
+	if(channels == 0 || channels > 2)
+		return;
+	const uint32_t frames = buffer.size/(channels*sizeof(int16_t));
+	const int16_t *source = (const int16_t*)buffer.data;
+	// The Wii is big endian; the decoder says what it produced.
+	const bool swap = m_decoder->GetByteOrder() == WII_PCM_LITTLE_ENDIAN;
+
+	int16_t slice[512];
+	const uint32_t sliceFrames = 256;
+	for(uint32_t frame = 0; frame < frames; frame += sliceFrames){
+		const uint32_t count = frames - frame < sliceFrames ? frames - frame : sliceFrames;
+		for(uint32_t i = 0; i < count*channels; i++){
+			const int16_t sample = source[frame*channels + i];
+			slice[i] = swap ? (int16_t)(((uint16_t)sample << 8) | ((uint16_t)sample >> 8)) : sample;
+		}
+		WiiSpeakerFeedCall(slice, count, channels);
 	}
 }
 

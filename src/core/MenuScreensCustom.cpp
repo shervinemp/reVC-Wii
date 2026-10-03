@@ -130,6 +130,7 @@ const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 extern uint32 TimeToStopPadShaking;
 
 const char *pointerBoxSizes[] = { "WII_SML", "WII_MED", "WII_LRG" };
+const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
 
 // A short buzz when vibration is switched on, so it can be felt from the menu.  The
 // game is paused behind the menu and a shake is only ever spent down by the game
@@ -459,6 +460,7 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_RADIO,			"FEA_RSS", {nil, SAVESLOT_NONE, MENUPAGE_SOUND_SETTINGS}, 0, 0, MENUALIGN_LEFT,
 #ifdef NINTENDO_WII
 		MENUACTION_CFO_SELECT,		"WII_RMK", { new CCFOSelect((int8*)&WiiRemoteSpeakerEnabled, "Wii", "RemoteSpeaker", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CFO_SELECT,		"WII_PHN", { new CCFOSelect((int8*)&WiiPhoneRemoteMode, "Wii", "PhoneCalls", phoneRemoteModes, 3, false) }, 0, 0, MENUALIGN_LEFT,
 #endif
 #ifdef EXTERNAL_3D_SOUND
 		MENUACTION_RESTOREDEF,		"FET_DEF", {nil, SAVESLOT_NONE, MENUPAGE_SOUND_SETTINGS}, 320, 367, MENUALIGN_CENTER,

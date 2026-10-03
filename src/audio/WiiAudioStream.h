@@ -23,6 +23,10 @@ public:
 	void SetLoop(bool loop);
 	void SetVolume(uint32_t left, uint32_t right);
 
+	// Marks the line about to start as a phone call, to be played through the Wiimote
+	// speaker as well (see WiiSpeaker.h).  Cleared when the stream closes.
+	void SetRemoteCall(bool on) { m_remoteCall = on; }
+
 	bool IsOpen() const { return m_decoder != 0; }
 	bool IsPlaying() const { return m_playing; }
 	uint32_t GetPosition() const;
@@ -53,6 +57,9 @@ private:
 	bool BeginVoice();
 	void QueueNextBuffer();
 	int32_t GetAsndFormat() const;
+	uint32_t Scaled(uint32_t volume) const;
+	void ApplyVolume();
+	void TapBuffer(const Buffer &buffer);
 
 	WiiAudioDecoder *m_decoder;
 	Buffer m_buffers[BufferCount];
@@ -73,6 +80,8 @@ private:
 	bool m_paused;
 	bool m_voiceStarted;
 	bool m_finishLogged;
+	bool m_remoteCall;
+	bool m_routed;
 };
 
 #endif

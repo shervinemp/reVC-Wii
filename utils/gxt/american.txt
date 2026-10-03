@@ -14358,6 +14358,15 @@ MEDIUM
 [WII_LRG]
 LARGE
 
+[WII_PHN]
+PHONE CALLS
+
+[WII_RMT]
+REMOTE
+
+[WII_BTH]
+BOTH
+
 [WII_SDF]
 Save failed! Check the SD card: it must be inserted, unlocked and not full.
 
