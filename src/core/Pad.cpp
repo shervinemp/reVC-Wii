@@ -2570,8 +2570,10 @@ bool CPad::GetCarGunFired(void)
 	{
 		case 0:
 		{
-			// Wii v3: A (Cross) fires the car gun / drive-by, so B stays the gas.
-			return !!NewState.Cross;
+			// Wii v3: B (Circle) fires the car gun / drive-by, the same button that
+			// fires on foot (GetWeapon reads Circle in mode 0).  A is the gas, so B
+			// is one unambiguous "shoot" across every context.
+			return !!NewState.Circle;
 
 			break;
 		}
@@ -2830,9 +2832,11 @@ int16 CPad::GetAccelerate(void)
 	{
 		case 0:
 		{
-			// Wii v3 layout: B (Circle) is the accelerator.  The handbrake is no
-			// longer a chord on the aim button (it is 2 alone now), so B is free.
-			return NewState.Circle;
+			// Wii v3: A (Cross) is the accelerator, matching every console game.
+			// A is the "commit" button everywhere: enter the car on foot, drive it
+			// once inside.  B stays the weapon in every context, so the gun and the
+			// drive-by need no exception for a vehicle that carries one of its own.
+			return NewState.Cross;
 
 			break;
 		}

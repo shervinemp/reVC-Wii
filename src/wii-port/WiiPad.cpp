@@ -441,11 +441,12 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	const u16 buttons = PAD_ButtonsHeld(channel);
 	const bool inCar = playerInVehicle();
 
-	// Face buttons: A=Cross, B=Circle, X=Square, Y=Triangle.  In v3, B is the gas
-	// (Circle) and A the fire (Cross).  Same field layout the Wiimote gets, so the
-	// Mode 0 rebinds read the same whichever pad is in hand.
-	setButton(state.Circle, buttons & PAD_BUTTON_B);   // B: fire (foot) / gas (car)
-	setButton(state.Cross, buttons & PAD_BUTTON_A);    // A: enter+sprint / fire in car
+	// Face buttons: A=Cross, B=Circle, X=Square, Y=Triangle.  In v3, A is the gas
+	// (Cross, the "commit" button) and B the fire (Circle, the "shoot" button).
+	// Same field layout the Wiimote gets, so the Mode 0 rebinds read the same
+	// whichever pad is in hand.
+	setButton(state.Circle, buttons & PAD_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
+	setButton(state.Cross, buttons & PAD_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
 	setButton(state.Square, buttons & PAD_BUTTON_X);   // X: jump
 	setButton(state.Triangle, buttons & PAD_BUTTON_Y); // Y: exit vehicle
 	setButton(state.Start, buttons & PAD_BUTTON_START);
@@ -526,8 +527,8 @@ captureClassic(const WPADData &data, CControllerState &state,
 	// (Circle), B the fire (Cross), L the brake (RightShoulder1), R the horn
 	// (LeftShoulder1), and the D-pad the vehicle cluster when it has two sticks
 	// of its own to walk with.
-	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_A);   // A: fire (foot) / gas (car)
-	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_B);    // B: enter+sprint / fire in car
+	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_A);   // A: fire (foot) / fire+drive-by (car)
+	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_B);    // B: enter+sprint (foot) / gas (car)
 	setButton(state.Square, buttons & WPAD_CLASSIC_BUTTON_Y);   // Y: jump
 	setButton(state.Triangle, buttons & WPAD_CLASSIC_BUTTON_X); // X: exit vehicle
 	setButton(state.RightShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_L); // L: brake
@@ -591,23 +592,23 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	const bool dpadUp = (buttons & WPAD_BUTTON_UP) != 0;
 
 	// v3 layout, Wiimote + Nunchuk:
-	//   A  enter vehicle / sprint (foot)   fire, drive-by, car gun (car)
-	//   B  fire (foot)                    accelerate (car)
+	//   A  enter vehicle / sprint (foot)   accelerate (car)      <- the "commit" button
+	//   B  fire (foot)                    fire, drive-by, car gun (car)  <- "shoot"
 	//   Z  -- (the pointer aims)         brake and reverse (car)
-	//   1  jump
+	//   1  --                             radio (car)
 	//   2  --                             exit vehicle (car)
 	//   C  --                             horn (car)
 	//   D-pad   cycle weapon / look behind (foot)
 	//           handbrake / look L-R / look behind (car)
-	//   +  radio (car); zoom in while scoped
-	//   -  camera mode (foot); zoom out while scoped
-	//   HOME  pause
+	//   +  pause (always)
+	//   -  camera mode (foot)
+	//   flick  jump; HOME is the system menu, not the game
 	// The Nunchuk stick walks and steers, which is what frees the D-pad to be the
 	// vehicle cluster. In the menus the D-pad goes back to being a D-pad.
 	const bool dpadIsCluster = hasNunchuk && !FrontEndMenuManager.m_bMenuActive;
 
-	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / gas (car)
-	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint / fire in car
+	setButton(state.Circle, buttons & WPAD_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
+	setButton(state.Cross, buttons & WPAD_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
 	setButton(state.Triangle, buttons & WPAD_BUTTON_2); // 2: exit vehicle
 	// Jump is the Nunchuk flick (measured in WiiPadScan), which lands here as a
 	// one-frame Square pulse; the 1 button does nothing on foot.
