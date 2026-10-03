@@ -166,6 +166,7 @@ static const float kFlickGravityFollow = 0.04f;  // slow baseline follow, per sc
 static const float kFlickFraction = 0.30f;       // a jolt must exceed ~30% of g
 static const float kFlickRearmFraction = 0.16f;  // "settled" below ~16% of g
 static const float kFlickSettleSec = 0.09f;      // stay deaf this long after a flick
+static const float kFlickDownAlign = 0.55f;      // must still point into gravity: down-flick only
 
 // --- the pointer as a crosshair ---------------------------------------------
 // Standard aiming draws a crosshair at a fixed point and traces the shot through
@@ -949,6 +950,7 @@ WiiPadScan(void)
 	{
 		static bool   s_jumpPulse = false;
 		static float  s_gravity = 0.0f;   // slow |accel| at rest, about one g
+		static float  s_gx = 0.0f, s_gy = 0.0f; // slow gravity vector: which way is down
 		static bool   s_settling = false;  // deaf while a flick rings down
 		static float  s_settleT = 0.0f;
 		s_jumpPulse = false;
@@ -972,14 +974,27 @@ WiiPadScan(void)
 			const s16 ay = wd->exp.nunchuk.accel.y;
 			const s16 az = wd->exp.nunchuk.accel.z;
 			const float mag = std::sqrt((float)ax*ax + (float)ay*ay + (float)az*az);
-			if(s_gravity <= 0.0f)
+			if(s_gravity <= 0.0f){
 				s_gravity = mag;                    // first sample seeds the baseline
-			else
+				s_gx = (float)ax; s_gy = (float)ay;
+			}else{
 				s_gravity += (mag - s_gravity)*kFlickGravityFollow;
+				s_gx += ((float)ax - s_gx)*kFlickGravityFollow;
+				s_gy += ((float)ay - s_gy)*kFlickGravityFollow;
+			}
 			// How far the current acceleration sits above the gravity baseline, as a
 			// fraction of that baseline.  A deliberate flick spikes this; holding,
 			// walking, or steering do not.
 			const float dev = (mag - s_gravity)/(s_gravity > 1.0f ? s_gravity : 1.0f);
+			// Which way is "down" right now, from the slowly-followed gravity
+			// vector (not the raw sample, which is what the jolt perturbs).  At rest
+			// the accelerometer already reads the gravity vector, so this alignment
+			// is about 1 however the remote is held.  A down-flick pushes further
+			// along gravity and keeps it near 1; an up-flick opposes gravity and
+			// drops it, so requiring real alignment rejects up-flicks.
+			const float glen = std::sqrt(s_gx*s_gx + s_gy*s_gy);
+			const float align = glen > 1.0f ? ((float)ax*s_gx + (float)ay*s_gy)/glen : 1.0f;
+			const bool wentDown = align > kFlickDownAlign;
 			if(s_settling){
 				// Wait for the jolt and its rebound to fall away before arming again,
 				// so one flick is exactly one pulse.
@@ -989,7 +1004,7 @@ WiiPadScan(void)
 					s_settleT += s_pointerDt;
 				if(s_settleT >= kFlickSettleSec)
 					s_settling = false;
-			}else if(dev > kFlickFraction){
+			}else if(dev > kFlickFraction && wentDown){
 				s_jumpPulse = true;
 				s_settling = true;
 				s_settleT = 0.0f;
