@@ -36,6 +36,9 @@
 #include "Sprite.h"
 #include "Pickups.h"
 #include "SaveBuf.h"
+#ifdef NINTENDO_WII
+#include "WiiSpeaker.h"
+#endif
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
 float fSeaSparrowAimingAngle = 10.0f;
@@ -338,6 +341,13 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				}
 				
 				DMAudio.PlayOneShot(shooterPed->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+#ifdef NINTENDO_WII
+				// The player's guns crack through the Wiimote too.
+				if ( isPlayer && ((m_eWeaponType >= WEAPONTYPE_COLT45 && m_eWeaponType <= WEAPONTYPE_LASERSCOPE) ||
+				                  m_eWeaponType == WEAPONTYPE_M60 || m_eWeaponType == WEAPONTYPE_MINIGUN) )
+					WiiSpeakerPlayShot();
+#endif
+
 				
 				if ( isPlayer )
 				{

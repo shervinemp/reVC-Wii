@@ -16,6 +16,9 @@
 #include "SaveBuf.h"
 #ifdef FIX_BUGS
 #include "Replay.h"
+#ifdef NINTENDO_WII
+#include "WiiSpeaker.h"
+#endif
 #endif
 
 #ifdef COMPATIBLE_SAVES
@@ -92,8 +95,14 @@ CPhoneInfo::Update(void)
 					}
 					if (scratchTheCabinet) {
 						m_aPhones[phoneId].m_pEntity->GetUp().z = (CGeneral::GetRandomNumber() % 1024) / 16000.0f + 1.0f;
-						if (!phoneRings)
-						    PlayOneShotScriptObject(SCRIPT_SOUND_PAYPHONE_RINGING, m_aPhones[phoneId].m_pEntity->GetPosition());
+						if (!phoneRings) {
+							PlayOneShotScriptObject(SCRIPT_SOUND_PAYPHONE_RINGING, m_aPhones[phoneId].m_pEntity->GetPosition());
+#ifdef NINTENDO_WII
+							// Close enough to be a call worth answering: it rings on the remote too.
+							if (CVector2D(playerPos - m_aPhones[phoneId].m_vecPos).Magnitude() < 40.0f)
+								WiiSpeakerPlayRing();
+#endif
+						}
 					} else {
 						m_aPhones[phoneId].m_pEntity->GetUp().z = 1.0f;
 					}
@@ -131,8 +140,14 @@ CPhoneInfo::Update(void)
 					phoneRings = (CTimer::GetPreviousTimeInMilliseconds() / 1880) % 2 == 1;
 					if (scratchTheCabinet) {
 						m_aPhones[phoneId].m_pEntity->GetUp().z = (CGeneral::GetRandomNumber() % 1024) / 16000.0f + 1.0f;
-						if (!phoneRings)
-						    PlayOneShotScriptObject(SCRIPT_SOUND_PAYPHONE_RINGING, m_aPhones[phoneId].m_pEntity->GetPosition());
+						if (!phoneRings) {
+							PlayOneShotScriptObject(SCRIPT_SOUND_PAYPHONE_RINGING, m_aPhones[phoneId].m_pEntity->GetPosition());
+#ifdef NINTENDO_WII
+							// Close enough to be a call worth answering: it rings on the remote too.
+							if (CVector2D(playerPos - m_aPhones[phoneId].m_vecPos).Magnitude() < 40.0f)
+								WiiSpeakerPlayRing();
+#endif
+						}
 					} else {
 						m_aPhones[phoneId].m_pEntity->GetUp().z = 1.0f;
 					}
