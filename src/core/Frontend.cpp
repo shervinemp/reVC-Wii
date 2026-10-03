@@ -132,7 +132,7 @@ bool CMenuManager::m_PrefsMarketing = false;
 bool CMenuManager::m_PrefsDisableTutorials = false;
 #endif // !MASTER
 
-#ifdef GAMEPAD_MENU
+#if defined GAMEPAD_MENU || defined NINTENDO_WII
 uint32 TimeToStopPadShaking;
 #endif
 
@@ -520,7 +520,12 @@ CMenuManager::CMenuManager()
 	m_PrefsAllowNastyGame = 1;
 	m_PrefsSpeakers = 0;
 	field_8 = 0;
+#ifdef NINTENDO_WII
+	// Rumble is half of what a Wii controller is for; the controls page can turn it off.
+	m_PrefsUseVibration = 1;
+#else
 	m_PrefsUseVibration = 0;
+#endif
 	m_PrefsShowHud = 1;
 	m_PrefsRadarMode = 0;
 	m_DisplayControllerOnFoot = false;
@@ -5014,6 +5019,8 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #endif
 #ifdef NINTENDO_WII
 					WiiPointerAimEnabled = 1;
+					WiiPointerBox = 1;
+					m_PrefsUseVibration = true;
 #endif
 					SaveSettings();
 #ifdef LOAD_INI_SETTINGS
@@ -5777,7 +5784,7 @@ CMenuManager::SwitchMenuOnAndOff()
 	m_bStartUpFrontEndRequested = false;
 	m_bShutDownFrontEndRequested = false;
 
-#ifdef GAMEPAD_MENU
+#if defined GAMEPAD_MENU || defined NINTENDO_WII
 	// Reset pad shaking.
 	if (TimeToStopPadShaking && TimeToStopPadShaking < CTimer::GetTimeInMillisecondsPauseMode()) {
 		CPad::StopPadsShaking();

@@ -14635,6 +14635,18 @@ ZIELHILFE
 [WII_IRA]
 ZEIGER-ZIELEN
 
+[WII_BOX]
+ZEIGERBEREICH
+
+[WII_SML]
+KLEIN
+
+[WII_MED]
+MITTEL
+
+[WII_LRG]
+GROSS
+
 [WII_SDF]
 Speichern fehlgeschlagen! SD-Karte pruefen: eingelegt, nicht schreibgeschuetzt, nicht voll.
 

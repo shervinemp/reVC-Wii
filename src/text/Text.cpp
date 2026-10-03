@@ -154,6 +154,10 @@ WiiFallbackText(const char *key)
 		{ "WII_RMK", "REMOTE SPEAKER" },
 		{ "WII_AIM", "AIM ASSIST" },
 		{ "WII_IRA", "POINTER AIM" },
+		{ "WII_BOX", "POINTER BOX" },
+		{ "WII_SML", "SMALL" },
+		{ "WII_MED", "MEDIUM" },
+		{ "WII_LRG", "LARGE" },
 		{ "WII_SDF", "Save failed! Check the SD card: it must be inserted, unlocked and not full." },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];

@@ -14644,6 +14644,18 @@ AIUTO MIRA
 [WII_IRA]
 MIRA CON PUNTATORE
 
+[WII_BOX]
+AREA PUNTATORE
+
+[WII_SML]
+PICCOLA
+
+[WII_MED]
+MEDIA
+
+[WII_LRG]
+GRANDE
+
 [WII_SDF]
 Salvataggio fallito! Controlla la scheda SD: inserita, sbloccata e non piena.
 

@@ -109,8 +109,12 @@
 
 #ifdef NINTENDO_WII
 	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
+	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
+	#define POINTER_BOX_SELECT
+	#define VIBRATION_TOGGLE
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -121,6 +125,22 @@
 
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
+
+#ifdef NINTENDO_WII
+extern uint32 TimeToStopPadShaking;
+
+const char *pointerBoxSizes[] = { "WII_SML", "WII_MED", "WII_LRG" };
+
+// A short buzz when vibration is switched on, so it can be felt from the menu.  The
+// game is paused behind the menu and a shake is only ever spent down by the game
+// clock, so it is also told when to stop (end of CMenuManager::SwitchMenuOnAndOff).
+void VibrationAfterChange(int8 before, int8 after) {
+	if (after) {
+		CPad::GetPad(0)->StartShake(350, 150);
+		TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
+	}
+}
+#endif
 
 void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
@@ -708,13 +728,20 @@ CMenuScreenCustom aScreens[] = {
 
 	// MENUPAGE_MOUSE_CONTROLS = 31
 	{ "FEC_MOU", MENUPAGE_CONTROLLER_PC, nil, nil,
+#ifdef NINTENDO_WII
+		// Nine rows on this page here, so it starts higher to keep Back on the screen.
+		MENUACTION_MOUSESENS,	"FEC_MSH",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 40, 110, MENUALIGN_LEFT,
+#else
 		MENUACTION_MOUSESENS,	"FEC_MSH",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 40, 170, MENUALIGN_LEFT,
+#endif
 		MENUACTION_INVVERT,		"FEC_IVV",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 #ifndef GAMEPAD_MENU
 	   INVERT_PAD_SELECTOR
 #endif
 		AIM_ASSIST_TOGGLE
 		POINTER_AIM_TOGGLE
+		POINTER_BOX_SELECT
+		VIBRATION_TOGGLE
 		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
 		//MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 260, MENUALIGN_CENTER, // original y

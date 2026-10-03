@@ -13,4 +13,8 @@
 // 0 leaves the crosshair fixed and the pointer as a plain rate camera.
 extern int8_t WiiPointerAimEnabled;
 
+// How far from the middle the crosshair can roam before the camera turns instead:
+// 0 small, 1 medium (the default), 2 large.  Persisted to the INI.
+extern int8_t WiiPointerBox;
+
 #endif

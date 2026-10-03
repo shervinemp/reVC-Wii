@@ -14330,6 +14330,18 @@ AYUDA DE APUNTADO
 [WII_IRA]
 APUNTADO POR PUNTERO
 
+[WII_BOX]
+AREA DEL PUNTERO
+
+[WII_SML]
+REDUCIDA
+
+[WII_MED]
+MEDIA
+
+[WII_LRG]
+AMPLIA
+
 [WII_SDF]
 Error al guardar! Revisa la tarjeta SD: insertada, sin bloqueo y con espacio.
 

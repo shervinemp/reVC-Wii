@@ -157,7 +157,10 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // of a box around the middle of the screen, the way Metroid Prime 3 does it.
 //
 //   box         where the crosshair can go, as fractions of the screen.  Past it
-//               the crosshair sits on the edge and the camera turns instead.
+//               the crosshair sits on the edge and the camera turns instead.  Three
+//               sizes, picked on the controls page: a small one for players who
+//               want the camera moving sooner, a large one for those who want to
+//               aim with the pointer almost everywhere.
 //   saturation  how far past the box, in half screen heights as above, the pointer
 //               has to be for the full turn rate.
 //   smoothing   the pointer jitters, and that would shake the crosshair, so it
@@ -167,10 +170,15 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 //               tau = kAimSmoothTau/(1 + kAimSmoothGain*error)
 constexpr float kAimDefaultX = 0.53f;	// CCamera::Init's resting crosshair
 constexpr float kAimDefaultY = 0.4f;
-constexpr float kAimBoxLeft = 0.30f;
-constexpr float kAimBoxRight = 0.72f;
-constexpr float kAimBoxTop = 0.20f;
-constexpr float kAimBoxBottom = 0.62f;
+struct AimBox
+{
+	float left, right, top, bottom;
+};
+constexpr AimBox kAimBoxes[] = {
+	{ 0.38f, 0.64f, 0.28f, 0.54f },
+	{ 0.30f, 0.72f, 0.20f, 0.62f },
+	{ 0.20f, 0.82f, 0.12f, 0.70f },
+};
 constexpr float kAimSaturation = 0.28f;
 constexpr float kAimSmoothTau = 0.09f;
 constexpr float kAimSmoothGain = 60.0f;
@@ -674,12 +682,17 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	if(width <= 0.0f || height <= 0.0f)
 		return false;
 
+	int size = WiiPointerBox;
+	if(size < 0 || size >= (int)(sizeof(kAimBoxes)/sizeof(kAimBoxes[0])))
+		size = 1;
+	const AimBox &box = kAimBoxes[size];
+
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
-	const float boxX = pointerX < kAimBoxLeft ? kAimBoxLeft :
-		(pointerX > kAimBoxRight ? kAimBoxRight : pointerX);
-	const float boxY = pointerY < kAimBoxTop ? kAimBoxTop :
-		(pointerY > kAimBoxBottom ? kAimBoxBottom : pointerY);
+	const float boxX = pointerX < box.left ? box.left :
+		(pointerX > box.right ? box.right : pointerX);
+	const float boxY = pointerY < box.top ? box.top :
+		(pointerY > box.bottom ? box.bottom : pointerY);
 	outCrosshairX = boxX;
 	outCrosshairY = boxY;
 
@@ -703,6 +716,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 } // namespace
 
 int8_t WiiPointerAimEnabled = 1;
+int8_t WiiPointerBox = 1;
 
 void
 WiiPadInitialise(int pointerWidth, int pointerHeight)
@@ -917,9 +931,23 @@ WiiPadUpdateRumble(void)
 	if(pad->ShakeDur == 0)
 		pad->ShakeFreq = 0;
 
-	// Both motors are on/off, with no speed to set, so the frequency the game
-	// asked for can only decide whether they run at all.
-	const int running = pad->ShakeFreq != 0 ? 1 : 0;
+	// Both motors are on/off, with no speed to set, but the game asks for a strength
+	// (ShakeFreq, 0-255, which the XInput path scales straight onto the motor).  The
+	// way to get one out of an on/off motor is to pulse it: a running total of the
+	// duty cycle asked for decides, frame by frame, whether the motor is on, and the
+	// motor's own spin-up smooths the pulses into something weaker than full.  Never
+	// below kRumbleMinDuty, or a light event would be too faint to feel at all.
+	constexpr float kRumbleMinDuty = 0.35f;
+	static float s_rumblePhase;
+	int running = 0;
+	if(pad->ShakeFreq != 0){
+		s_rumblePhase += kRumbleMinDuty + (1.0f - kRumbleMinDuty)*((float)pad->ShakeFreq/255.0f);
+		if(s_rumblePhase >= 1.0f){
+			s_rumblePhase -= 1.0f;
+			running = 1;
+		}
+	}else
+		s_rumblePhase = 0.0f;
 	WPAD_Rumble(WPAD_CHAN_0, running);
 	PAD_ControlMotor(PAD_CHAN0, running ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
 }

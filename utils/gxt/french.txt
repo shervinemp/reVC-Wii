@@ -14635,6 +14635,18 @@ AIDE A LA VISEE
 [WII_IRA]
 VISEE AU POINTEUR
 
+[WII_BOX]
+ZONE DU POINTEUR
+
+[WII_SML]
+PETITE
+
+[WII_MED]
+MOYENNE
+
+[WII_LRG]
+GRANDE
+
 [WII_SDF]
 Echec de la sauvegarde ! Verifiez la carte SD : inseree, deverrouillee et non pleine.
 
