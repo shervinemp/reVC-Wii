@@ -56,4 +56,16 @@ void WiiPadUpdateRumble(void);
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);
 
+// Wiimote speaker: mirrors the radio-tuning static through the remote's own
+// little speaker, so the TV and the remote carry it together. The toggle is a
+// frontend option (persisted to the INI); set it to 0 to mute the remote.
+extern int8 WiiRemoteSpeakerEnabled;
+
+// Queues a short burst of static; the service below feeds it out over the next
+// few frames. No-op when the toggle is off.
+void WiiSpeakerPlayTuneStatic(void);
+// Drains any pending burst a few bytes per frame. Called once per frame from
+// WiiPadScan, after WPAD_ScanPads.
+void WiiSpeakerService(void);
+
 #endif

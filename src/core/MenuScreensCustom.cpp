@@ -105,6 +105,10 @@
 const char *filterNames[] = { "FEM_NON", "FEM_SIM", "FEM_NRM", "FEM_MOB" };
 const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 
+#ifdef NINTENDO_WII
+extern int8 WiiRemoteSpeakerEnabled;
+#endif
+
 void RestoreDefGraphics(int8 action) {
 	if (action != FEOPTION_ACTION_SELECT)
 		return;
@@ -420,6 +424,9 @@ CMenuScreenCustom aScreens[] = {
 #endif
 		MENUACTION_DYNAMICACOUSTIC,	"FET_DAM", {nil, SAVESLOT_NONE, MENUPAGE_SOUND_SETTINGS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_RADIO,			"FEA_RSS", {nil, SAVESLOT_NONE, MENUPAGE_SOUND_SETTINGS}, 0, 0, MENUALIGN_LEFT,
+#ifdef NINTENDO_WII
+		MENUACTION_CFO_SELECT,		"WII_RMK", { new CCFOSelect((int8*)&WiiRemoteSpeakerEnabled, "Wii", "RemoteSpeaker", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#endif
 #ifdef EXTERNAL_3D_SOUND
 		MENUACTION_RESTOREDEF,		"FET_DEF", {nil, SAVESLOT_NONE, MENUPAGE_SOUND_SETTINGS}, 320, 367, MENUALIGN_CENTER,
 #else

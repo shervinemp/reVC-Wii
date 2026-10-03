@@ -50,6 +50,10 @@ cMusicManager MusicManager;
 int32 gNumRetunePresses;
 int32 gRetuneCounter;
 bool8 g_bAnnouncementReadPosAlready;
+#ifdef NINTENDO_WII
+extern void WiiSpeakerPlayTuneStatic(void);
+#endif
+
 uint8 RadioStaticCounter = 5;
 uint32 RadioStaticTimer;
 
@@ -740,6 +744,10 @@ cMusicManager::ServiceGameMode()
 				}
 				if (RadioStaticCounter < 2 && CTimer::GetTimeInMilliseconds() > RadioStaticTimer + 800) {
 					AudioManager.PlayOneShot(AudioManager.m_nFrontEndEntity, SOUND_RADIO_CHANGE, 0.0f);
+#ifdef NINTENDO_WII
+					// Same tuning static, through the Wiimote's own speaker as well.
+					WiiSpeakerPlayTuneStatic();
+#endif
 					RadioStaticCounter++;
 					RadioStaticTimer = CTimer::GetTimeInMilliseconds();
 				}
