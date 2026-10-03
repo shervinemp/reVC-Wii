@@ -544,6 +544,18 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	setButton(state.Circle, b && (!inCar || lookingOut));
 	setButton(state.Cross, buttons & WPAD_BUTTON_A);
 	setButton(state.Square, (buttons & WPAD_BUTTON_1) || (inCar && b && !lookingOut));
+
+	// One event-log line per press of brake/reverse in a vehicle, so a report that
+	// "reverse does nothing" can be settled from debug.log: the line says the pad layer
+	// saw the press and sent Square, which leaves the car code as the only suspect.
+	static bool s_brakeLogged;
+	const bool braking = inCar && ((buttons & WPAD_BUTTON_1) || (b && !lookingOut));
+	if(braking != s_brakeLogged){
+		s_brakeLogged = braking;
+		if(braking)
+			WiiTraceReport("WII pad: vehicle brake/reverse pressed (%s)\n",
+				(buttons & WPAD_BUTTON_1) ? "1" : "B");
+	}
 	setButton(state.Triangle, buttons & WPAD_BUTTON_2);
 	setButton(state.Start, buttons & WPAD_BUTTON_PLUS);
 	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
