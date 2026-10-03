@@ -8,6 +8,9 @@
 #include "Messages.h"
 #include "Text.h"
 #include "Timer.h"
+#ifdef NINTENDO_WII
+#include "Font.h"
+#endif
 
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
@@ -140,6 +143,32 @@ CText::Unload(void)
 	memset(szMissionTableName, 0, sizeof(szMissionTableName));
 }
 
+#ifdef NINTENDO_WII
+// The labels this port added live in the GXT files built from utils/gxt, and a
+// language with no source file there (Russian) cannot have them compiled in; a
+// missing key would show as "WII_AIM missing".  English is the better answer.
+static wchar *
+WiiFallbackText(const char *key)
+{
+	static const struct { const char *key; const char *text; } fallbacks[] = {
+		{ "WII_RMK", "REMOTE SPEAKER" },
+		{ "WII_AIM", "AIM ASSIST" },
+		{ "WII_IRA", "POINTER AIM" },
+		{ "WII_SDF", "Save failed! Check the SD card: it must be inserted, unlocked and not full." },
+	};
+	static wchar converted[ARRAY_SIZE(fallbacks)][96];
+
+	for (int i = 0; i < ARRAY_SIZE(fallbacks); i++) {
+		if (strcmp(key, fallbacks[i].key) != 0)
+			continue;
+		if (converted[i][0] == '\0')
+			AsciiToUnicode(fallbacks[i].text, converted[i]);
+		return converted[i];
+	}
+	return nil;
+}
+#endif
+
 wchar*
 CText::Get(const char *key)
 {
@@ -155,6 +184,13 @@ CText::Get(const char *key)
 		outstr = mission_keyArray.Search(key, mission_data.chars, &result);
 #else
 		outstr = mission_keyArray.Search(key, &result);
+#endif
+#ifdef NINTENDO_WII
+	if (!result) {
+		wchar *fallback = WiiFallbackText(key);
+		if (fallback)
+			return fallback;
+	}
 #endif
 	return outstr;
 }

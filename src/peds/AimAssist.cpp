@@ -27,7 +27,8 @@ const float kMaxCone = DEGTORAD(7.0f);
 const float kMinCone = DEGTORAD(2.5f);
 const float kTargetRadius = 1.2f;	// metres
 
-// Look speed while the aim button is held, target or not.
+// Look speed while the aim button is held, target or not.  Only the aim button:
+// slowing the camera while merely shooting would fight sweeping across a crowd.
 const float kAimLookScale = 0.7f;
 
 // Further look speed with the crosshair dead on a target (on top of the above);
@@ -63,7 +64,10 @@ CanAssist(CPlayerPed *player, CPad *pad)
 {
 	if(!CAimAssist::bEnabled || player == nil || player->bInVehicle)
 		return false;
-	if(!pad->GetTarget() || pad->GetLookBehindForPed() || pad->ArePlayerControlsDisabled())
+	// Aiming or just shooting.  Most pads aim with R1 (the Nunchuk's Z), which a bare
+	// Wiimote does not have, and that is the grip the pointer aims best with, so the
+	// trigger alone has to bring the assist in too.
+	if(!(pad->GetTarget() || pad->GetWeapon()) || pad->GetLookBehindForPed() || pad->ArePlayerControlsDisabled())
 		return false;
 	if(player->m_nSelectedWepSlot != player->m_currentWeapon || player->m_nMoveState == PEDMOVE_SPRINT)
 		return false;
@@ -118,8 +122,10 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 
 	// What the player asked for, before any of the below touches it.
 	float inputAlpha = alphaOffset, inputBeta = betaOffset;
-	alphaOffset *= kAimLookScale;
-	betaOffset *= kAimLookScale;
+	if(pad->GetTarget()){
+		alphaOffset *= kAimLookScale;
+		betaOffset *= kAimLookScale;
+	}
 
 	// The ray shots leave along.
 	CVector aim = CCamera::Find3rdPersonCrosshairRay(front, up, fov);

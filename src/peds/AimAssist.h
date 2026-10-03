@@ -18,7 +18,8 @@
 //    carries it along when the target moves.  It lets go the moment the player
 //    pushes away from the target.
 //
-// It acts only while the aim button is held with a gun that can aim.
+// It acts only while the aim button or the trigger is held with a gun that can
+// aim (the slower look is the aim button's alone).
 class CAimAssist
 {
 public:
