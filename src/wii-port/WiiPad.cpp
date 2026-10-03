@@ -153,12 +153,19 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // WiiPadScan measures the gesture and raises s_flickJumpPulse for exactly one
 // frame; captureWiimote folds that into Square, the field JumpJustDown reads.
 // The flick is a sharp downward change in the Nunchuk's Y acceleration between
-// frames (not a tilt angle, so a held pose never reads), and a refractory window
-// then swallows the rebound at the end of the flick, which is itself an
-// acceleration spike and would otherwise fire a second, phantom jump.
+// A flick is a jolt in the Nunchuk's acceleration measured against the gravity
+// it is already carrying, as a fraction of g.  Measuring the vector magnitude
+// rather than one axis's per-frame delta is what makes it work in practice: a
+// delta between two consecutive scans misses the peak whenever a scan lands
+// between the flick and its return, which is why the old version felt janky and
+// easy to miss.  A fraction of the live baseline is independent of the pad's raw
+// accel scale and of how the remote happens to be held, and the settle window
+// turns the rebound into "not armed yet" instead of a second, phantom jump.
 static bool s_flickJumpPulse = false;
-static const int kFlickDelta = 160;			// per-frame drop that counts as a flick
-static const u64 kFlickRefractoryUsec = 350000;	// 350 ms deaf after a flick
+static const float kFlickGravityFollow = 0.04f;  // slow baseline follow, per scan
+static const float kFlickFraction = 0.30f;       // a jolt must exceed ~30% of g
+static const float kFlickRearmFraction = 0.16f;  // "settled" below ~16% of g
+static const float kFlickSettleSec = 0.09f;      // stay deaf this long after a flick
 
 // --- the pointer as a crosshair ---------------------------------------------
 // Standard aiming draws a crosshair at a fixed point and traces the shot through
@@ -925,23 +932,25 @@ WiiPadScan(void)
 		}
 	}
 
-	// Nunchuk flick-down = jump.  The gesture is read here, once per scan, and
-	// published as a one-frame Square pulse that captureWiimote folds into the
-	// pad state (JumpJustDown reads Square).  Three things keep it honest:
-	//   - it is the change in the Nunchuk's Y acceleration between frames, not a
-	//     tilt angle, so a held pose never reads as a flick;
-	//   - it only fires when that change is downward and sharp, which is the
-	//     direction the gesture actually goes;
-	//   - a refractory window swallows the rebound at the end of every flick
-	//     (the snap back to rest is itself an acceleration spike, which without
-	//     this would fire a second, phantom jump).
+	// Nunchuk flick-down = jump (one of two triggers; 1 on foot is the other).
+	// The gesture is read here, once per scan, and published as a one-frame Square
+	// pulse that captureWiimote folds into the pad state (JumpJustDown reads
+	// Square).  It fires on a jolt in the acceleration vector measured against the
+	// gravity the Nunchuk is already carrying -- see the constants above.  Three
+	// things keep it honest:
+	//   - it is a transient jolt above a live gravity baseline, not a tilt angle,
+	//     so holding the remote still never reads as a flick;
+	//   - the threshold is a fraction of g, so it does not care how the pad's raw
+	//     accel happens to be scaled or how the remote is held;
+	//   - a settle window makes the rebound at the end of a flick re-arm the
+	//     detector rather than fire a second, phantom jump.
 	// It is on foot only and idle while the stick is deflected, because steering
 	// and running shake the Nunchuk constantly.
 	{
 		static bool   s_jumpPulse = false;
-		static s16    s_prevAccelY = 0;
-		static bool   s_haveAccel = false;
-		static u64    s_lastFlick = 0;
+		static float  s_gravity = 0.0f;   // slow |accel| at rest, about one g
+		static bool   s_settling = false;  // deaf while a flick rings down
+		static float  s_settleT = 0.0f;
 		s_jumpPulse = false;
 
 		const WPADData *wd = WPAD_Data(WPAD_CHAN_0);
@@ -956,22 +965,35 @@ WiiPadScan(void)
 		const bool inMenu = FrontEndMenuManager.m_bMenuActive;
 
 		if(!nunchukReady || !onFoot || inMenu){
-			s_haveAccel = false;
+			s_settling = false;
+			s_settleT = 0.0f;
 		}else{
-			const s16 accelY = wd->exp.nunchuk.accel.y;
-			if(s_haveAccel){
-				const u64 now = gettime();
-				const int dy = (int)accelY - (int)s_prevAccelY;
-				const bool pastRefractory = (now - s_lastFlick) > kFlickRefractoryUsec;
-				// Downward: on this pad gravity pulls toward -y, so a flick down
-				// drives accel.y more negative, i.e. a drop in the value.
-				if(dy < -kFlickDelta && pastRefractory){
-					s_jumpPulse = true;
-					s_lastFlick = now;
-				}
+			const s16 ax = wd->exp.nunchuk.accel.x;
+			const s16 ay = wd->exp.nunchuk.accel.y;
+			const s16 az = wd->exp.nunchuk.accel.z;
+			const float mag = std::sqrt((float)ax*ax + (float)ay*ay + (float)az*az);
+			if(s_gravity <= 0.0f)
+				s_gravity = mag;                    // first sample seeds the baseline
+			else
+				s_gravity += (mag - s_gravity)*kFlickGravityFollow;
+			// How far the current acceleration sits above the gravity baseline, as a
+			// fraction of that baseline.  A deliberate flick spikes this; holding,
+			// walking, or steering do not.
+			const float dev = (mag - s_gravity)/(s_gravity > 1.0f ? s_gravity : 1.0f);
+			if(s_settling){
+				// Wait for the jolt and its rebound to fall away before arming again,
+				// so one flick is exactly one pulse.
+				if(dev > kFlickRearmFraction)
+					s_settleT = 0.0f;
+				else
+					s_settleT += s_pointerDt;
+				if(s_settleT >= kFlickSettleSec)
+					s_settling = false;
+			}else if(dev > kFlickFraction){
+				s_jumpPulse = true;
+				s_settling = true;
+				s_settleT = 0.0f;
 			}
-			s_prevAccelY = accelY;
-			s_haveAccel = true;
 		}
 		s_flickJumpPulse = s_jumpPulse;
 	}
