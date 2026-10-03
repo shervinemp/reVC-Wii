@@ -10,8 +10,9 @@
 // input the mouse camera is about to apply, with no lock-on and no camera mode
 // change: the crosshair never leaves the screen and the view never jumps.
 //
-//  - Slower look: the camera turns at 70 % speed whenever the aim button is held,
-//    as in any shooter, so fine aim is easier than at walking-around speed.
+//  - Zoom and slower look: while the aim button is held the view narrows a little
+//    and the camera turns at about 70 % speed, as in any shooter, so fine aim is
+//    easier than at walking-around speed.
 //  - Friction: with the crosshair near a target the look speed drops further, so
 //    it is easier to settle on and to stay on.
 //  - Magnetism: the crosshair is eased toward the target's chest, which also
@@ -25,6 +26,11 @@ class CAimAssist
 public:
 	// The "Aim Assist" option; persisted to the INI.
 	static int8 bEnabled;
+
+	// The multiplier for the camera's field of view this frame: eases down while the
+	// aim button is held and back to 1 on release.  Called every frame by the mouse
+	// camera before it uses its FOV.
+	static float FovScale(void);
 
 	// True while the assist is holding a target near the crosshair, for the HUD to
 	// show it.  Time-based because Process only runs while the mouse camera does.

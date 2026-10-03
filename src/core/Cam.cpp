@@ -1348,6 +1348,9 @@ void
 CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrientation, float, float)
 {
 	FOV = DefaultFOV;
+#ifdef AIM_ASSIST
+	FOV *= CAimAssist::FovScale();
+#endif
 
 	if(!CamTargetEntity->IsPed())
 		return;

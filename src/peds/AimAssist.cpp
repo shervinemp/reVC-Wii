@@ -27,9 +27,18 @@ const float kMaxCone = DEGTORAD(7.0f);
 const float kMinCone = DEGTORAD(2.5f);
 const float kTargetRadius = 1.2f;	// metres
 
-// Look speed while the aim button is held, target or not.  Only the aim button:
-// slowing the camera while merely shooting would fight sweeping across a crowd.
-const float kAimLookScale = 0.7f;
+// Zoom while the aim button is held: the field of view narrows to this share of
+// normal and eases back out on release.  The mouse camera already scales its look
+// speed by FOV/80, so the zoom slows the turn by the same share on top of the
+// multiplier below; the two are chosen to come to about 0.7 together.
+const float kAimZoomFov = 0.85f;
+const float kZoomInSeconds = 0.08f;		// time constant of the ease in
+const float kZoomOutSeconds = 0.12f;	// and out
+
+// Look speed while the aim button is held, target or not, on top of the zoom's.
+// Only the aim button: slowing the camera while merely shooting would fight
+// sweeping across a crowd.
+const float kAimLookScale = 0.82f;
 
 // Further look speed with the crosshair dead on a target (on top of the above);
 // 1.0 at the edge of the cone.
@@ -53,6 +62,7 @@ const uint32 kSightIntervalMs = 250;
 const float kEngagedRatio = 0.6f;
 const uint32 kEngagedHoldMs = 100;
 
+float s_zoom = 1.0f;
 uint32 s_engagedTime = 0;
 bool s_everEngaged = false;
 int32 s_targetHandle = -1;
@@ -101,6 +111,18 @@ ToAngles(const CVector &direction, float &alpha, float &beta)
 	beta = Atan2(-direction.y, -direction.x);
 }
 
+}
+
+float
+CAimAssist::FovScale(void)
+{
+	CPlayerPed *player = FindPlayerPed();
+	CPad *pad = CPad::GetPad(0);
+	const bool zooming = CanAssist(player, pad) && pad->GetTarget();
+	const float target = zooming ? kAimZoomFov : 1.0f;
+	const float seconds = zooming ? kZoomInSeconds : kZoomOutSeconds;
+	s_zoom += (target - s_zoom) * (1.0f - exp(-CTimer::GetTimeStep()/50.0f / seconds));
+	return s_zoom;
 }
 
 bool
