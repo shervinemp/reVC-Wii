@@ -601,6 +601,10 @@ public:
 	bool m_DisplayControllerOnFoot;
 	bool m_bShutDownFrontEndRequested;
 	bool m_bStartUpFrontEndRequested;
+#ifdef NINTENDO_WII
+	bool m_bQuitPromptRequested;
+	uint32 m_nQuitPromptRequestTime;
+#endif
 	int32 m_KeyPressedCode;
 	int32 m_PrefsBrightness;
 	float m_PrefsLOD;
@@ -834,6 +838,9 @@ public:
 	void ProcessOnOffMenuOptions();
 	void RequestFrontEndShutDown();
 	void RequestFrontEndStartUp();
+#ifdef NINTENDO_WII
+	void RequestQuitPrompt();
+#endif
 	void ResetHelperText();
 	void SaveSettings();
 	void SetControlMethod(int8 method);

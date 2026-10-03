@@ -10,8 +10,10 @@
 // input the mouse camera is about to apply, with no lock-on and no camera mode
 // change: the crosshair never leaves the screen and the view never jumps.
 //
-//  - Friction: with the crosshair near a target the look speed drops, so it is
-//    easier to settle on and to stay on.
+//  - Slower look: the camera turns at 70 % speed whenever the aim button is held,
+//    as in any shooter, so fine aim is easier than at walking-around speed.
+//  - Friction: with the crosshair near a target the look speed drops further, so
+//    it is easier to settle on and to stay on.
 //  - Magnetism: the crosshair is eased toward the target's chest, which also
 //    carries it along when the target moves.  It lets go the moment the player
 //    pushes away from the target.

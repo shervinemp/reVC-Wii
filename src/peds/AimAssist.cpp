@@ -27,8 +27,12 @@ const float kMaxCone = DEGTORAD(7.0f);
 const float kMinCone = DEGTORAD(2.5f);
 const float kTargetRadius = 1.2f;	// metres
 
-// Look speed with the crosshair dead on a target; 1.0 at the edge of the cone.
-const float kFrictionMin = 0.5f;
+// Look speed while the aim button is held, target or not.
+const float kAimLookScale = 0.7f;
+
+// Further look speed with the crosshair dead on a target (on top of the above);
+// 1.0 at the edge of the cone.
+const float kFrictionMin = 0.6f;
 
 // Share of the remaining error toward the chest that is closed per second at the
 // centre of the cone, fading to nothing at its edge.
@@ -99,6 +103,11 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 		s_targetHandle = -1;
 		return;
 	}
+
+	// What the player asked for, before any of the below touches it.
+	float inputAlpha = alphaOffset, inputBeta = betaOffset;
+	alphaOffset *= kAimLookScale;
+	betaOffset *= kAimLookScale;
 
 	// The ray shots leave along, as CCamera::Find3rdPersonCamTargetVector builds it.
 	float angleX = DEGTORAD((CCamera::m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * fov * CDraw::GetAspectRatio());
@@ -172,7 +181,6 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 	// 1 on the target, 0 at the rim of its cone.
 	float closeness = 1.0f - bestRatio;
 
-	float inputAlpha = alphaOffset, inputBeta = betaOffset;
 	float slow = 1.0f - (1.0f - kFrictionMin)*closeness;
 	alphaOffset *= slow;
 	betaOffset *= slow;

@@ -623,11 +623,22 @@ WiiPadScan(void)
 	// of any CControllerState, so it is handled here rather than mapped.  Both
 	// masks are tested together because btns_d carries the Classic Controller's
 	// buttons in its top half, so one test covers the remote and the pad on it.
-	// It raises the same RsGlobal.quit the power and reset buttons raise; there
-	// is no HOME overlay to fall back on, so this DISCARDS unsaved progress.
+	//
+	// With a game running it asks first, through the frontend's own "quit game?"
+	// screen, because quitting raises the same RsGlobal.quit the power and reset
+	// buttons raise and throws away everything since the last save.  It quits
+	// outright from the title screens (nothing to lose), from that screen itself,
+	// and on a second press while the first is still waiting to be shown.
 	if(WPAD_ButtonsDown(WPAD_CHAN_0) & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)){
-		WiiTraceReport("WII pad: HOME pressed\n");
-		HandleExit();
+		const bool onQuitScreen = FrontEndMenuManager.m_bMenuActive &&
+			FrontEndMenuManager.m_nCurrScreen == MENUPAGE_EXIT;
+		if(FrontEndMenuManager.m_bGameNotLoaded || FrontEndMenuManager.m_bQuitPromptRequested || onQuitScreen){
+			WiiTraceReport("WII pad: HOME pressed, quitting\n");
+			HandleExit();
+		}else{
+			WiiTraceReport("WII pad: HOME pressed, asking\n");
+			FrontEndMenuManager.RequestQuitPrompt();
+		}
 	}
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which

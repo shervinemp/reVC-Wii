@@ -525,6 +525,10 @@ CMenuManager::CMenuManager()
 	m_DisplayControllerOnFoot = false;
 	m_bShutDownFrontEndRequested = false;
 	m_bStartUpFrontEndRequested = false;
+#ifdef NINTENDO_WII
+	m_bQuitPromptRequested = false;
+	m_nQuitPromptRequestTime = 0;
+#endif
 	pEditString = nil;
 	pControlEdit = nil;
 	DisplayComboButtonErrMsg = false;
@@ -5321,6 +5325,21 @@ CMenuManager::RequestFrontEndStartUp()
 	m_bStartUpFrontEndRequested = true;
 }
 
+#ifdef NINTENDO_WII
+// The HOME button.  It asks through the game's own "quit game?" screen instead of
+// quitting on the spot, which used to throw away everything since the last save.
+// The request is picked up at the end of SwitchMenuOnAndOff, the one place where
+// opening a frontend page is safe.
+void
+CMenuManager::RequestQuitPrompt()
+{
+	m_bQuitPromptRequested = true;
+	m_nQuitPromptRequestTime = CTimer::GetTimeInMillisecondsPauseMode();
+	if (!m_bMenuActive)
+		RequestFrontEndStartUp();
+}
+#endif
+
 void
 CMenuManager::ResetHelperText() 
 {
@@ -5717,6 +5736,23 @@ CMenuManager::SwitchMenuOnAndOff()
 			m_nCurrOption = 8;
 		}
 	}
+
+#ifdef NINTENDO_WII
+	if (m_bQuitPromptRequested) {
+		// A request that could not be shown (a letterboxed cutscene, the save-zone
+		// menu, a load or save in progress) is dropped after a few seconds, so it
+		// cannot pop up long after the player has forgotten pressing HOME.  Until
+		// then a second HOME press quits outright (see WiiPadScan).
+		if (CTimer::GetTimeInMillisecondsPauseMode() - m_nQuitPromptRequestTime > 3000)
+			m_bQuitPromptRequested = false;
+		else if (m_bMenuActive && !m_OnlySaveMenu && m_nCurrScreen != MENUPAGE_LOADING_IN_PROGRESS &&
+		         m_nCurrScreen != MENUPAGE_SAVING_IN_PROGRESS && m_nCurrScreen != MENUPAGE_DELETING_IN_PROGRESS) {
+			m_bQuitPromptRequested = false;
+			if (m_nCurrScreen != MENUPAGE_EXIT)
+				SwitchToNewScreen(MENUPAGE_EXIT);
+		}
+	}
+#endif
 
 	m_bStartUpFrontEndRequested = false;
 	m_bShutDownFrontEndRequested = false;
