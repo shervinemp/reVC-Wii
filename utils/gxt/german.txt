@@ -14632,6 +14632,9 @@ WIIMOTE-LAUTSPRECHER
 [WII_AIM]
 ZIELHILFE
 
+[WII_IRA]
+ZEIGER-ZIELEN
+
 [WII_SDF]
 Speichern fehlgeschlagen! SD-Karte pruefen: eingelegt, nicht schreibgeschuetzt, nicht voll.
 

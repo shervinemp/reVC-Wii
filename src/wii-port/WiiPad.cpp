@@ -14,6 +14,7 @@
 #include "PlayerPed.h"
 #include "Timer.h"
 #include "WiiPad.h"
+#include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
 #include "WiiTrace.h"
 #include "platform.h"
@@ -145,6 +146,35 @@ constexpr float kPointerHoldSeconds = 2.0f;
 constexpr float kMinPointerDt = 1.0f/240.0f;
 constexpr float kMaxPointerDt = 1.0f/15.0f;
 
+// --- the pointer as a crosshair ---------------------------------------------
+// Standard aiming draws a crosshair at a fixed point and traces the shot through
+// it, so aiming is steering the camera, and with the rate camera above that means
+// pushing the pointer off centre and waiting for the view to get there.  With a
+// gun out the pointer can do what it is best at: put the crosshair where it
+// points.  The crosshair is two numbers on CCamera that the HUD draws at and the
+// shot is traced through (CCamera::Find3rdPersonCrosshairRay), so setting them
+// moves both, and the camera only has to turn when the player aims past the edge
+// of a box around the middle of the screen, the way Metroid Prime 3 does it.
+//
+//   box         where the crosshair can go, as fractions of the screen.  Past it
+//               the crosshair sits on the edge and the camera turns instead.
+//   saturation  how far past the box, in half screen heights as above, the pointer
+//               has to be for the full turn rate.
+//   smoothing   the pointer jitters, and that would shake the crosshair, so it
+//               follows through a low pass whose time constant shrinks with how
+//               far it has to travel: heavy while the hand is nearly still,
+//               almost none in a fast sweep.
+//               tau = kAimSmoothTau/(1 + kAimSmoothGain*error)
+constexpr float kAimDefaultX = 0.53f;	// CCamera::Init's resting crosshair
+constexpr float kAimDefaultY = 0.4f;
+constexpr float kAimBoxLeft = 0.30f;
+constexpr float kAimBoxRight = 0.72f;
+constexpr float kAimBoxTop = 0.20f;
+constexpr float kAimBoxBottom = 0.62f;
+constexpr float kAimSaturation = 0.28f;
+constexpr float kAimSmoothTau = 0.09f;
+constexpr float kAimSmoothGain = 60.0f;
+
 // --- what one scan leaves behind for the rest of the frame -------------------
 // WiiPadScan fills these and everything below reads them, which is the whole
 // reason it is a separate entry point; see WiiPad.h.
@@ -159,6 +189,11 @@ u64 s_pointerLastTime;
 float s_heldRateX;
 float s_heldRateY;
 float s_heldSeconds;
+
+// Where the crosshair currently is, after smoothing, while the pointer owns it.
+float s_aimX;
+float s_aimY;
+bool s_aimActive;
 
 int16
 toAxis(float value, float sensitivity)
@@ -573,7 +608,101 @@ stopPointerHold(void)
 	s_heldSeconds = kPointerHoldSeconds;
 }
 
+// Whether the pointer should be moving the crosshair this frame: a gun out whose
+// crosshair the HUD shows (the same test as Hud.cpp), in the Standard method, on
+// foot, and the option on.  Everything else keeps the fixed crosshair and the
+// rate camera.
+bool
+pointerAimWanted(void)
+{
+	if(!WiiPointerAimEnabled || !CCamera::m_bUseMouse3rdPerson)
+		return false;
+	CPlayerPed *player = FindPlayerPed();
+	if(player == nullptr || player->bInVehicle ||
+	   player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK)
+		return false;
+	if(!TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
+		return false;
+	const eWeaponType weapon = player->GetWeapon()->m_eWeaponType;
+	return (weapon >= WEAPONTYPE_COLT45 && weapon <= WEAPONTYPE_RUGER) ||
+		weapon == WEAPONTYPE_M60 || weapon == WEAPONTYPE_MINIGUN || weapon == WEAPONTYPE_FLAMETHROWER;
+}
+
+// Gives the crosshair back to the game.
+void
+releaseCrosshair(void)
+{
+	s_aimActive = false;
+	CCamera::m_f3rdPersonCHairMultX = kAimDefaultX;
+	CCamera::m_f3rdPersonCHairMultY = kAimDefaultY;
+}
+
+// Moves the crosshair toward a target position through the jitter filter.  It
+// starts on the target when the pointer first takes it over, rather than gliding
+// there from the resting position.
+void
+steerCrosshair(float targetX, float targetY)
+{
+	if(!s_aimActive){
+		s_aimX = targetX;
+		s_aimY = targetY;
+		s_aimActive = true;
+	}else{
+		const float errorX = targetX - s_aimX;
+		const float errorY = targetY - s_aimY;
+		const float error = std::sqrt(errorX*errorX + errorY*errorY);
+		const float tau = kAimSmoothTau/(1.0f + kAimSmoothGain*error);
+		const float follow = 1.0f - std::exp(-s_pointerDt/tau);
+		s_aimX += errorX*follow;
+		s_aimY += errorY*follow;
+	}
+	CCamera::m_f3rdPersonCHairMultX = s_aimX;
+	CCamera::m_f3rdPersonCHairMultY = s_aimY;
+}
+
+// The pointer's two jobs while it owns the crosshair.  Where the crosshair goes is
+// the pointer clamped into the box, and how fast the camera turns is how far the
+// pointer is past it, in the same units and with the same curve as irPointerRate
+// so the two feel like one control.  Returns false inside the box, which is what
+// leaves the camera still while the player is only aiming.
+bool
+irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
+	float &outX, float &outY)
+{
+	const float width = (float)RsGlobal.maximumWidth;
+	const float height = (float)RsGlobal.maximumHeight;
+	if(width <= 0.0f || height <= 0.0f)
+		return false;
+
+	const float pointerX = data.ir.x/width;
+	const float pointerY = data.ir.y/height;
+	const float boxX = pointerX < kAimBoxLeft ? kAimBoxLeft :
+		(pointerX > kAimBoxRight ? kAimBoxRight : pointerX);
+	const float boxY = pointerY < kAimBoxTop ? kAimBoxTop :
+		(pointerY > kAimBoxBottom ? kAimBoxBottom : pointerY);
+	outCrosshairX = boxX;
+	outCrosshairY = boxY;
+
+	const float half = height*0.5f;
+	const float overX = (pointerX - boxX)*width/half;
+	const float overY = (pointerY - boxY)*height/half;
+	const float magnitude = std::sqrt(overX*overX + overY*overY);
+	if(magnitude <= 0.0f)
+		return false;
+
+	float t = magnitude/kAimSaturation;
+	if(t > 1.0f)
+		t = 1.0f;
+	const float curve = t*(kPointerCurveLinear + (1.0f - kPointerCurveLinear)*t);
+	const float rate = kPointerRatePerSec*curve;
+	outX = (overX/magnitude)*rate;
+	outY = (overY/magnitude)*rate*kPointerPitchScale;
+	return true;
+}
+
 } // namespace
+
+int8_t WiiPointerAimEnabled = 1;
 
 void
 WiiPadInitialise(int pointerWidth, int pointerHeight)
@@ -690,16 +819,22 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	// live remote cannot steer the camera while driving with GC.
 	if(s_connectedGameCubePads != 0){
 		stopPointerHold();
+		releaseCrosshair();
 		return;
 	}
 
 	WPADData *data = WPAD_Data(WPAD_CHAN_0);
 	if(data == nullptr){
 		stopPointerHold();
+		releaseCrosshair();
 		return;
 	}
 
 	const bool tracked = data->ir.valid != 0;
+
+	const bool aimWithPointer = !FrontEndMenuManager.m_bMenuActive && pointerAimWanted();
+	if(!aimWithPointer)
+		releaseCrosshair();
 
 	if(FrontEndMenuManager.m_bMenuActive){
 		// A cursor, absolutely: aiming at an option has to put the cursor on that
@@ -725,7 +860,14 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 
 	if(tracked){
 		float rateX, rateY;
-		if(irPointerRate(*data, rateX, rateY)){
+		bool turning;
+		if(aimWithPointer){
+			float crosshairX, crosshairY;
+			turning = irAimRate(*data, crosshairX, crosshairY, rateX, rateY);
+			steerCrosshair(crosshairX, crosshairY);
+		}else
+			turning = irPointerRate(*data, rateX, rateY);
+		if(turning){
 			s_heldRateX = rateX;
 			s_heldRateY = rateY;
 			s_heldSeconds = 0.0f;
@@ -736,10 +878,15 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		}
 	}else{
 		// Aimed past the edge of the sensor's field while still turning.  Keep
-		// going the same way until the hold runs out.
+		// going the same way until the hold runs out.  The crosshair stays where
+		// the pointer last left it for as long as that lasts, and then goes back
+		// to rest rather than sit in a corner for a remote that was put down.
 		s_heldSeconds += s_pointerDt;
-		if(s_heldSeconds >= kPointerHoldSeconds)
+		if(s_heldSeconds >= kPointerHoldSeconds){
 			stopPointerHold();
+			if(aimWithPointer)
+				steerCrosshair(kAimDefaultX, kAimDefaultY);
+		}
 	}
 
 	if(s_heldRateX == 0.0f && s_heldRateY == 0.0f)

@@ -623,6 +623,7 @@ public:
 	void ClearPlayerWeaponMode(void);
 	void UpdateAimingCoors(CVector const &coors);
 	bool Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, CVector &target);
+	static CVector Find3rdPersonCrosshairRay(const CVector &front, const CVector &up, float fov);
 	float Find3rdPersonQuickAimPitch(void);
 	bool Using1stPersonWeaponMode(void);
 

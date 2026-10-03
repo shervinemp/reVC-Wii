@@ -3988,17 +3988,38 @@ CCamera::Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, 
 		target = dist*Cams[ActiveCam].CamTargetEntity->GetForward() + source;
 		return false;
 	}else{
-		float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * Cams[ActiveCam].FOV * CDraw::GetAspectRatio());
-		float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * Cams[ActiveCam].FOV);
 		source = Cams[ActiveCam].Source;
-		target = Cams[ActiveCam].Front;
-		target += Cams[ActiveCam].Up * Tan(angleY);
-		target += CrossProduct(Cams[ActiveCam].Front, Cams[ActiveCam].Up) * Tan(angleX);
-		target.Normalise();
+		target = Find3rdPersonCrosshairRay(Cams[ActiveCam].Front, Cams[ActiveCam].Up, Cams[ActiveCam].FOV);
 		source += DotProduct(pos - source, target)*target;
 		target = dist*target + source;
 		return true;
 	}
+}
+
+// The unit ray through the third-person crosshair for a camera looking along
+// front/up.  Both the shot (above) and CAimAssist go through this, so they cannot
+// disagree about where the crosshair points.
+CVector
+CCamera::Find3rdPersonCrosshairRay(const CVector &front, const CVector &up, float fov)
+{
+#ifdef NINTENDO_WII
+	// The Wiimote pointer moves the crosshair around the screen, and the shot has to
+	// land where the crosshair is drawn.  The approximation below is close near the
+	// middle and drifts toward the edges, so use the camera's own projection: the
+	// view window is the half extent of the image plane at distance 1.
+	const RwV2d *viewWindow = RwCameraGetViewWindow(Scene.camera);
+	CVector ray = front;
+	ray += up * ((1.0f - 2.0f*m_f3rdPersonCHairMultY) * viewWindow->y);
+	ray += CrossProduct(front, up) * ((2.0f*m_f3rdPersonCHairMultX - 1.0f) * viewWindow->x);
+#else
+	float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * fov * CDraw::GetAspectRatio());
+	float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * fov);
+	CVector ray = front;
+	ray += up * Tan(angleY);
+	ray += CrossProduct(front, up) * Tan(angleX);
+#endif
+	ray.Normalise();
+	return ray;
 }
 
 float

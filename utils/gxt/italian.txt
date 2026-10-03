@@ -14641,6 +14641,9 @@ ALTOPARLANTE WIIMOTE
 [WII_AIM]
 AIUTO MIRA
 
+[WII_IRA]
+MIRA CON PUNTATORE
+
 [WII_SDF]
 Salvataggio fallito! Controlla la scheda SD: inserita, sbloccata e non piena.
 

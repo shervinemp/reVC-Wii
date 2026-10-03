@@ -121,11 +121,8 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 	alphaOffset *= kAimLookScale;
 	betaOffset *= kAimLookScale;
 
-	// The ray shots leave along, as CCamera::Find3rdPersonCamTargetVector builds it.
-	float angleX = DEGTORAD((CCamera::m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * fov * CDraw::GetAspectRatio());
-	float angleY = DEGTORAD((0.5f-CCamera::m_f3rdPersonCHairMultY) * 1.8f * 0.5f * fov);
-	CVector aim = front + up*Tan(angleY) + CrossProduct(front, up)*Tan(angleX);
-	aim.Normalise();
+	// The ray shots leave along.
+	CVector aim = CCamera::Find3rdPersonCrosshairRay(front, up, fov);
 
 	float range = CWeaponInfo::GetWeaponInfo(player->GetWeapon()->m_eWeaponType)->m_fRange;
 

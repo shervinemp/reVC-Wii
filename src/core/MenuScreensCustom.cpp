@@ -32,6 +32,7 @@
 #include "Population.h"
 #include "AimAssist.h"
 #ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
 #endif
 
@@ -104,6 +105,12 @@
 	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define AIM_ASSIST_TOGGLE
+#endif
+
+#ifdef NINTENDO_WII
+	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+#else
+	#define POINTER_AIM_TOGGLE
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -707,6 +714,7 @@ CMenuScreenCustom aScreens[] = {
 	   INVERT_PAD_SELECTOR
 #endif
 		AIM_ASSIST_TOGGLE
+		POINTER_AIM_TOGGLE
 		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
 		//MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 260, MENUALIGN_CENTER, // original y

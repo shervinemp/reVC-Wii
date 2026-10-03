@@ -39,6 +39,7 @@
 #include "AimAssist.h"
 #ifdef NINTENDO_WII
 #include "WiiPad.h"
+#include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
 #endif
 
@@ -5010,6 +5011,9 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					SetControlMethod(DEFAULT_CONTROL_METHOD);
 #ifdef AIM_ASSIST
 					CAimAssist::bEnabled = true;
+#endif
+#ifdef NINTENDO_WII
+					WiiPointerAimEnabled = 1;
 #endif
 					SaveSettings();
 #ifdef LOAD_INI_SETTINGS

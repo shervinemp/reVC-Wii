@@ -14327,6 +14327,9 @@ ALTAVOZ WIIMOTE
 [WII_AIM]
 AYUDA DE APUNTADO
 
+[WII_IRA]
+APUNTADO POR PUNTERO
+
 [WII_SDF]
 Error al guardar! Revisa la tarjeta SD: insertada, sin bloqueo y con espacio.
 
