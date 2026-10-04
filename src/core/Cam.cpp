@@ -126,7 +126,11 @@ float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 //   Its angle is fixed.  Only the distance changes as the players separate, so
 //   splitting up zooms out rather than swinging the camera around.
 static const float kCoopBaseBack = 11.0f;		// units behind the midpoint
-static const float kCoopBaseHeight = 9.5f;		// units above it: about 41 degrees down
+static const float kCoopBaseHeight = 9.5f;		// units above it: about 41 degrees down.
+// 41 is a placeholder and probably wrong.  The steeper the camera the closer the
+// screen-to-ground mapping is to linear, and in this design aiming IS a reticle,
+// so a shallow angle compresses the horizon and makes aiming at distance
+// twitchy.  Steeper is the better trade here; see COUCH-COOP-DESIGN.md.
 static const float kCoopSeparationGain = 0.5f;	// extra pull-back per unit of split
 static const float kCoopMaxBack = 28.0f;
 static const float kCoopFollowRate = 5.0f;		// per second, so the view eases into place

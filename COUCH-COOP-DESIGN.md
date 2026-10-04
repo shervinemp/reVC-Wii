@@ -42,7 +42,94 @@ Facts below were read out of this tree, not assumed.
 | Top-down mode exists but is dead | `Camera.h:38` declares `MODE_TOPDOWN`; `Cam.cpp:176` has its handler **commented out** |
 | Peds are placement-new'd into a fixed pool | `typedef CPool<CPed,CPlayerPed> CPedPool` — `Pools.h:16`; `CPool` has no `Allocate` (`templates.h:38`) |
 
-## The three gates, in dependency order
+## Revision after studying the PS2 SA co-op
+
+Gate 0 shipped (`d45ff871`) and is correct as far as it goes, but studying what
+SA MP actually does says five things, four of which are changes.
+
+**Control ownership is dynamic — this is SA MP's best idea and Gate 0 lacks it.**
+Only one player *has control* at a time. The other is a passenger/assistant who
+can move and shoot but does not drive, and a button hands control over. Gate 0
+hardcodes player 1 as the camera subject, which is the static version of that and
+is worse: whoever is not driving is a passenger *by definition*, and the camera
+never goes where the action is.
+
+This is a separate axis from script ownership. **Scripts stay with player 1** —
+that is unchanged, and SA MP agrees with it, having shipped no co-op campaign at
+all. What follows the controller is the camera, the vehicle, and pickup
+attribution.
+
+**The camera follows the controller, not player 1.** Follows from the above.
+
+**A plain midpoint fails once the players separate.** At 30m the average sits
+halfway between them and the controller sits on the very edge of frame. SA MP
+guarantees both are visible. So: weight the midpoint toward the controller, and
+past a separation threshold follow the controller alone.
+
+**The ped must face its reticle.** It does not yet. The ped keeps facing
+wherever it was walking while the dot is elsewhere, so shooting looks broken even
+though the ray is correct. The engine's aim state wants driving the upper body
+and weapon from the reticle position.
+
+**The pitch was probably too shallow.** 41 degrees was picked for legibility of
+the 3D, which is the wrong priority in a design where aiming *is* a reticle. The
+steeper the camera the closer the screen-to-ground mapping is to linear — near
+vertical is nearly orthographic — so a shallow angle compresses the horizon and
+makes aiming at distance twitchy. **Try 55–60 degrees.** The instinct behind
+"semi-topdown" was better than the number that was first put on it.
+
+### Aim assist must move the reticle, not the camera
+
+The most important consequence of the fixed camera, and one Gate 0 does not
+handle.
+
+`CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset)` is called
+from `Cam.cpp:1539` inside the follow-ped path, and what it writes is then applied
+straight to the camera's look angles:
+
+    CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset);
+    Alpha += AlphaOffset;
+    Beta  += BetaOffset;
+
+So aim assist **turns the camera**. The pointer is fine adjustment layered on top
+of a snap that is already doing most of the work — the crosshair turning red
+(`Hud.cpp:295`, `CAimAssist::IsEngaged()`) is the tell that it has engaged.
+
+That makes two things true at once:
+
+1. **Reticle-only aim is viable precisely because the snap exists.** It is not a
+   downgrade. This is the strongest argument for the whole design and it was
+   missing from the first draft of it.
+2. **A camera that takes no input loses aim assist entirely.** Gate 0 as shipped
+   loses it, which is a far bigger loss than losing camera steering — it is losing
+   the mechanism that was doing most of the aiming.
+
+The fix is to redirect assist from the camera to the reticle. A target's screen
+position is just that target projected onto the image plane, and the reticle is
+already screen-space, so assist's magnetism becomes "ease the reticle toward the
+target's projected position". Same snap, camera stays still, and it comes free
+per player because each has their own reticle.
+
+**This also weakens the steeper-pitch argument above.** It was argued that a
+steeper camera gives a more linear screen-to-ground mapping and so finer aim. If
+assist does the heavy lifting and the pointer is fine adjustment, the precision of
+that mapping matters much less, and 41 degrees is more defensible than the note
+above claims. The pitch should be chosen by how well the 3D reads, not by aiming
+linearity.
+
+### Also worth copying
+
+**Drop-in / drop-out rather than on/off.** SA MP's second player could leave and
+rejoin freely. On this port that falls out of the toggle having three states —
+off, joined, and *requested* — with the join only completing when a second
+controller is actually present.
+
+### What SA MP confirms about the rest
+
+Player 1 owning scripts, freeroam plus custom missions only, the non-controller
+as a free-aim role, per-player health/armour/weapons, and pull-back-on-separation
+are all what SA MP settled on after years of people attempting it. That is
+evidence rather than taste, so none of it is being changed.
 
 ### Gate 0 — the shared camera (do this first)
 
