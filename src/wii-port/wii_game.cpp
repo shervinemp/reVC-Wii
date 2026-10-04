@@ -741,6 +741,76 @@ static const unsigned int kStallFrameMs = 400;
 // freeze then costs exactly one line.
 static const unsigned int kStallReportGapMs = 5000;
 
+// Both of the ways a game can start, factored out because a running game has to be
+// able to start another one and that is the case the boot path never exercises.
+//
+// `teardownFirst` is what separates them.  InitialiseGame is CGame::Initialise and
+// nothing else -- it builds the pools and the world and does not clear anything --
+// so run over a live world it builds a second game on top of the first.  Coming
+// here from GS_PLAYING_GAME means there IS a live world, so it has to come down
+// first; coming from the boot frontend there is nothing to bring down.
+static void
+startSavedGame(bool teardownFirst)
+{
+	if(teardownFirst)
+		CGame::ShutDownForRestart();
+
+	WiiTraceReport("WII game: loading saved game\n");
+	WiiTraceHeap("pre-load");
+
+	// Three steps and not one, and the order is the whole thing.  InitialiseGame
+	// builds the pools, streaming and world that the save is restored into, so it
+	// has to run first; ShutDownForRestart then clears what it placed; and
+	// InitialiseWhenRestarting is the one that actually reads the slot -- it is
+	// what consumes m_bWantToLoad and calls GenericLoad.  Same order as glfw.cpp
+	// and sdl2.cpp.  InitialiseGame on its own never reaches GenericLoad, which is
+	// why picking a slot used to start the story over from the beginning.
+	InitialiseGame();
+	CGame::ShutDownForRestart();
+	CGame::InitialiseWhenRestarting();
+	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
+
+	FrontEndMenuManager.m_bGameNotLoaded = false;
+	// Both cleared here as well as inside InitialiseWhenRestarting, which does it
+	// itself on the success path but NOT on the failure path (Game.cpp leaves it
+	// false after its own error handling).  A stale true here is not cosmetic: it
+	// is the condition the next InitialiseWhenRestarting tests to decide whether
+	// to load at all, so leaving it set makes a later unrelated start take the
+	// load branch at a moment nothing asked for one.
+	FrontEndMenuManager.m_bWantToLoad = false;
+	FrontEndMenuManager.m_bWantToRestart = false;
+
+	// DoSettingsBeforeStartingAGame fades both to zero on its way out, and the only
+	// code that puts them back is InitialiseOnceAfterRW, which does not run again
+	// after boot.  Harmless on the boot path (they are already at 127), essential on
+	// the in-game one, which is otherwise a silent game.
+	DMAudio.SetEffectsFadeVol(127);
+	DMAudio.SetMusicFadeVol(127);
+
+	gGameState = GS_PLAYING_GAME;
+	WiiTraceHeap("post-load");
+}
+
+static void
+startFreshGame(bool teardownFirst)
+{
+	if(teardownFirst)
+		CGame::ShutDownForRestart();
+
+	WiiTraceReport("WII game: starting new game\n");
+	WiiTraceHeap("pre-load");
+	InitialiseGame();
+
+	FrontEndMenuManager.m_bGameNotLoaded = false;
+	FrontEndMenuManager.m_bWantToLoad = false;
+	FrontEndMenuManager.m_bWantToRestart = false;
+	DMAudio.SetEffectsFadeVol(127);
+	DMAudio.SetMusicFadeVol(127);
+
+	gGameState = GS_PLAYING_GAME;
+	WiiTraceHeap("post-load");
+}
+
 int
 main(int argc, char **argv)
 {
@@ -868,57 +938,50 @@ main(int argc, char **argv)
 		case GS_FRONTEND:
 			RsEventHandler(rsFRONTENDIDLE, nullptr);
 			if(FrontEndMenuManager.m_bWantToLoad){
-				WiiTraceReport("WII game boot: loading saved game\n");
-				WiiTraceHeap("pre-load");
-
-				// Three steps and not one, which is what this used to be.
-				// InitialiseGame alone is CGame::Initialise, and that is a NEW
-				// game: it never reaches GenericLoad, so picking a save slot
-				// started the story over from the beginning.
-				//
-				// The save is restored into the pools, streaming and world that
-				// CGame::Initialise builds, so that still has to run first -- on
-				// the desktop skeletons it already has by this point, because they
-				// initialise before showing the menu, while this one boots
-				// straight into the frontend and loads nothing until asked.
-				// ShutDownForRestart then clears what Initialise placed in the
-				// world, and InitialiseWhenRestarting is the one that actually
-				// reads the slot.  Same order as glfw.cpp and sdl2.cpp.
-				InitialiseGame();
-				CGame::ShutDownForRestart();
-				CGame::InitialiseWhenRestarting();
-				DMAudio.ChangeMusicMode(MUSICMODE_GAME);
-
-				FrontEndMenuManager.m_bGameNotLoaded = false;
-				// Cleared here as well.  Leaving it set makes every later restart
-				// look like another load request.
-				FrontEndMenuManager.m_bWantToLoad = false;
-				FrontEndMenuManager.m_bWantToRestart = false;
-				gGameState = GS_PLAYING_GAME;
-
-				WiiTraceHeap("post-load");
+				startSavedGame(false);
 				WiiTraceReport("WII game boot: save loaded, entering game\n");
 			}else if(!FrontEndMenuManager.m_bMenuActive)
 				gGameState = GS_INIT_PLAYING_GAME;
 			break;
 
 		case GS_INIT_PLAYING_GAME:
-			WiiTraceReport("WII game boot: loading DATA/GTA_VC.DAT\n");
-			// Brackets the load, so what the frontend left behind and what the
-			// world costs can be read off against the boot line.
-			WiiTraceHeap("pre-load");
-			InitialiseGame();
-			FrontEndMenuManager.m_bGameNotLoaded = false;
-			// Starting a game leaves this set so the desktop skeleton can run its
-			// outer restart loop.  The Wii skeleton completes that transition here.
-			FrontEndMenuManager.m_bWantToRestart = false;
-			gGameState = GS_PLAYING_GAME;
-			WiiTraceHeap("post-load");
+			startFreshGame(false);
 			WiiTraceReport("WII game boot: game data initialized\n");
 			break;
 
 		case GS_PLAYING_GAME:
 			RsEventHandler(rsIDLE, (void*)TRUE);
+			// Load Game or New Game, chosen from the pause menu.
+			//
+			// The desktop skeletons run this same switch inside
+			//     while(!quit && !m_bWantToRestart && !SDL_QuitRequested())
+			// so m_bWantToRestart is what tears the running game down and starts it
+			// again -- and DoSettingsBeforeStartingAGame sets it on BOTH of those
+			// choices, so it is the one signal that covers them.  This port had no
+			// such loop and GS_PLAYING_GAME was terminal, so the request was never
+			// consumed at all:
+			//
+			//   - New Game left m_bWantToRestart set with the frontend shut down and
+			//     both audio fades at zero, so the game carried on in a half torn-down
+			//     state instead of starting again.
+			//   - Load Game additionally left m_bWantToLoad set, and that flag is what
+			//     the NEXT InitialiseWhenRestarting tests to decide whether to load
+			//     (Game.cpp:930), so the load never happened where it was asked for
+			//     and the next unrelated start took the load branch against a world
+			//     that had never been shut down for it.
+			//
+			// Both halves of that are the "load crashed when already in a game"
+			// report.  m_bWantToLoad picks which kind of restart this is; it is set
+			// for a load and left clear for a new game.
+			if(FrontEndMenuManager.m_bWantToRestart){
+				WiiTraceReport("WII game: restart requested from the pause menu "
+				               "(%s)\n",
+				               FrontEndMenuManager.m_bWantToLoad ? "load" : "new game");
+				if(FrontEndMenuManager.m_bWantToLoad)
+					startSavedGame(true);
+				else
+					startFreshGame(true);
+			}
 			break;
 
 		default:
