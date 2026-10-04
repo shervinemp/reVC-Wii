@@ -78,7 +78,49 @@ vertical is nearly orthographic — so a shallow angle compresses the horizon an
 makes aiming at distance twitchy. **Try 55–60 degrees.** The instinct behind
 "semi-topdown" was better than the number that was first put on it.
 
-### Aim assist must move the reticle, not the camera
+### Lock-on already solves aiming, and it never touched the camera
+
+`MODE_AIMING` is **commented out** (`Cam.cpp:235`) — the general weapon-aim camera
+does not exist in this engine. Lock-on is `m_pPointGunAt` / `m_bHasLockOnTarget`,
+both members of **`CPlayerPed`**, and it aims the ped. Only the sniper scope and
+the rocket launcher get a camera mode of their own.
+
+Two consequences, and they reorder the work:
+
+**Lock-on is camera-independent, so it survives the fixed camera untouched.** It
+carries aiming in co-op with no changes at all. That makes the assist redirect
+below a *polish* item for the free-aim case rather than the thing that makes
+aiming viable, which is how it was first described.
+
+**Everything per-ped comes free with the second ped.** Lock-on, weapon state,
+`m_wepAccuracy`, health and armour are all `CPlayerPed` members rather than
+globals or anything keyed on `PlayerInFocus`. The moment player 2 exists as a
+`CPlayerPed`, it has all of it. Pickups and mission triggers are the opposite
+case -- those *are* keyed on `PlayerInFocus` and stay player 1's.
+
+### This reorders the gates
+
+Gate 1 (input) was placed before Gate 2 (ped) on the reasoning that input is the
+blocker. That is backwards. **The ped is where the unknowns are** and it unlocks
+every per-ped system; input is mechanical plumbing that drives systems which will
+already work. So: Gate 2, then Gate 1, then the assist redirect as polish.
+
+### Framing follows the lock target, not just the players
+
+Pull-back on player separation is the wrong target. If player 1 is locked onto
+something across the map, a camera framed only on the two peds shows your own
+character shooting at something you cannot see -- precisely the failure the fixed
+camera was meant to remove. The rule becomes: weight the midpoint toward the
+controller, and widen to include **each player's current lock target**.
+
+### Pitch: pull back, do not steepen
+
+This has now been argued twice and been wrong twice. It was first pushed steeper
+(55-60 degrees) for screen-to-ground linearity in free aim, then partly walked
+back once assist turned out to carry that case. With lock-on carrying aiming
+outright, pitch is purely a framing question -- how well both players and their
+targets read -- and that argues for pulling back rather than steepening. Choose
+it by looking at it; the prior is now the opposite of the first guess.
 
 The most important consequence of the fixed camera, and one Gate 0 does not
 handle.
