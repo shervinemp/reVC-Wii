@@ -809,7 +809,7 @@ pointerSwing(const WPADData &data, float &outX, float &outY)
 	const float az = (float)data.accel.z;
 
 	if(!s_swing.seeded){
-		// First sample defines down for this grip.  Without it the first frames
+		// First sample defines "up" for this grip.  Without it the first frames
 		// after a boot would read as a violent sweep in an arbitrary direction.
 		s_swing.gx = ax; s_swing.gy = ay; s_swing.gz = az;
 		s_swing.seeded = true;
@@ -818,21 +818,42 @@ pointerSwing(const WPADData &data, float &outX, float &outY)
 	s_swing.gy += (ay - s_swing.gy)*kSwingGravityFollow;
 	s_swing.gz += (az - s_swing.gz)*kSwingGravityFollow;
 
-	// Deviation from gravity, as a fraction of g.  At rest the accelerometer
-	// already reads the gravity vector whatever angle the remote is held at, so
-	// the slow baseline is carrying the tilt and only motion is left in here.
 	const float g = std::sqrt(s_swing.gx*s_swing.gx + s_swing.gy*s_swing.gy + s_swing.gz*s_swing.gz);
-	const float scale = g > 1.0f ? 1.0f/g : 1.0f;
-	const float dx = (ax - s_swing.gx)*scale;
-	// The remote's +y points up the screen when it is held like a television
-	// remote, and gravity's pull on it grows the same way, so the screen's
-	// downward is the negative of this axis.
-	const float dy = -(ay - s_swing.gy)*scale;
+	if(g <= 1.0f){
+		// No usable reading (a sensor that has gone quiet reads flat, which is
+		// nowhere near a g).  Say nothing rather than scale noise up.
+		outX = 0.0f;
+		outY = 0.0f;
+		return false;
+	}
+	const float inv = 1.0f/g;
+
+	// The deviation from the gravity the remote is already carrying, in fractions
+	// of g, split into the part ALONG that gravity and the part ACROSS it.  A hand
+	// sweeping left or right pushes across gravity and one moving up or down the
+	// screen pushes along it, so the split is what tells the two apart -- and
+	// unlike reading one fixed body axis it does not care how the remote happens
+	// to be rolled or tilted in the hand.  At rest the accelerometer reads the
+	// reaction to gravity, so the baseline direction is "up".
+	const float dx = (ax - s_swing.gx)*inv;
+	const float dy = (ay - s_swing.gy)*inv;
+	const float dz = (az - s_swing.gz)*inv;
+	const float ux = s_swing.gx*inv, uy = s_swing.gy*inv, uz = s_swing.gz*inv;
+	const float along = dx*ux + dy*uy + dz*uz;
+	const float acrossX = dx - along*ux;
+
+	// Down the screen is the negative of "along": accelerating downwards reduces
+	// the reading along the baseline, because the accelerometer reports specific
+	// force and gravity is already in it.  Across gravity the body's X axis is the
+	// screen's left/right for a remote held like a television remote, and the other
+	// two across-axes barely move for that gesture, so X alone carries it.
+	const float moveX = acrossX;
+	const float moveY = -along;
 
 	const float dt = s_pointerDt;
 	const float keep = std::exp(-kSwingLeakPerSec*dt);
-	s_swing.vx = s_swing.vx*keep + dx*dt;
-	s_swing.vy = s_swing.vy*keep + dy*dt;
+	s_swing.vx = s_swing.vx*keep + moveX*dt;
+	s_swing.vy = s_swing.vy*keep + moveY*dt;
 
 	const float speed = std::sqrt(s_swing.vx*s_swing.vx + s_swing.vy*s_swing.vy);
 	if(speed < kSwingThreshold){
@@ -845,6 +866,18 @@ pointerSwing(const WPADData &data, float &outX, float &outY)
 	outX = s_swing.vx/speed;
 	outY = s_swing.vy/speed;
 	return true;
+}
+
+// Forgets the gravity baseline, so a remote that has been unplugged and plugged
+// back in does not spend its first frames integrating the discontinuity as a
+// sweep.  Nothing is held across a disconnect anyway, so this only has to be
+// right rather than fast.
+void
+resetPointerSwing(void)
+{
+	s_swing.gx = s_swing.gy = s_swing.gz = 0.0f;
+	s_swing.vx = s_swing.vy = 0.0f;
+	s_swing.seeded = false;
 }
 
 // Whether the pointer should be moving the crosshair this frame: a gun out whose
@@ -1170,6 +1203,7 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	if(s_connectedGameCubePads != 0){
 		stopPointerHold();
 		releaseCrosshair();
+		resetPointerSwing();
 		return;
 	}
 
@@ -1177,6 +1211,7 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	if(data == nullptr){
 		stopPointerHold();
 		releaseCrosshair();
+		resetPointerSwing();
 		return;
 	}
 
@@ -1205,13 +1240,24 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		state.LMB = (data->btns_h & WPAD_BUTTON_B) != 0;
 		state.RMB = (data->btns_h & WPAD_BUTTON_A) != 0;
 		stopPointerHold();
+		// The tracker is not run in here, so its last velocity would still be
+		// sitting there on the first frame back out.
+		resetPointerSwing();
 		return;
 	}
 
 	// Runs every frame, in view or not, so the velocity estimate is never stale at
 	// the moment the bar is lost -- which is the only moment it is read.
 	float swingX = 0.0f, swingY = 0.0f;
-	const bool sweeping = pointerSwing(*data, swingX, swingY);
+	bool sweeping = false;
+	if(data->err == WPAD_ERR_NONE){
+		sweeping = pointerSwing(*data, swingX, swingY);
+	}else{
+		// A remote that has gone quiet leaves the accelerometer flat; integrating
+		// that as motion would be the one thing that could start a turn from
+		// nothing, so the tracker is dropped instead.
+		resetPointerSwing();
+	}
 
 	if(tracked){
 		float rateX, rateY;

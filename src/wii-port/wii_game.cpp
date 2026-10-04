@@ -30,6 +30,7 @@
 #include "PCSave.h"
 #include "platform.h"
 #include "skeleton.h"
+#include "Streaming.h"
 #include "WiiLog.h"
 #include "WiiPad.h"
 #include "WiiSpeaker.h"
@@ -731,6 +732,15 @@ waitForNunchuk(void)
 	return false;
 }
 
+// A frame that takes this long is not a frame, it is a freeze.  Far above
+// anything this port manages on an empty street and far below anything a player
+// would put up with as "a slow patch", which is the whole point: the number only
+// has to separate normal from not-normal.
+static const unsigned int kStallFrameMs = 400;
+// And once a stall has been reported, this long before another one is.  A single
+// freeze then costs exactly one line.
+static const unsigned int kStallReportGapMs = 5000;
+
 int
 main(int argc, char **argv)
 {
@@ -850,7 +860,10 @@ main(int argc, char **argv)
 	if(!waitForNunchuk())
 		return 0;
 
+	u64 lastStallReport = 0;
+
 	while(!RsGlobal.quit){
+		const u64 frameStart = gettime();
 		switch(gGameState){
 		case GS_FRONTEND:
 			RsEventHandler(rsFRONTENDIDLE, nullptr);
@@ -910,6 +923,39 @@ main(int argc, char **argv)
 
 		default:
 			break;
+		}
+
+		// Commits the log to the card, at most once a second.  This was only
+		// being called from the wait-for-Nunchuk loop above, so for the whole of
+		// actual play the log sat in its buffer: a run that froze, or that was
+		// powered off mid-game, lost precisely the lines that would have said
+		// what it was doing.  The cost is one fsync per second and it happens on
+		// a frame that has already gone past its budget anyway.
+		WiiTraceService();
+
+		// One line for a frame that took longer than any frame should, and then
+		// silence for a few seconds.  A freeze during play is otherwise entirely
+		// invisible: nothing is written during a frame, so a run that hung looks
+		// exactly like a run that ended.  A per-frame trace is the wrong answer to
+		// that, because it fills the card and costs the very frame time it is
+		// trying to measure -- so this is deliberately one debounced line rather
+		// than a trace, and it is measured by the thread that stalled, which needs
+		// no watchdog and no second thread to notice.
+		//
+		// The context is here because the obvious explanations disagree on it.
+		// ms_numModelsRequested separates "outran the streamer" from "the streamer
+		// was idle", and the resident and per-type loaded counts say how much was
+		// in memory when it happened.  The heap is deliberately NOT sampled: that
+		// walk is expensive enough to be the thing being measured.
+		const u64 frameEnd = gettime();
+		if(ticks_to_millisecs(frameEnd - frameStart) >= kStallFrameMs &&
+		   ticks_to_millisecs(frameEnd - lastStallReport) >= kStallReportGapMs){
+			lastStallReport = frameEnd;
+			WiiTraceReport("WII stall: frame=%ums state=%d streamReq=%d resident=%uKB veh=%d ped=%d\n",
+			               ticks_to_millisecs(frameEnd - frameStart), (int)gGameState,
+			               CStreaming::ms_numModelsRequested,
+			               (unsigned)(CStreaming::ms_memoryUsed / 1024),
+			               CStreaming::ms_numVehiclesLoaded, CStreaming::ms_numPedsLoaded);
 		}
 	}
 
