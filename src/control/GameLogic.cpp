@@ -32,6 +32,10 @@
 #include "screendroplets.h"
 #include "SaveBuf.h"
 
+#ifdef MISSION_REPLAY
+#include "GenericGameStorage.h"
+#endif
+
 uint8 CGameLogic::ActivePlayers;
 uint8 CGameLogic::ShortCutState;
 CAutomobile* CGameLogic::pShortCutTaxi;
@@ -109,6 +113,10 @@ CGameLogic::Update()
 		if (pScript && !CGeneral::faststricmp(pScript->m_abScriptName, "porno4"))
 			gbTryingPorn4Again = false;
 	}
+	// Checked before the cutscene early-return below: a mission pass usually
+	// plays one, and the quicksave has to keep counting down through it so the
+	// save fires once the world is calm again.
+	UpdateMissionPassedQuicksave();
 #endif
 
 	if (CCutsceneMgr::IsCutsceneProcessing()) return;
@@ -597,6 +605,42 @@ CGameLogic::AfterDeathArrestSetUpShortCutTaxi()
 			ShortCutDropOffOrientationForMission);
 	MissionDropOffReadyToBeUsed = false;
 }
+
+#ifdef MISSION_REPLAY
+// Post-mission quicksave.  The mission-passed opcode arms this; the actual save is
+// deferred by a moment because at the instant a mission passes its script is
+// still running, and serialising a world mid-script is how you get a save that
+// resumes into a half-finished mission.  Once the mission script has finished
+// (bAlreadyRunningAMissionScript clears when its root script terminates) and a
+// short settle has passed, one quicksave lands in the dedicated PAUSE_SAVE_SLOT
+// (slot 9, not shown in the Load list).  It is a safety net behind the real
+// save zones, and it uses the engine's own SaveGameForPause, which already
+// refuses to run unless the world is stable and the timer allows it.
+static bool s_quicksaveArmed = false;
+static uint32 s_quicksaveArmedAt = 0;
+
+void
+CGameLogic::ArmMissionPassedQuicksave()
+{
+	s_quicksaveArmed = true;
+	s_quicksaveArmedAt = CTimer::GetTimeInMilliseconds();
+}
+
+void
+CGameLogic::UpdateMissionPassedQuicksave()
+{
+	if(!s_quicksaveArmed)
+		return;
+	// Wait for the mission script to finish, and for a brief settle on top, so
+	// the save lands on a quiet world rather than the middle of the pass.
+	if(CTheScripts::bAlreadyRunningAMissionScript)
+		return;
+	if(CTimer::GetTimeInMilliseconds() - s_quicksaveArmedAt < 1500)
+		return;
+	s_quicksaveArmed = false;
+	SaveGameForPause(SAVE_TYPE_QUICKSAVE_FOR_SCRIPT);
+}
+#endif
 
 void
 CGameLogic::Save(uint8* buf, uint32* size)

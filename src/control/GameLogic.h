@@ -35,6 +35,12 @@ public:
 	static void Save(uint8*, uint32*);
 	static void Load(uint8*, uint32);
 
+	// Quicksave after a mission is passed: armed by the mission-passed script
+	// opcode, fired a moment later once the mission script has finished (the
+	// world is only safe to serialise once it is no longer running one).
+	static void ArmMissionPassedQuicksave();
+	static void UpdateMissionPassedQuicksave();
+
 	static uint8 ActivePlayers;
 	static uint8 ShortCutState;
 	static CAutomobile* pShortCutTaxi;
