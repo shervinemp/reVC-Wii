@@ -190,6 +190,33 @@ at :174) that:
 With one player it degenerates to a normal top-down follow, so it is testable
 alone — that is the point of doing it first.
 
+### Gate 1 — a second controller: bigger than it looks
+
+`WPAD_CHAN_0` is hardcoded in nine places. Threading a channel through them is the
+easy half and is pure mechanics.
+
+**The hard half is that the port has exactly one input sink.** `WiiPadState.cpp`
+holds `g_keys`, `g_mouse`, `g_moveX/Y`, `g_lookX/Y` and the cursor in a single
+anonymous namespace, and every pad's state is funnelled into one
+`lwjgl::Keyboard` and one `lwjgl::Mouse` -- process-wide singletons that `Pad.cpp`
+and `Frontend.cpp` read directly. `CapturePad(padID)` does give each pad its own
+`CControllerState`, so *buttons* are already per-pad. The pointer, the cursor and
+the reticle are not.
+
+So a second Wiimote needs all three of:
+
+1. the channel threaded through the nine `WPAD_CHAN_0` sites,
+2. per-pad `g_keys`/`g_mouse`/cursor/reticle state, and
+3. **a per-pad keyboard and mouse sink** -- which the engine does not have, because
+   that is the interface `Pad.cpp` and the frontend read.
+
+Step 3 is the actual work, and it is not a Wii-port change: it is a change to
+how the engine receives input. Until that exists, a second controller is not a
+`WiiPad.cpp` edit.
+
+Two remotes today do not merely collide, they **overwrite**: both read channel 0,
+so one player drives two peds.
+
 ### Gate 1 — a second controller
 
 `WPAD_CHAN_0` is hardcoded in nine places. Everything else in the capture path is
