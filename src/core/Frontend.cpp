@@ -3327,6 +3327,15 @@ CMenuManager::SaveSettings()
 #else
 	m_lastWorking3DAudioProvider = m_nPrefsAudio3DProviderIndex;
 	SaveINISettings();
+#ifdef LOAD_INI_SETTINGS
+	// SaveINISettings covers video/audio but NOT the controller subset (invert,
+	// mouse steer, vibration, head bob, stick sens) -- that is SaveINIControllerSettings.
+	// Under LOAD_INI_SETTINGS the .set is never written, so without this every
+	// controller toggle that only called SaveSettings() (invert, mouse steer) was
+	// not persisted at all and reset on the next boot.  Persisting the controller
+	// INI from here covers every such toggle at once.
+	SaveINIControllerSettings();
+#endif
 #endif
 }
 
