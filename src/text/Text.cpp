@@ -158,6 +158,7 @@ WiiFallbackText(const char *key)
 		{ "WII_RMT", "REMOTE" },
 		{ "WII_BTH", "BOTH" },
 		{ "WII_BOX", "POINTER BOX" },
+		{ "WII_CC", "COUCH CO-OP" },
 		{ "WII_SML", "SMALL" },
 		{ "WII_MED", "MEDIUM" },
 		{ "WII_LRG", "LARGE" },

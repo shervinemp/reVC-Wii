@@ -113,12 +113,19 @@
 #ifdef NINTENDO_WII
 	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
+	// Couch co-op.  A CCFOSelect rather than a hand-rolled toggle so it persists
+	// through the CUSTOM_FRONTEND_OPTIONS loop in SaveINISettings on its own,
+	// with no new menu action to keep in step.  Works with one player present --
+	// the shared camera simply has one ped to frame -- which is the point: the
+	// mode is meant to be judged before a second remote exists.
+	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
+	#define COUCH_COOP_TOGGLE
 	#define VIBRATION_TOGGLE
 	#define POINTER_CAR_TOGGLE
 	#define DRIVEBY_WEAPONS_TOGGLE
@@ -831,6 +838,11 @@ CMenuScreenCustom aScreens[] = {
 		// which cannot be typed on a Wii remote.
 		MENUACTION_CHANGEMENU,	"WII_CHE",	{nil, SAVESLOT_NONE, MENUPAGE_CHEATS}, 0, 0, MENUALIGN_CENTER,
 #endif
+		// Between Options and Quit because it is a mode rather than a destination,
+		// and because the pause page has room for it where the nine-row Mouse/IR page
+		// does not.  Works with one controller present; the shared camera simply has
+		// one ped to frame, which is how it is meant to be judged first.
+		COUCH_COOP_TOGGLE
 		MENUACTION_CHANGEMENU,	"FEP_QUI",	{nil, SAVESLOT_NONE, MENUPAGE_EXIT}, 0, 0, MENUALIGN_CENTER,
    },
 

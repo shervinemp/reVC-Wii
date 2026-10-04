@@ -546,7 +546,11 @@ public:
 	// is a reticle only.  One flag for both halves on purpose: they only make
 	// sense together, and a mode where the camera is shared but aiming still
 	// turned the view would just be a worse version of single player.
-	static bool bWiiCoopCamera;
+	//
+	// int8 rather than bool because the controls page persists it directly as a
+	// CCFOSelect, which writes through an int8*.  One variable, so the menu and
+	// the camera can never disagree about whether co-op is on.
+	static int8 bWiiCoopCamera;
 #ifdef FREE_CAM
 	static bool bFreeCam;
 	// Whether vehicles get the SA-style follow camera (CCam::Process_FollowCar_SA).

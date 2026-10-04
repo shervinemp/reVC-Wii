@@ -135,7 +135,7 @@ static const float kCoopSeparationGain = 0.5f;	// extra pull-back per unit of sp
 static const float kCoopMaxBack = 28.0f;
 static const float kCoopFollowRate = 5.0f;		// per second, so the view eases into place
 
-bool CCamera::bWiiCoopCamera = false;
+int8 CCamera::bWiiCoopCamera = 0;
 
 void
 CCam::Process(void)
