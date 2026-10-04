@@ -36,7 +36,6 @@ public:
 	{
 		MODE_NONE = 0,
 		MODE_TOPDOWN,
-		MODE_WII_COOP,
 		MODE_GTACLASSIC,
 		MODE_BEHINDCAR,
 		MODE_FOLLOWPED,
@@ -82,6 +81,13 @@ public:
 		MODE_EDITOR,
 		MODE_HELICANNON_1STPERSON,
 		MODE_CAMERA,
+		// Added LAST deliberately.  This enum is used as an array index --
+		// CCam::PrintMode reads modes[Mode] -- and every other mode in here has an
+		// entry in that table.  Splicing a value into the middle shifts every mode
+		// after it by one, which puts the last one past the end of the table and
+		// renumbers modes that other files compare against.  Appending keeps every
+		// existing value exactly where it was and costs one table entry.
+		MODE_WII_COOP,
 	};
 
 	bool    bBelowMinDist; //used for follow ped mode

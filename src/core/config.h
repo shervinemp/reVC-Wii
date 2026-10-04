@@ -13,13 +13,18 @@
 #endif
 
 enum Config {
-	// 2 for couch co-op, which needs a second player slot.  It doubles as the
-	// size of CWorld::Players[], and PlayerInFocus stays 0 throughout -- the
-	// second slot exists to hold a ped and read a pad, not to take part in
-	// scripts, HUD or mission triggers.  Safe to raise on its own: the loops over
-	// NUMPLAYERS (Game.cpp) all reach CPlayerInfo::Clear or DeletePlayerSkin,
-	// and both of those nil-check m_pPed, which a slot nobody has filled is.
-	NUMPLAYERS = 2,
+	// Left at 1 even with the couch co-op work in progress.  It doubles as the
+	// size of CWorld::Players[], and raising it is NOT free: Script.cpp's
+	// COMMAND_CREATE_PLAYER guards its index with script_assert(index <
+	// NUMPLAYERS), and that opcode is fully implemented -- it calls
+	// SetupPlayerPed(index) and places the ped.  At 1 the only legal index was 0,
+	// so no script could ever bring a second player ped into existence.  At 2 a
+	// script asking for player 1 gets one, in a game whose camera, HUD and
+	// PlayerInFocus all assume a single player, with nothing prepared for it.
+	//
+	// So Gate 2 has to decide deliberately what CREATE_PLAYER 1 means before this
+	// goes up, rather than it happening as a side effect of wanting a second slot.
+	NUMPLAYERS = 1,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
 	MAX_CDIMAGES = 8, // additional cdimages

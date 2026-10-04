@@ -1009,7 +1009,10 @@ CCam::PrintMode(void)
 			"Top Down Ped", "Lighthouse",
 			"Sniper run about", "Rocket run about",
 			"1st Person run about", "M16 run about", "Fight run about",
-			"Editor", "Helicannon", "Camera"
+			"Editor", "Helicannon", "Camera",
+			// One entry per mode, in enum order.  MODE_WII_COOP was appended to the
+			// enum precisely so this table only had to grow at the end.
+			"Wii Co-op"
 		};
 		sprintf(buf, "Cam: %s", modes[TheCamera.Cams[TheCamera.ActiveCam].Mode]);
 		CDebug::PrintAt(buf, 2, 5);
@@ -1102,7 +1105,14 @@ CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
 	// can never end up somewhere neither of them actually is.
 	CVector target = CameraTarget;
 	float separation = 0.0f;
-	CPlayerPed *second = CWorld::Players[1].m_pPed;
+	// Compile-time constant test on purpose.  NUMPLAYERS is an enum, so #if cannot
+	// see it, and CWorld::Players only has as many slots as it has values -- but a
+	// folded-false branch is still type-checked, so this compiles at NUMPLAYERS 1
+	// and never runs.  It reads the second slot only once that slot exists, which
+	// is why NUMPLAYERS is still 1: see the note there.
+	CPlayerPed *second = nil;
+	if(NUMPLAYERS > 1)
+		second = CWorld::Players[1].m_pPed;
 	if(second != nil && second != CamTargetEntity){
 		const CVector other = second->GetPosition();
 		target = (target + other)*0.5f;
