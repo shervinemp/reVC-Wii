@@ -104,7 +104,7 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //               linear response means sensitivity scales directly with how far
 //               outside the dead zone the pointer sits, so aiming is predictable
 //               and an equal move always turns the same amount.
-constexpr float kPointerDeadzone = 0.24f;
+constexpr float kPointerDeadzone = 0.18f;
 // Where the linear ramp reaches full turn rate.
 constexpr float kPointerSaturation = 0.75f;
 // When the pointer is off the sensor entirely the turn rate is held at this
@@ -236,9 +236,17 @@ constexpr AimBox kAimBoxes[] = {
 	// the other: the roomier side saturates the rate curve and turns fast, the
 	// other runs out of screen before it ever does and crawls.  Both axes have to
 	// be centred or the same bug reappears on whichever one is not.
-	{ 0.37f, 0.63f, 0.37f, 0.63f },	// small
-	{ 0.29f, 0.71f, 0.29f, 0.71f },	// medium
-	{ 0.21f, 0.79f, 0.19f, 0.81f },	// large
+	//
+	// THIS is the dead zone.  The box is how far the crosshair may roam before the
+	// camera is asked to turn at all, so widening it pushes the turn onset towards
+	// the screen edge and lets a swing of the wrist move the aim without moving the
+	// view -- which is what "the dead zone feels too small" means.  kPointerDeadzone
+	// below is a different, much smaller thing: how far past the box edge the
+	// pointer has to be before the turn starts at all.  Every box is square, so
+	// neither axis has an advantage over the other at any setting.
+	{ 0.31f, 0.69f, 0.31f, 0.69f },	// small  (half-extent 0.19)
+	{ 0.23f, 0.77f, 0.23f, 0.77f },	// medium (half-extent 0.27, the default)
+	{ 0.14f, 0.86f, 0.14f, 0.86f },	// large  (half-extent 0.36)
 };
 constexpr float kAimSaturation = 0.28f;
 constexpr float kAimSmoothTau = 0.09f;
