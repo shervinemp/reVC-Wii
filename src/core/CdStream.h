@@ -33,6 +33,18 @@ int CdStreamGetStatus(int channel);
 int CdStreamGetLastPosn(void);
 int CdStreamSync(int channel);
 
+#ifdef NINTENDO_WII
+// The longest single wait, in milliseconds, that CdStreamSync spent blocked since
+// the last CdStreamResetWaitStats().  On this port CdStreamSync is a condition
+// variable wait with no timeout: it returns when the reader thread signals, and
+// if that thread is stuck inside a read() there is nothing to time it out.  So a
+// long wait here is not slowness, it is the game thread parked on storage with no
+// way to notice -- which is the one thing a stall report otherwise cannot tell us
+// apart from a slow frame.  Costs one gettime() pair per call.
+extern uint32 g_cdStreamLongestWaitMs;
+void CdStreamResetWaitStats(void);
+#endif
+
 #ifndef GTA_PS2
 typedef struct Queue Queue;
 struct Queue

@@ -11,6 +11,19 @@
 #include <ogc/lwp.h>
 #include <ogc/mutex.h>
 #include <ogc/cond.h>
+#ifdef NINTENDO_WII
+// Milliseconds between two gettimeofday() readings, for the wait timer below.
+// Deliberately not libogc's gettime/ticks_to_millisecs: those live in
+// ogc/lwp_watchdog.h, which pulls in ogc/semaphore.h, whose typedef of sem_t
+// collides with the POSIX <semaphore.h> this file already includes.  Wall clock
+// rather than the monotonic tick counter is fine for measuring how long the game
+// thread was blocked.
+static inline u32 elapsedMs(const struct timeval &from, const struct timeval &to)
+{
+	const long us = (to.tv_sec - from.tv_sec)*1000000L + (to.tv_usec - from.tv_usec);
+	return (u32)(us/1000);
+}
+#endif
 #endif
 #include <sys/types.h>
 #include <unistd.h>
@@ -154,6 +167,20 @@ int32 lastPosnRead;
 int _gdwCdStreamFlags;
 
 void *CdStreamThread(void* channelId);
+
+#ifdef NINTENDO_WII
+// Written by the game thread inside CdStreamSync and read by the stall report in
+// wii_game.cpp once the frame is over, so a plain word is enough; the worst wait
+// of the frame is the number worth having, since many short ones are just a busy
+// streamer and one long one is the thread parked on the card.
+uint32 g_cdStreamLongestWaitMs;
+
+void
+CdStreamResetWaitStats(void)
+{
+	g_cdStreamLongestWaitMs = 0;
+}
+#endif
 
 void
 CdStreamInitThread(void)
@@ -561,6 +588,11 @@ CdStreamSync(int32 channel)
 	ASSERT( pChannel != nil );
 
 #ifdef NINTENDO_WII
+	// Timed, because this wait has no timeout of its own and the stall report in
+	// wii_game.cpp cannot otherwise tell "parked on storage" from "the frame was
+	// merely slow".  See g_cdStreamLongestWaitMs in CdStream.h.
+	struct timeval waitStart;
+	gettimeofday(&waitStart, NULL);
 	LWP_MutexLock(gCdStreamMutex);
 	while(pChannel->nSectorsToRead != 0 || pChannel->bReading){
 		pChannel->bLocked = true;
@@ -569,6 +601,11 @@ CdStreamSync(int32 channel)
 	pChannel->bLocked = false;
 	int32 status = pChannel->nStatus;
 	LWP_MutexUnlock(gCdStreamMutex);
+	struct timeval waitEnd;
+	gettimeofday(&waitEnd, NULL);
+	const u32 waitMs = elapsedMs(waitStart, waitEnd);
+	if(waitMs > g_cdStreamLongestWaitMs)
+		g_cdStreamLongestWaitMs = waitMs;
 	return status;
 #else
 

@@ -31,6 +31,7 @@
 #include "platform.h"
 #include "skeleton.h"
 #include "Streaming.h"
+#include "CdStream.h"
 #include "WiiLog.h"
 #include "WiiPad.h"
 #include "WiiSpeaker.h"
@@ -959,6 +960,10 @@ main(int argc, char **argv)
 
 	while(!RsGlobal.quit){
 		const u64 frameStart = gettime();
+		// Also cleared here so a stall reported on the frame after a reset cannot
+		// inherit the previous one's worst wait.  Redundant with the clear below
+		// on any frame that runs to completion, and this is the one that cannot.
+		CdStreamResetWaitStats();
 		switch(gGameState){
 		case GS_FRONTEND:
 			RsEventHandler(rsFRONTENDIDLE, nullptr);
@@ -1035,12 +1040,26 @@ main(int argc, char **argv)
 		// was idle", and the resident and per-type loaded counts say how much was
 		// in memory when it happened.  The heap is deliberately NOT sampled: that
 		// walk is expensive enough to be the thing being measured.
+		//
+		// cdwait is the one that settles the storage question.  CdStreamSync on this
+		// port is a condition variable wait with no timeout -- it returns when the
+		// reader thread signals, and a thread stuck inside a read() never signals --
+		// so the game thread can end a frame parked on the card with nothing to
+		// show for it.  A cdwait close to the frame time means exactly that, and
+		// means the frame was not slow, it was blocked; a cdwait near zero means
+		// storage is not involved and the frame was slow for some other reason.
 		const u64 frameEnd = gettime();
-		if(ticks_to_millisecs(frameEnd - frameStart) >= kStallFrameMs &&
+		const unsigned int frameMs = ticks_to_millisecs(frameEnd - frameStart);
+		const unsigned int cdWaitMs = g_cdStreamLongestWaitMs;
+		// Cleared every frame rather than only when reporting, so the number is
+		// always this frame's and not whichever frame happened to notice.
+		CdStreamResetWaitStats();
+		if(frameMs >= kStallFrameMs &&
 		   ticks_to_millisecs(frameEnd - lastStallReport) >= kStallReportGapMs){
 			lastStallReport = frameEnd;
-			WiiTraceReport("WII stall: frame=%ums state=%d streamReq=%d resident=%uKB veh=%d ped=%d\n",
-			               ticks_to_millisecs(frameEnd - frameStart), (int)gGameState,
+			WiiTraceReport("WII stall: frame=%ums cdwait=%ums state=%d streamReq=%d "
+			               "resident=%uKB veh=%d ped=%d\n",
+			               frameMs, cdWaitMs, (int)gGameState,
 			               CStreaming::ms_numModelsRequested,
 			               (unsigned)(CStreaming::ms_memoryUsed / 1024),
 			               CStreaming::ms_numVehiclesLoaded, CStreaming::ms_numPedsLoaded);
