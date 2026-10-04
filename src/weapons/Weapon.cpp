@@ -1019,7 +1019,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		ahead.Normalise();
 #endif
 	}
-	else if ( shooter == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam()  )
+	else if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam()  )
 	{
 #ifdef FREE_CAM
 		if (CCamera::bFreeCam) {
@@ -1793,7 +1793,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		CColPoint point;
 		CEntity *victim;
 
-		if ( shooter == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam() )
+		if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam() )
 		{
 			CVector Left;
 #ifdef FREE_CAM
@@ -2247,7 +2247,7 @@ CWeapon::FireAreaEffect(CEntity *shooter, CVector *fireSource)
 	CVector target;
 	CVector dir;
 
-	if ( shooter == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam() )
+	if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam() )
 	{
 #ifdef FREE_CAM
 		if (CCamera::bFreeCam) {

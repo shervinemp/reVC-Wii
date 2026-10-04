@@ -711,6 +711,18 @@ FindPlayerPed(void)
 	return CWorld::Players[CWorld::PlayerInFocus].m_pPed;
 }
 
+bool
+IsAnyPlayerPed(CEntity *e)
+{
+	if(e == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(CWorld::Players[i].m_pPed == e)
+			return true;
+	}
+	return false;
+}
+
 const CVector &
 FindPlayerCentreOfWorld(int32 player)
 {

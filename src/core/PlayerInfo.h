@@ -115,6 +115,22 @@ public:
 };
 
 CPlayerPed *FindPlayerPed(void);
+
+// Whether an entity is one of the human-controlled player peds -- any of them.
+//
+// FindPlayerPed() answers "the player in focus", which is player 1 forever in this
+// engine because co-op deliberately leaves PlayerInFocus alone so scripts,
+// missions and the HUD keep working. That is the right answer for anything the
+// game logic owns, and the wrong one for anything asking "is a person driving
+// this body": the weapon code behind that question gates on
+// `shooter == FindPlayerPed()` to decide whether the shot has to be corrected
+// through the crosshair, so a second player would have fallen through to the
+// default path and fired somewhere other than their reticle.
+//
+// With one player this returns exactly what `== FindPlayerPed()` did, and it
+// starts covering player 2 the moment that slot is filled, with no call site
+// needing to change.
+bool IsAnyPlayerPed(CEntity *e);
 CVehicle *FindPlayerVehicle(void);
 CVehicle *FindPlayerTrain(void);
 CEntity *FindPlayerEntity(void);

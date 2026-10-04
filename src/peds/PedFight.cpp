@@ -350,7 +350,7 @@ CPed::SetAttack(CEntity *victim)
 #else
 		} else {
 #endif
-			if (this == FindPlayerPed() && TheCamera.Cams[0].Using3rdPersonMouseCam()) {
+			if (IsAnyPlayerPed(this) && TheCamera.Cams[0].Using3rdPersonMouseCam()) {
 				SetAimFlag(m_fRotationCur);
 				((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
 			} else if (curWeapon->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM)) {
@@ -360,7 +360,7 @@ CPed::SetAttack(CEntity *victim)
 	}
 #ifdef FIX_BUGS
 	// fix aiming for flamethrower and minigun while using PC controls
-	else if (curWeapon->m_AnimToPlay == ASSOCGRP_FLAMETHROWER && TheCamera.Cams[0].Using3rdPersonMouseCam() && this == FindPlayerPed())
+	else if (curWeapon->m_AnimToPlay == ASSOCGRP_FLAMETHROWER && TheCamera.Cams[0].Using3rdPersonMouseCam() && IsAnyPlayerPed(this))
 	{
 		SetAimFlag(m_fRotationCur);
 		((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
