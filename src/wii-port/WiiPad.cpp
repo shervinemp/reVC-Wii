@@ -101,11 +101,16 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //               field, and having to aim there to turn quickly is what makes a
 //               rate camera feel like it is fighting the player.
 //   curve       how much of the response is linear rather than quadratic.  The
-//               quadratic part is what keeps small offsets slow enough to aim
-//               with; the linear part stops the first third from doing nothing.
+//               linear response means sensitivity scales directly with how far
+//               outside the dead zone the pointer sits, so aiming is predictable
+//               and an equal move always turns the same amount.
 constexpr float kPointerDeadzone = 0.18f;
+// Where the linear ramp reaches full turn rate.
 constexpr float kPointerSaturation = 0.75f;
-constexpr float kPointerCurveLinear = 0.45f;
+// When the pointer is off the sensor entirely the turn rate is held at this
+// fraction of the maximum instead of running away, so losing the remote never
+// spins the camera.
+constexpr float kPointerOffScreenMaxFrac = 0.5f;
 
 // Turn rate at full deflection, in the units GetMouseX and GetMouseY are read
 // in, PER SECOND.  Per second and not per frame because this port's frame rate
@@ -694,13 +699,43 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 // measured in when tracking drops out.  Returns false when the pointer is inside
 // the dead zone, which is what leaves the sticks in charge of the camera while
 // the player is not aiming anywhere in particular.
-bool
+// Shared turn-rate response.  `over` is the vector from the aim point (pointer
+// centre or crosshair) to the pointer, in the normalised half-height units the
+// callers use.  The response is LINEAR in how far outside the dead zone the
+// pointer sits, so equal movements always turn the camera equally.  Once the
+// pointer is off the sensor the rate is capped at kPointerOffScreenMaxFrac of the
+// maximum rather than running away, so a lost remote cannot spin the view.
+// Returns the scalar turn rate (0 when inside the dead zone).
+float
+pointerTurnRate(float magnitude, bool offScreen)
+{
+	if(magnitude <= kPointerDeadzone)
+		return 0.0f;
+	float t = (magnitude - kPointerDeadzone)/(kPointerSaturation - kPointerDeadzone);
+	if(t > 1.0f)
+		t = 1.0f;
+	if(offScreen && t > kPointerOffScreenMaxFrac)
+		t = kPointerOffScreenMaxFrac;
+	return kPointerRatePerSec*t;
+}
+
+// Whether the pointer has left the sensor bar (its position is outside the
+// screen).  Such a pointer is clamped to the edge for aiming but still steers,
+// at a capped rate.
+inline bool
+pointerOffScreen(const WPADData &data)
+{
+	return data.ir.x < 0 || data.ir.y < 0 ||
+		data.ir.x > RsGlobal.maximumWidth || data.ir.y > RsGlobal.maximumHeight;
+}
+
+int16
 irPointerRate(const WPADData &data, float &outX, float &outY)
 {
 	const float width = (float)RsGlobal.maximumWidth;
 	const float height = (float)RsGlobal.maximumHeight;
 	if(width <= 0.0f || height <= 0.0f)
-		return false;
+		return 0;
 
 	// Normalise BOTH axes by half the HEIGHT, not by each axis' own half extent.
 	// Dividing x by w/2 and y by h/2 stretches the vector horizontally, so a
@@ -717,22 +752,17 @@ irPointerRate(const WPADData &data, float &outX, float &outY)
 	// inside it on X but outside on Y turn the camera straight up, which is the
 	// "near the middle it only moves vertically" complaint.
 	const float magnitude = std::sqrt(unitX*unitX + unitY*unitY);
-	if(magnitude <= kPointerDeadzone)
-		return false;
-
-	float t = (magnitude - kPointerDeadzone)/(kPointerSaturation - kPointerDeadzone);
-	if(t > 1.0f)
-		t = 1.0f;
-	const float curve = t*(kPointerCurveLinear + (1.0f - kPointerCurveLinear)*t);
+	const float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
+	if(rate <= 0.0f)
+		return 0;
 
 	// The unit direction comes from the raw vector, so only the SPEED goes
-	// through the curve.  Curving each axis on its own would bend diagonals
+	// through the response.  Curving each axis on its own would bend diagonals
 	// towards the nearer axis, the same directional error the normalisation
 	// above avoids.
-	const float rate = kPointerRatePerSec*curve;
 	outX = (unitX/magnitude)*rate;
 	outY = (unitY/magnitude)*rate*kPointerPitchScale;
-	return true;
+	return 1;
 }
 
 // Ends any hold in progress, so a rate that was being replayed while tracking
@@ -800,11 +830,15 @@ steerCrosshair(float targetX, float targetY)
 	CCamera::m_f3rdPersonCHairMultY = s_aimY;
 }
 
-// The pointer's two jobs while it owns the crosshair.  Where the crosshair goes is
-// the pointer clamped into the box, and how fast the camera turns is how far the
-// pointer is past it, in the same units and with the same curve as irPointerRate
-// so the two feel like one control.  Returns false inside the box, which is what
-// leaves the camera still while the player is only aiming.
+// The pointer's two jobs while it owns the crosshair.  The crosshair tracks the
+// pointer across the WHOLE screen (so you can aim anywhere, not just a small
+// centre box), and the camera turns only once the pointer is pushed past the
+// screen edge.  The WII_BOX option now controls how far in from that edge the
+// turn begins: a smaller box turns sooner, a larger one keeps the camera still
+// nearer the edge.  The turn is linear in how far outside the edge the pointer
+// is and is capped at half the maximum once the pointer is off the sensor.
+// Returns false when the pointer is inside the turn ring (pure aiming, camera
+// still), which is what leaves the camera steady while the player aims.
 bool
 irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	float &outX, float &outY)
@@ -821,25 +855,26 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
-	const float boxX = pointerX < box.left ? box.left :
-		(pointerX > box.right ? box.right : pointerX);
-	const float boxY = pointerY < box.top ? box.top :
-		(pointerY > box.bottom ? box.bottom : pointerY);
-	outCrosshairX = boxX;
-	outCrosshairY = boxY;
+	// The crosshair gets the full screen so aiming is never boxed in.
+	const float clampX = pointerX < 0.0f ? 0.0f : (pointerX > 1.0f ? 1.0f : pointerX);
+	const float clampY = pointerY < 0.0f ? 0.0f : (pointerY > 1.0f ? 1.0f : pointerY);
+	outCrosshairX = clampX;
+	outCrosshairY = clampY;
 
+	// The camera turns only past a margin in from the screen edge (the box, now
+	// used as an edge ring).  Inside it, pointer == clamped position, no turn.
+	const float turnL = box.left, turnR = box.right, turnT = box.top, turnB = box.bottom;
+	const float heldX = pointerX < turnL ? turnL : (pointerX > turnR ? turnR : pointerX);
+	const float heldY = pointerY < turnT ? turnT : (pointerY > turnB ? turnB : pointerY);
 	const float half = height*0.5f;
-	const float overX = (pointerX - boxX)*width/half;
-	const float overY = (pointerY - boxY)*height/half;
+	const float overX = (pointerX - heldX)*width/half;
+	const float overY = (pointerY - heldY)*height/half;
 	const float magnitude = std::sqrt(overX*overX + overY*overY);
-	if(magnitude <= 0.0f)
+
+	const float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
+	if(rate <= 0.0f)
 		return false;
 
-	float t = magnitude/kAimSaturation;
-	if(t > 1.0f)
-		t = 1.0f;
-	const float curve = t*(kPointerCurveLinear + (1.0f - kPointerCurveLinear)*t);
-	const float rate = kPointerRatePerSec*curve;
 	outX = (overX/magnitude)*rate;
 	outY = (overY/magnitude)*rate*kPointerPitchScale;
 	return true;
