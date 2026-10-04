@@ -5315,6 +5315,12 @@ CMenuManager::ProcessOnOffMenuOptions()
 	case MENUACTION_INVVERT:
 		MousePointerStateHelper.bInvertVertically = !MousePointerStateHelper.bInvertVertically;
 		SaveSettings();
+#ifdef LOAD_INI_SETTINGS
+		// SaveSettings only wrote the binary .set.  The INI is loaded after that on
+		// the next boot and would override the flip with its stale value, so the
+		// setting appeared to reset every time.  Persist to the INI too.
+		SaveINIControllerSettings();
+#endif
 		break;
 	case MENUACTION_DYNAMICACOUSTIC:
 		m_PrefsDMA = !m_PrefsDMA;
@@ -5325,6 +5331,10 @@ CMenuManager::ProcessOnOffMenuOptions()
 		if (m_ControlMethod == CONTROL_STANDARD) {
 			CVehicle::m_bDisableMouseSteering = !CVehicle::m_bDisableMouseSteering;
 			SaveSettings();
+#ifdef LOAD_INI_SETTINGS
+			// Same as INVVERT: the INI load would undo this on the next boot.
+			SaveINIControllerSettings();
+#endif
 		}
 		break;
 	}
