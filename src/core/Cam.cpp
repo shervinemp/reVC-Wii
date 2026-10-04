@@ -9,6 +9,9 @@
 #include "Bones.h"
 #include "Ped.h"
 #include "PlayerPed.h"
+#ifdef NINTENDO_WII
+#include "WiiTrace.h"
+#endif
 #include "CopPed.h"
 #include "RpAnimBlend.h"
 #include "ControllerConfig.h"
@@ -137,6 +140,27 @@ static const float kCoopFollowRate = 5.0f;		// per second, so the view eases int
 
 int8 CCamera::bWiiCoopCamera = 0;
 
+#ifdef NINTENDO_WII
+// Co-op has no second player yet, so the only part of it anyone can actually
+// exercise is this camera and the reticle.  That makes guessing about it
+// expensive: there is one chance to notice that aiming still nudges the view, or
+// that the pitch is wrong, and a black screen afterwards tells us nothing.
+//
+// So it narrates itself to debug.log, which is the only medium that survives a
+// freeze.  Deliberately not a per-frame trace.  The heartbeat is on a two second
+// timer because the values it carries are slow, and a per-frame line here would
+// cost the very frame time it is measuring -- the same trade the stall report
+// makes.  Transitions are logged the moment they happen, because "the camera
+// left co-op" is exactly the thing that needs explaining when it goes wrong.
+static u32 s_coopLastLogMs = 0;
+
+static void
+coopLogTransition(const char *what)
+{
+	WiiTraceReport("WII coop: %s\n", what);
+}
+#endif
+
 // Whether the previous frame ran the co-op camera, so that the transition into it
 // and the transition back out can each reset exactly once.
 static bool s_wasCoopCamera = false;
@@ -178,6 +202,10 @@ CCam::Process(void)
 		if(!s_wasCoopCamera){
 			ResetStatics = true;
 			s_wasCoopCamera = true;
+#ifdef NINTENDO_WII
+			coopLogTransition("camera engaged: shared top-down, pointer is a reticle only");
+			s_coopLastLogMs = 0;
+#endif
 		}
 		Process_WiiCoop(CamTargetEntity->GetPosition(), 0.0f, 0.0f, 0.0f);
 		return;
@@ -193,6 +221,9 @@ CCam::Process(void)
 		// inherit a camera position from a mode that no longer exists.
 		s_wasCoopCamera = false;
 		ResetStatics = true;
+#ifdef NINTENDO_WII
+		coopLogTransition("camera left co-op (cutscene or mode transition)");
+#endif
 	}
 
 	m_iFrameNumWereAt++;
@@ -1175,6 +1206,29 @@ CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
 	TheCamera.m_bCamDirectlyBehind = false;
 	TheCamera.m_bCamDirectlyInFront = false;
 	ResetStatics = false;
+
+#ifdef NINTENDO_WII
+	// The heartbeat, and the two things in it that are the whole point of the
+	// mode.  front and reticle together: if aiming really has stopped turning the
+	// view, then front is steady across lines while reticle moves, and that is
+	// visible in the log without anyone having to judge it by eye.  If they move
+	// together, the reticle is still steering the camera and the design has failed.
+	// Then the framing numbers, so the pitch and pull-back can be tuned from
+	// evidence, and the frame time, because this camera is new code on a CPU that
+	// was already the constraint.
+	const u32 nowMs = (u32)CTimer::GetTimeInMilliseconds();
+	if(nowMs - s_coopLastLogMs >= 2000){
+		s_coopLastLogMs = nowMs;
+		WiiTraceReport("WII coop: peds=%d sep=%.1f back=%.1f h=%.1f target=%.0f,%.0f,%.0f"
+		               " front=%.3f,%.3f,%.3f reticle=%.3f,%.3f frame=%ums\n",
+		               second != nil ? 2 : 1, separation, back, kCoopBaseHeight,
+		               target.x, target.y, target.z,
+		               Front.x, Front.y, Front.z,
+		               (float)CCamera::m_f3rdPersonCHairMultX,
+		               (float)CCamera::m_f3rdPersonCHairMultY,
+		               (unsigned)CTimer::GetTimeStepInMilliseconds());
+	}
+#endif
 }
 
 void
