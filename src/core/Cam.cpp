@@ -137,6 +137,10 @@ static const float kCoopFollowRate = 5.0f;		// per second, so the view eases int
 
 int8 CCamera::bWiiCoopCamera = 0;
 
+// Whether the previous frame ran the co-op camera, so that the transition into it
+// and the transition back out can each reset exactly once.
+static bool s_wasCoopCamera = false;
+
 void
 CCam::Process(void)
 {
@@ -158,9 +162,23 @@ CCam::Process(void)
 	// restores the stock behaviour exactly, because nothing else was touched.
 	if(TheCamera.bWiiCoopCamera){
 		Mode = MODE_WII_COOP;
-		ResetStatics = true;
+		// Reset on the way IN only.  Setting it every frame looked harmless --
+		// Process_WiiCoop never reads it -- but it meant the frame co-op was
+		// switched off left ResetStatics false, so the stock camera picked up from
+		// wherever the shared view happened to be instead of starting clean.
+		if(!s_wasCoopCamera){
+			ResetStatics = true;
+			s_wasCoopCamera = true;
+		}
 		Process_WiiCoop(CamTargetEntity->GetPosition(), 0.0f, 0.0f, 0.0f);
 		return;
+	}
+	if(s_wasCoopCamera){
+		// Leaving co-op is the other transition that needs a reset, for the same
+		// reason: the stock modes initialise from ResetStatics and would otherwise
+		// inherit a camera position from a mode that no longer exists.
+		s_wasCoopCamera = false;
+		ResetStatics = true;
 	}
 
 	m_iFrameNumWereAt++;
@@ -1111,9 +1129,13 @@ CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
 	const float back = Min(kCoopMaxBack, kCoopBaseBack + separation*kCoopSeparationGain);
 	const CVector wanted = target - facing*back + CVector(0.0f, 0.0f, kCoopBaseHeight);
 
-	// Eased.  The midpoint jumps when the two are on opposite sides of a wall,
-	// and a hard cut there is unpleasant enough to look like a bug.
-	const float follow = 1.0f - exp(-kCoopFollowRate*(float)CTimer::GetTimeStep());
+	// Eased, because the midpoint jumps when the two are on opposite sides of a
+	// wall and a hard cut there is unpleasant enough to look like a bug.  Except
+	// on the first frame, where ResetStatics means what it means in every other
+	// Process_ function here -- start clean -- so switching co-op on from the pause
+	// menu does not swoop the view across the map from wherever it happened to be.
+	const float follow = ResetStatics ? 1.0f
+		: 1.0f - exp(-kCoopFollowRate*(float)CTimer::GetTimeStep());
 	Source += (wanted - Source)*follow;
 
 	// Still worth doing: a fixed downward angle looks straight into rooftops and
