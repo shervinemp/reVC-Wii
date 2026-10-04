@@ -181,7 +181,6 @@ constexpr float kSwingThreshold = 0.12f;		// velocity, in g per second, that cou
 // --- Nunchuk flick-down jump -------------------------------------------------
 // WiiPadScan measures the gesture and raises s_flickJumpPulse for exactly one
 // frame; captureWiimote folds that into Square, the field JumpJustDown reads.
-// The flick is a sharp downward change in the Nunchuk's Y acceleration between
 // A flick is a jolt in the Nunchuk's acceleration measured against the gravity
 // it is already carrying, as a fraction of g.  Measuring the vector magnitude
 // rather than one axis's per-frame delta is what makes it work in practice: a
@@ -248,7 +247,9 @@ constexpr AimBox kAimBoxes[] = {
 	{ 0.23f, 0.77f, 0.23f, 0.77f },	// medium (half-extent 0.27, the default)
 	{ 0.14f, 0.86f, 0.14f, 0.86f },	// large  (half-extent 0.36)
 };
-constexpr float kAimSaturation = 0.28f;
+// The smoothing below is the only response shaping the crosshair gets; the turn
+// past the box edge is linear all the way to kPointerSaturation, shared with the
+// plain rate camera so the two feel like the same instrument.
 constexpr float kAimSmoothTau = 0.09f;
 constexpr float kAimSmoothGain = 60.0f;
 
@@ -460,30 +461,6 @@ playerInVehicle(void)
 {
 	CPlayerPed *ped = FindPlayerPed();
 	return ped != nil && ped->bInVehicle;
-}
-
-// Circle is the vehicle's own weapon button: the Hunter's rockets and guns, the Rhino's
-// cannon, the fire truck's water cannon, the Sea Sparrow's guns, a car bomb's trigger,
-// and every drive-by.  Taking it for the brake would lose all of those, so where the
-// vehicle has one the pad keeps Circle on the weapon and the brake stays on its own
-// button.  An ordinary car or bike has nothing on it but the drive-by.
-bool
-vehicleKeepsFireButton(void)
-{
-	CVehicle *vehicle = FindPlayerVehicle();
-	if(vehicle == nullptr)
-		return false;
-	// Boats, helicopters, planes and trains.
-	if(!vehicle->IsCar() && !vehicle->IsBike())
-		return true;
-	switch(vehicle->GetModelIndex()){
-	case MI_RHINO:
-	case MI_FIRETRUCK:
-	case MI_HUNTER:
-	case MI_SEASPAR:
-		return true;
-	}
-	return vehicle->m_bombType != CARBOMB_NONE;
 }
 
 bool
@@ -790,8 +767,8 @@ stopPointerHold(void)
 }
 
 // The accelerometer's slow view of "which way down is", and the leaky velocity
-// built on top of it.  File scope rather than function statics because the state
-// has to be readable from the capture path as well as the scan path.
+// built on top of it.  File scope rather than a function static so it is one piece
+// of state rather than a static buried in the middle of the capture path.
 struct SwingTracker
 {
 	float gx, gy, gz;	// slowly followed gravity vector
