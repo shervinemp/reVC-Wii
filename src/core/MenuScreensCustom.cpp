@@ -548,6 +548,9 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHECKSAVE,	"FEM_SL6", {nil, SAVESLOT_6,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL7", {nil, SAVESLOT_7,		0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHECKSAVE,	"FEM_SL8", {nil, SAVESLOT_8,		0}, 0, 0, MENUALIGN_LEFT,
+		// The post-mission quicksave, shown as its own row so the player can see
+		// when it last ran and load it directly.
+		MENUACTION_CHECKSAVE,	"WII_QSV", {nil, SAVESLOT_QUICKSAVE,	0}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB", {nil, SAVESLOT_NONE,	0}, 320, 345, MENUALIGN_CENTER,
 	},
 

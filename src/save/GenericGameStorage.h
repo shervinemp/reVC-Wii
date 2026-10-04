@@ -34,11 +34,15 @@ bool FixSave(int32 slot, uint8 save_type);
 extern char DefaultPCSaveFileName[260];
 extern char ValidSaveName[260];
 extern char LoadFileName[256];
-extern wchar SlotFileName[SLOT_COUNT][260];
-extern wchar SlotSaveDate[SLOT_COUNT][70];
+// The manual slots are SLOT_COUNT (1-8); the post-mission quicksave is a ninth
+// slot (PAUSE_SAVE_SLOT) so the load screen can show and restore it too.  Kept
+// separate from SLOT_COUNT so save-file numbering (GTAVCsf9.b) is unchanged.
+#define SAVE_SLOT_COUNT (SLOT_COUNT + 1)
+extern wchar SlotFileName[SAVE_SLOT_COUNT][260];
+extern wchar SlotSaveDate[SAVE_SLOT_COUNT][70];
 extern int CheckSum;
 extern enum eLevelName m_LevelToLoad;
-extern int Slots[SLOT_COUNT];
+extern int Slots[SAVE_SLOT_COUNT];
 
 extern bool b_FoundRecentSavedGameWantToLoad;
 extern bool JustLoadedDontFadeInYet;

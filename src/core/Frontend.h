@@ -171,6 +171,10 @@ enum eSaveSlot
 	SAVESLOT_6,
 	SAVESLOT_7,
 	SAVESLOT_8,
+	// The post-mission quicksave: a ninth, engine-written slot (PAUSE_SAVE_SLOT).
+	// It renders and loads like the others on the Load screen but is not one of
+	// the eight manual save slots.  LABELED explicitly further down.
+	SAVESLOT_QUICKSAVE,
 	SAVESLOT_LABEL = 36
 };
 

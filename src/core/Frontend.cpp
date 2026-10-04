@@ -1095,7 +1095,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 #endif
 			wchar* rightText = nil;
 			wchar* leftText;
-			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+			if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_QUICKSAVE) {
 				CFont::SetColor(CRGBA(0, 0, 0, FadeIn(255)));
 				CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 				CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
@@ -1140,7 +1140,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 
 			if (aScreens[m_nCurrScreen].m_aEntries[i].m_Action != MENUACTION_LABEL && aScreens[m_nCurrScreen].m_aEntries[i].m_EntryName[0] != '\0') {
 
-				if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+				if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_QUICKSAVE) {
 					CFont::SetRightJustifyOff();
 
 					leftText = nil;
@@ -1150,7 +1150,12 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					}
 
 					if (!leftText || leftText[0] == '\0') {
-						sprintf(gString, "FEM_SL%d", i + 1);
+						// The quicksave row is the ninth; there is no FEM_SL9, so it
+						// falls back to its own "Quick Save" label instead.
+						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot == SAVESLOT_QUICKSAVE)
+							sprintf(gString, "WII_QSV");
+						else
+							sprintf(gString, "FEM_SL%d", i + 1);
 						leftText = TheText.Get(gString);
 					}
 				} else {
@@ -1450,7 +1455,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					int saveSlot = aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot;
 					if (rightText || action == MENUACTION_DRAWDIST || action == MENUACTION_BRIGHTNESS || action == MENUACTION_MUSICVOLUME ||
 						action == MENUACTION_SFXVOLUME || action == MENUACTION_MP3VOLUMEBOOST || action == MENUACTION_MOUSESENS ||
-						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8
+						saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_QUICKSAVE
 #ifdef CUSTOM_FRONTEND_OPTIONS
 						|| action == MENUACTION_CFO_SLIDER
 #endif
@@ -1530,7 +1535,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 					if (rightText) {
 						CFont::SetCentreOff();
 						CFont::SetRightJustifyOn();
-						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_8) {
+						if (aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot >= SAVESLOT_1 && aScreens[m_nCurrScreen].m_aEntries[i].m_SaveSlot <= SAVESLOT_QUICKSAVE) {
 							CFont::SetFontStyle(FONT_LOCALE(FONT_STANDARD));
 							CFont::SetScale(MENU_X(MEDIUMTEXT_X_SCALE), MENU_Y(MEDIUMTEXT_Y_SCALE));
 						} else {
@@ -4799,8 +4804,11 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			{
 				int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
 
-				if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8) {
-					m_nCurrSaveSlot = saveSlot - SAVESLOT_1;
+				// The quicksave lives in its own slot (PAUSE_SAVE_SLOT == SLOT_COUNT);
+				// the manual slots map linearly from SAVESLOT_1..8.
+				bool isQuickSaveRow = (saveSlot == SAVESLOT_QUICKSAVE);
+				if (isQuickSaveRow || (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8)) {
+					m_nCurrSaveSlot = isQuickSaveRow ? SLOT_COUNT : (saveSlot - SAVESLOT_1);
 					if (Slots[m_nCurrSaveSlot] != SLOT_EMPTY && Slots[m_nCurrSaveSlot] != SLOT_CORRUPTED) {
 						if (m_nCurrScreen == MENUPAGE_CHOOSE_LOAD_SLOT) {
 							SwitchToNewScreen(MENUPAGE_LOAD_SLOT_CONFIRM);

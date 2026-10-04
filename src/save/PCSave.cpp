@@ -107,12 +107,12 @@ C_PcSave::PcClassSaveRoutine(int32 file, uint8 *data, uint32 size)
 void
 C_PcSave::PopulateSlotInfo()
 {
-	for (int i = 0; i < SLOT_COUNT; i++) {
+	for (int i = 0; i < SAVE_SLOT_COUNT; i++) {
 		Slots[i] = SLOT_EMPTY;
 		SlotFileName[i][0] = '\0';
 		SlotSaveDate[i][0] = '\0';
 	}
-	for (int i = 0; i < SLOT_COUNT; i++) {
+	for (int i = 0; i < SAVE_SLOT_COUNT; i++) {
 #ifdef FIX_BUGS
 		char savename[MAX_PATH];
 #else
