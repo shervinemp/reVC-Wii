@@ -160,7 +160,16 @@ CCam::Process(void)
 	// flag that has to unwind a half-finished transition to be switched off is a
 	// flag that eventually strands a camera mid-move.  This way turning co-op off
 	// restores the stock behaviour exactly, because nothing else was touched.
-	if(TheCamera.bWiiCoopCamera){
+	if(TheCamera.bWiiCoopCamera && !TheCamera.m_bStartInterScript && TheCamera.m_uiTransitionState == 0){
+		// No scope is promised in co-op.  The sniper and rocket launcher want a
+		// first-person weapon camera, which the line below overrides every frame --
+		// so without this you get crosshair-corrected fire with no scope view at all,
+		// which reads as a bug rather than a decision.  Clearing it here means the
+		// weapon camera never engages, and GetWeaponFirstPersonOn() stays false so the
+		// firing path stays consistent with what is on screen.
+		if(TheCamera.PlayerWeaponMode.Mode != MODE_NONE)
+			TheCamera.ClearPlayerWeaponMode();
+
 		Mode = MODE_WII_COOP;
 		// Reset on the way IN only.  Setting it every frame looked harmless --
 		// Process_WiiCoop never reads it -- but it meant the frame co-op was
@@ -173,6 +182,11 @@ CCam::Process(void)
 		Process_WiiCoop(CamTargetEntity->GetPosition(), 0.0f, 0.0f, 0.0f);
 		return;
 	}
+	// A cutscene or an in-flight mode transition takes the camera back, rather than
+	// being silently overridden every frame.  Deliberately narrow: m_bStartInterScript
+	// and m_uiTransitionState are the two the engine already uses for exactly this.
+	// If this predicate is ever wrong the symptom is "co-op does not engage", which
+	// is obvious -- the alternative was a broken story beat nobody noticed.
 	if(s_wasCoopCamera){
 		// Leaving co-op is the other transition that needs a reset, for the same
 		// reason: the stock modes initialise from ResetStatics and would otherwise
