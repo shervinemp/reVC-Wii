@@ -196,8 +196,8 @@ static const float kFlickDownAlign = 0.55f;      // must still point into gravit
 //               far it has to travel: heavy while the hand is nearly still,
 //               almost none in a fast sweep.
 //               tau = kAimSmoothTau/(1 + kAimSmoothGain*error)
-constexpr float kAimDefaultX = 0.53f;	// CCamera::Init's resting crosshair
-constexpr float kAimDefaultY = 0.4f;
+constexpr float kAimDefaultX = 0.5f;	// CCamera::Init's resting crosshair
+constexpr float kAimDefaultY = 0.5f;
 struct AimBox
 {
 	float left, right, top, bottom;
