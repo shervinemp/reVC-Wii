@@ -7,7 +7,42 @@ two players, **one shared camera, one screen**, no split-screen. Player 1 stays
 the script driver; player 2 is a real second ped who walks, aims, shoots and rides
 along, but never owns a mission.
 
-## The decisions
+## Freeroam only: co-op does not run during missions
+
+Co-op is **off while a mission is running.** This is a hard boundary, not a
+degradation.
+
+It is worth being clear about why, because it looks like a limitation and is
+actually the thing that makes the rest affordable:
+
+- It turns a **degraded** mode into a **bounded** one. Letting co-op run through a
+  mission means player 2 is a bodyguard for the whole campaign, which is the part
+  of this design with the most ways to be subtly wrong and the least fun.
+- It removes a whole class of risk rather than managing it. Mission scripts, the
+  cutscene cameras, mission-failure respawn and every `PlayerInFocus` assumption
+  inside a scripted sequence all stop mattering, because none of it runs
+  concurrently with a second ped. The camera already yields to cutscenes; that
+  patch exists because of a structural conflict, and this removes the conflict.
+- It is what SA MP actually did. There was no co-op campaign; co-op was freeroam
+  and community missions.
+
+Cost: nothing, since player 1 owning scripts and player 2 being a passenger was
+already the design. This just makes it explicit rather than letting the mode run
+in a state it was never designed for.
+
+Co-op missions remain possible later as **custom `.scm` missions**, which drop
+straight in from the SD card, and which get co-op only once they opt in.
+
+### What this makes the top remaining risk
+
+**Player 2 dying in freeroam.** Nobody respawns them: respawn is driven off
+`PlayerInFocus`, which stays 0, so a second ped that dies is a corpse the camera
+then frames for the rest of the session. In mission-free co-op this is a *likely*
+event rather than an edge case, so it needs explicit wiring before co-op is
+usable rather than after.
+
+Not yet located: the respawn symbol itself. Three searches came back empty, so
+this is recorded as an open question rather than a known gap.
 
 1. **Semi-top-down shared camera.** One camera for both players, angled down.
 2. **The pointer is a reticle only.** In co-op it never rotates the camera — the
