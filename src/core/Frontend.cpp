@@ -3328,12 +3328,10 @@ CMenuManager::SaveSettings()
 	m_lastWorking3DAudioProvider = m_nPrefsAudio3DProviderIndex;
 	SaveINISettings();
 #ifdef LOAD_INI_SETTINGS
-	// SaveINISettings covers video/audio but NOT the controller subset (invert,
-	// mouse steer, vibration, head bob, stick sens) -- that is SaveINIControllerSettings.
-	// Under LOAD_INI_SETTINGS the .set is never written, so without this every
-	// controller toggle that only called SaveSettings() (invert, mouse steer) was
-	// not persisted at all and reset on the next boot.  Persisting the controller
-	// INI from here covers every such toggle at once.
+	// SaveINISettings covers video/audio and writes the file; SaveINIControllerSettings
+	// covers the controller bindings and writes it again.  Both flush cfg themselves,
+	// so a toggle that calls only one of them still reaches the card.  (Nothing reads
+	// them back unless the boot path calls LoadSettings -- wii_game.cpp does.)
 	SaveINIControllerSettings();
 #endif
 #endif
@@ -5084,10 +5082,12 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		if (!goBack) {
 #ifdef FIX_BUGS
 			int saveSlot = aScreens[currScreen].m_aEntries[currOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[currOption] != SLOT_OK)
+			// SAVESLOT_QUICKSAVE and not SAVESLOT_8: the Quick Save row is a loadable
+			// slot like any other, so selecting an empty one has to fail audibly too.
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_QUICKSAVE && Slots[currOption] != SLOT_OK)
 #else
 			int saveSlot = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_SaveSlot;
-			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_8 && Slots[m_nCurrOption] != SLOT_OK)
+			if (saveSlot >= SAVESLOT_1 && saveSlot <= SAVESLOT_QUICKSAVE && Slots[m_nCurrOption] != SLOT_OK)
 #endif
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_FAIL, 0);
 			else

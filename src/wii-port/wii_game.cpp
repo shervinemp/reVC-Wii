@@ -813,6 +813,24 @@ main(int argc, char **argv)
 	}
 
 	bootPrintf("WII game boot: RenderWare initialized\n");
+
+	// Read the settings back, here and not after InitialiseOnceAfterRW below.
+	//
+	// On PC this is the OS skeleton's job -- skel/glfw.cpp does it long before
+	// anything else -- and the Wii has no skeleton, so without it nothing ever
+	// loads reVC.ini.  Every option the player set was written correctly and then
+	// silently ignored, and came back as its default on the next launch.
+	//
+	// It has to sit above InitialiseOnceAfterRW rather than below it, because that
+	// function CONSUMES the audio preferences (it pushes the volumes, the speaker
+	// config and the 3D provider into DMAudio).  Loading them afterwards would mean
+	// a saved volume only took effect on the launch after next.  It also pulls in
+	// the stored bindings and then re-asserts this port's own defaults over them
+	// (WiiPadApplyControlDefaults at the end of LoadSettings), which is the order
+	// we want.
+	bootPrintf("WII game boot: loading settings\n");
+	FrontEndMenuManager.LoadSettings();
+
 	bootPrintf("WII game boot: InitialiseOnceAfterRW\n");
 	if(!CGame::InitialiseOnceAfterRW())
 		haltBoot("InitialiseOnceAfterRW");

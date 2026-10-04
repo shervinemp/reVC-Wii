@@ -104,7 +104,7 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //               linear response means sensitivity scales directly with how far
 //               outside the dead zone the pointer sits, so aiming is predictable
 //               and an equal move always turns the same amount.
-constexpr float kPointerDeadzone = 0.18f;
+constexpr float kPointerDeadzone = 0.24f;
 // Where the linear ramp reaches full turn rate.
 constexpr float kPointerSaturation = 0.75f;
 // When the pointer is off the sensor entirely the turn rate is held at this
@@ -132,9 +132,11 @@ constexpr float kPointerRatePerSec = 330.0f;
 // horizontal, and m_fMouseAccelVertical is m_fMouseAccelHorzntl + 0.0005, so at
 // the default settings pitch comes out about twice as fast as yaw.  This takes
 // most of that back out but leaves the pitch still a little under the yaw, the
-// way the stick path's own 0.6 factor in Cam.cpp does.  It was 0.32, which made
-// up/down aiming feel sluggish against left/right; 0.5 closes most of that gap.
-constexpr float kPointerPitchScale = 0.5f;
+// way the stick path's own 0.6 factor in Cam.cpp does.  It was raised to 0.5 to
+// chase "up/down is sluggish", which was the wrong diagnosis: the sluggishness
+// was the aim box sitting off-centre (see kAimBoxes), and once that is fixed 0.32
+// is the value that matches the stick, so it is back there.
+constexpr float kPointerPitchScale = 0.32f;
 
 // The pointer stops being tracked the moment it leaves the sensor bar's field,
 // which is exactly what happens at the END of a long turn: the remote is still
@@ -154,6 +156,27 @@ constexpr float kPointerHoldSeconds = 2.0f;
 // plausible frame times.
 constexpr float kMinPointerDt = 1.0f/240.0f;
 constexpr float kMaxPointerDt = 1.0f/15.0f;
+
+// --- which way the hand is still going, once the pointer is off the bar -------
+// The hold above replays the last turn rate blindly, which is right for finishing
+// a turn that ran out of sensor and wrong the moment the player turns back: the
+// camera carries on the way it was already going, and a remote set down on the
+// sofa is indistinguishable from a hand that is still sweeping.  The Wiimote's
+// own accelerometer can tell those apart.
+//
+// A raw acceleration reading cannot do it on its own.  Sweeping right reads
+// right while the hand speeds up and left while it slows down again, so only the
+// integral survives the whole gesture.  The deviation from a slowly followed
+// gravity baseline -- the same trick the flick detector uses for its baseline --
+// is integrated into a leaky velocity estimate, and the leak is what makes a hand
+// that has stopped read as stopped rather than as wherever the last sweep left it.
+//
+// This is only ever allowed to CONTINUE a turn that is already happening, never to
+// start one, so a remote merely lying down -- which is nothing but noise here --
+// cannot turn the camera at all.
+constexpr float kSwingGravityFollow = 0.06f;	// per scan: how fast gravity is followed
+constexpr float kSwingLeakPerSec = 1.6f;		// how fast "not moving" comes to be believed
+constexpr float kSwingThreshold = 0.12f;		// velocity, in g per second, that counts as a sweep
 
 // --- Nunchuk flick-down jump -------------------------------------------------
 // WiiPadScan measures the gesture and raises s_flickJumpPulse for exactly one
@@ -198,19 +221,24 @@ static const float kFlickDownAlign = 0.55f;      // must still point into gravit
 //               tau = kAimSmoothTau/(1 + kAimSmoothGain*error)
 constexpr float kAimDefaultX = 0.5f;	// CCamera::Init's resting crosshair
 constexpr float kAimDefaultY = 0.5f;
+// The field order matches the order the literals below are written in.  It used to
+// be {left, right, top, bottom}, which is an easy trap: a box written as
+// "top, bottom, left, right" and read as "left, right, top, bottom" still compiles,
+// still looks centred, and silently swaps which axis gets the off-centre pair.
 struct AimBox
 {
-	float left, right, top, bottom;
+	float top, bottom, left, right;
 };
 constexpr AimBox kAimBoxes[] = {
-	// top, bottom, left, right.  The left/right pair is centred on 0.5, so the top/bottom
-	// pair must be too or the turn radius differs above and below the centre: a box
-	// sitting high (top too near the screen edge) leaves more room below it to reach
-	// full deflection, so aiming DOWN saturated the curve and turned fast while
-	// aiming UP ran out of screen before it ever did.  These are centred on 0.5.
-	{ 0.28f, 0.64f, 0.37f, 0.63f },
-	{ 0.20f, 0.62f, 0.29f, 0.71f },
-	{ 0.12f, 0.70f, 0.21f, 0.79f },
+	// Both pairs are centred on 0.5, and that is the whole point of the box.  The
+	// turn radius is the gap between a box edge and the screen edge, so a box that
+	// sits off-centre gives one direction more room to reach full deflection than
+	// the other: the roomier side saturates the rate curve and turns fast, the
+	// other runs out of screen before it ever does and crawls.  Both axes have to
+	// be centred or the same bug reappears on whichever one is not.
+	{ 0.37f, 0.63f, 0.37f, 0.63f },	// small
+	{ 0.29f, 0.71f, 0.29f, 0.71f },	// medium
+	{ 0.21f, 0.79f, 0.19f, 0.81f },	// large
 };
 constexpr float kAimSaturation = 0.28f;
 constexpr float kAimSmoothTau = 0.09f;
@@ -475,16 +503,6 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_Z);
 	setButton(state.LeftShock, buttons & PAD_TRIGGER_R);
 
-	{
-		static bool s_brakeLogged;
-		const bool braking = inCar && (buttons & PAD_TRIGGER_L) != 0;
-		if(braking != s_brakeLogged){
-			s_brakeLogged = braking;
-			if(braking)
-				WiiTraceReport("WII pad: vehicle brake/reverse pressed (L)\n");
-		}
-	}
-
 	const bool dpadLeft = (buttons & PAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & PAD_BUTTON_RIGHT) != 0;
 	const bool dpadDown = (buttons & PAD_BUTTON_DOWN) != 0;
@@ -555,14 +573,6 @@ captureClassic(const WPADData &data, CControllerState &state,
 	setButton(state.LeftShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_R);  // R: horn
 	setButton(state.Start, buttons & WPAD_CLASSIC_BUTTON_PLUS);
 	setButton(state.Select, buttons & WPAD_CLASSIC_BUTTON_MINUS);
-
-	static bool s_brakeLogged;
-	const bool braking = inCar && (buttons & WPAD_CLASSIC_BUTTON_FULL_L) != 0;
-	if(braking != s_brakeLogged){
-		s_brakeLogged = braking;
-		if(braking)
-			WiiTraceReport("WII pad: vehicle brake/reverse pressed (L)\n");
-	}
 
 	if(!FrontEndMenuManager.m_bMenuActive){
 		// Two sticks of their own walk and steer, so the D-pad is free to be the
@@ -652,16 +662,6 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	// the system menu instead of fighting an in-game handler.
 	setButton(state.Select, buttons & WPAD_BUTTON_MINUS);
 	setButton(state.Start, buttons & WPAD_BUTTON_PLUS);
-
-	// One event-log line per brake press, so a report that "reverse does nothing"
-	// can be settled from debug.log instead of guessed at.
-	static bool s_brakeLogged;
-	const bool braking = inCar && (buttons & WPAD_NUNCHUK_BUTTON_Z) != 0;
-	if(braking != s_brakeLogged){
-		s_brakeLogged = braking;
-		if(braking)
-			WiiTraceReport("WII pad: vehicle brake/reverse pressed (Z)\n");
-	}
 
 	if(dpadIsCluster){
 		// Left/right: weapon cycle on foot (LeftShoulder2 / RightShoulder2), and
@@ -779,6 +779,72 @@ stopPointerHold(void)
 	s_heldRateX = 0.0f;
 	s_heldRateY = 0.0f;
 	s_heldSeconds = kPointerHoldSeconds;
+}
+
+// The accelerometer's slow view of "which way down is", and the leaky velocity
+// built on top of it.  File scope rather than function statics because the state
+// has to be readable from the capture path as well as the scan path.
+struct SwingTracker
+{
+	float gx, gy, gz;	// slowly followed gravity vector
+	float vx, vy;		// velocity estimate, in g per second
+	bool  seeded;
+};
+static SwingTracker s_swing = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false };
+
+// Feeds one scan of the Wiimote's accelerometer through the tracker above and
+// reports which way the hand is still travelling: +x right, +y DOWN, matching the
+// screen axis the aim box uses, so the two can be dotted together directly.
+// Returns false when the hand is not travelling far enough to read as a
+// deliberate sweep rather than as tremor.
+//
+// Called every frame the pointer is live, tracked or not.  Only the untracked
+// case acts on the answer, but a tracker that stops running while the bar is in
+// sight has nothing useful left to say the moment it loses it.
+bool
+pointerSwing(const WPADData &data, float &outX, float &outY)
+{
+	const float ax = (float)data.accel.x;
+	const float ay = (float)data.accel.y;
+	const float az = (float)data.accel.z;
+
+	if(!s_swing.seeded){
+		// First sample defines down for this grip.  Without it the first frames
+		// after a boot would read as a violent sweep in an arbitrary direction.
+		s_swing.gx = ax; s_swing.gy = ay; s_swing.gz = az;
+		s_swing.seeded = true;
+	}
+	s_swing.gx += (ax - s_swing.gx)*kSwingGravityFollow;
+	s_swing.gy += (ay - s_swing.gy)*kSwingGravityFollow;
+	s_swing.gz += (az - s_swing.gz)*kSwingGravityFollow;
+
+	// Deviation from gravity, as a fraction of g.  At rest the accelerometer
+	// already reads the gravity vector whatever angle the remote is held at, so
+	// the slow baseline is carrying the tilt and only motion is left in here.
+	const float g = std::sqrt(s_swing.gx*s_swing.gx + s_swing.gy*s_swing.gy + s_swing.gz*s_swing.gz);
+	const float scale = g > 1.0f ? 1.0f/g : 1.0f;
+	const float dx = (ax - s_swing.gx)*scale;
+	// The remote's +y points up the screen when it is held like a television
+	// remote, and gravity's pull on it grows the same way, so the screen's
+	// downward is the negative of this axis.
+	const float dy = -(ay - s_swing.gy)*scale;
+
+	const float dt = s_pointerDt;
+	const float keep = std::exp(-kSwingLeakPerSec*dt);
+	s_swing.vx = s_swing.vx*keep + dx*dt;
+	s_swing.vy = s_swing.vy*keep + dy*dt;
+
+	const float speed = std::sqrt(s_swing.vx*s_swing.vx + s_swing.vy*s_swing.vy);
+	if(speed < kSwingThreshold){
+		outX = 0.0f;
+		outY = 0.0f;
+		return false;
+	}
+	// Unit direction with a magnitude of 1, so the sign of the dot product with a
+	// held turn rate is all the caller needs.
+	outX = s_swing.vx/speed;
+	outY = s_swing.vy/speed;
+	return true;
 }
 
 // Whether the pointer should be moving the crosshair this frame: a gun out whose
@@ -1142,6 +1208,11 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		return;
 	}
 
+	// Runs every frame, in view or not, so the velocity estimate is never stale at
+	// the moment the bar is lost -- which is the only moment it is read.
+	float swingX = 0.0f, swingY = 0.0f;
+	const bool sweeping = pointerSwing(*data, swingX, swingY);
+
 	if(tracked){
 		float rateX, rateY;
 		bool turning;
@@ -1161,15 +1232,36 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			stopPointerHold();
 		}
 	}else{
-		// Aimed past the edge of the sensor's field while still turning.  Keep
-		// going the same way until the hold runs out.  The crosshair stays where
-		// the pointer last left it for as long as that lasts, and then goes back
-		// to rest rather than sit in a corner for a remote that was put down.
-		s_heldSeconds += s_pointerDt;
-		if(s_heldSeconds >= kPointerHoldSeconds){
-			stopPointerHold();
-			if(aimWithPointer)
-				steerCrosshair(kAimDefaultX, kAimDefaultY);
+		// Aimed past the edge of the sensor's field while still turning.  The
+		// accelerometer gets a vote here, because blind replay of the last rate is
+		// right for one case and wrong for the other two.
+		if(sweeping && (s_heldRateX != 0.0f || s_heldRateY != 0.0f)){
+			// Dotted with the rate being held rather than with an axis, so a diagonal
+			// turn is judged on the turn and not on one component of it.  Positive
+			// means the hand is still travelling the way the camera is already going:
+			// a sweep that simply ran off the end of the bar, so the hold is refreshed
+			// rather than allowed to expire under a player who is still aiming.
+			if(swingX*s_heldRateX + swingY*s_heldRateY > 0.0f){
+				s_heldSeconds = 0.0f;
+			}else{
+				// Swept back the other way.  The aim is on its way back onto the screen
+				// and the camera should wait for it rather than guess which way it was
+				// heading; the crosshair is left where it is, and the hold below
+				// returns it to rest if the bar never comes back.
+				s_heldRateX = 0.0f;
+				s_heldRateY = 0.0f;
+			}
+		}else{
+			// Not sweeping, so this is a hand that has stopped or a remote that has
+			// been put down: keep the last rate for a moment in case the bar is
+			// reacquired, then give the crosshair back to rest rather than sit in a
+			// corner for a remote nobody is holding.
+			s_heldSeconds += s_pointerDt;
+			if(s_heldSeconds >= kPointerHoldSeconds){
+				stopPointerHold();
+				if(aimWithPointer)
+					steerCrosshair(kAimDefaultX, kAimDefaultY);
+			}
 		}
 	}
 
