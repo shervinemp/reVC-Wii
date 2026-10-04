@@ -131,9 +131,10 @@ constexpr float kPointerRatePerSec = 330.0f;
 // by 4.0*m_fMouseAccelVertical against 2.5*m_fMouseAccelHorzntl for the
 // horizontal, and m_fMouseAccelVertical is m_fMouseAccelHorzntl + 0.0005, so at
 // the default settings pitch comes out about twice as fast as yaw.  This takes
-// that back out and leaves the pitch a little slower than the yaw instead, the
-// way the stick path's own 0.6 factor in Cam.cpp does.
-constexpr float kPointerPitchScale = 0.32f;
+// most of that back out but leaves the pitch still a little under the yaw, the
+// way the stick path's own 0.6 factor in Cam.cpp does.  It was 0.32, which made
+// up/down aiming feel sluggish against left/right; 0.5 closes most of that gap.
+constexpr float kPointerPitchScale = 0.5f;
 
 // The pointer stops being tracked the moment it leaves the sensor bar's field,
 // which is exactly what happens at the END of a long turn: the remote is still
