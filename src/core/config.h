@@ -13,7 +13,13 @@
 #endif
 
 enum Config {
-	NUMPLAYERS = 1,
+	// 2 for couch co-op, which needs a second player slot.  It doubles as the
+	// size of CWorld::Players[], and PlayerInFocus stays 0 throughout -- the
+	// second slot exists to hold a ped and read a pad, not to take part in
+	// scripts, HUD or mission triggers.  Safe to raise on its own: the loops over
+	// NUMPLAYERS (Game.cpp) all reach CPlayerInfo::Clear or DeletePlayerSkin,
+	// and both of those nil-check m_pPed, which a slot nobody has filled is.
+	NUMPLAYERS = 2,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
 	MAX_CDIMAGES = 8, // additional cdimages

@@ -36,6 +36,7 @@ public:
 	{
 		MODE_NONE = 0,
 		MODE_TOPDOWN,
+		MODE_WII_COOP,
 		MODE_GTACLASSIC,
 		MODE_BEHINDCAR,
 		MODE_FOLLOWPED,
@@ -215,6 +216,10 @@ public:
 #endif
 	void Process_ModelView(const CVector &CameraTarget, float, float, float);
 	void Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, float, float);
+	// Couch co-op.  One camera for both players, above and behind the midpoint
+	// between them, at a fixed downward angle, and it never takes input: aiming
+	// is a reticle on the screen rather than something that steers the view.
+	void Process_WiiCoop(const CVector &CameraTarget, float TargetOrientation, float, float);
 	void Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrientation, float, float);
 	void Process_BehindCar(const CVector &CameraTarget, float TargetOrientation, float, float);
 	void Process_Cam_On_A_String(const CVector &CameraTarget, float TargetOrientation, float, float);
@@ -537,6 +542,11 @@ public:
 	uint32 m_uiFadeTimeStartedMusic;
 
 	static bool m_bUseMouse3rdPerson;
+	// Couch co-op.  While this is set the camera is MODE_WII_COOP and the pointer
+	// is a reticle only.  One flag for both halves on purpose: they only make
+	// sense together, and a mode where the camera is shared but aiming still
+	// turned the view would just be a worse version of single player.
+	static bool bWiiCoopCamera;
 #ifdef FREE_CAM
 	static bool bFreeCam;
 	// Whether vehicles get the SA-style follow camera (CCam::Process_FollowCar_SA).

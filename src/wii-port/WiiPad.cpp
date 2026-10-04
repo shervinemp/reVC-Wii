@@ -993,6 +993,15 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 		loose.right + (kAimBoxPrecise.right - loose.right)*s_precise,
 	};
 
+	// Couch co-op: the crosshair is a reticle and nothing else.  The camera is
+	// shared and fixed (CCam::Process_WiiCoop), so turning it here would fight
+	// the other player for the one view -- and with a fixed downward angle there
+	// is nothing for a turn to accomplish anyway.  The reticle still moves across
+	// the whole screen and the shot still goes through it, because
+	// Find3rdPersonCrosshairRay is screen-space and stays correct at any camera
+	// angle.  outCrosshair* is set below either way; only the turn is dropped.
+	const bool reticleOnly = CCamera::bWiiCoopCamera;
+
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
 	// The crosshair gets the full screen so aiming is never boxed in.
@@ -1014,7 +1023,11 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	// Not returned early on zero.  The spin-up has to see the zero in order to
 	// snap a falling rate to a stop.
 	const float applied = applyTurnSpinUp(pointerTurnRate(magnitude, pointerOffScreen(data)));
-	if(applied <= 0.0f)
+	// Co-op: the shared camera is fixed and the pointer is an aim point only, so the
+	// turn path is bypassed outright rather than fighting a camera that never turns
+	// ("the pointer is a reticle only", Gate 0).  The single-player path above is
+	// left intact -- it is what a lone player still gets.
+	if(applied <= 0.0f || reticleOnly)
 		return false;
 
 	outX = (overX/magnitude)*applied;

@@ -113,6 +113,26 @@ CCam::Init(void)
 float PLAYERPED_LEVEL_SMOOTHING_CONST_INV = 0.6f;
 float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 
+// --- couch co-op camera -------------------------------------------------------
+// One camera for both players: above and behind the midpoint between them, at a
+// fixed downward angle.  Two properties are the whole design, not preferences:
+//
+//   It takes no input.  Nothing here reads the pointer, the sticks or the
+//   shoulder buttons, so aiming cannot move the view -- the reticle is just a
+//   mark on the screen and the shot ray goes through it (Camera.cpp's
+//   Find3rdPersonCrosshairRay is screen-space, so it stays correct).  That is
+//   what lets two people share one view instead of fighting over it.
+//
+//   Its angle is fixed.  Only the distance changes as the players separate, so
+//   splitting up zooms out rather than swinging the camera around.
+static const float kCoopBaseBack = 11.0f;		// units behind the midpoint
+static const float kCoopBaseHeight = 9.5f;		// units above it: about 41 degrees down
+static const float kCoopSeparationGain = 0.5f;	// extra pull-back per unit of split
+static const float kCoopMaxBack = 28.0f;
+static const float kCoopFollowRate = 5.0f;		// per second, so the view eases into place
+
+bool CCamera::bWiiCoopCamera = false;
+
 void
 CCam::Process(void)
 {
@@ -125,6 +145,19 @@ CCam::Process(void)
 
 	if(CamTargetEntity == nil)
 		CamTargetEntity = TheCamera.pTargetEntity;
+
+	// Couch co-op owns the camera outright while it is on.  Forced here, at the
+	// one place every frame passes through, rather than in the mode-selection
+	// machinery further down -- that machinery owns interpolation state, and a
+	// flag that has to unwind a half-finished transition to be switched off is a
+	// flag that eventually strands a camera mid-move.  This way turning co-op off
+	// restores the stock behaviour exactly, because nothing else was touched.
+	if(TheCamera.bWiiCoopCamera){
+		Mode = MODE_WII_COOP;
+		ResetStatics = true;
+		Process_WiiCoop(CamTargetEntity->GetPosition(), 0.0f, 0.0f, 0.0f);
+		return;
+	}
 
 	m_iFrameNumWereAt++;
 	if(m_iFrameNumWereAt > m_iDoCollisionCheckEveryNumOfFrames)
@@ -190,6 +223,10 @@ CCam::Process(void)
 	}
 
 	switch(Mode){
+	case MODE_WII_COOP:
+	// Handled before the switch in Process, so reaching here means co-op was
+	// switched off between the two; fall through to the stock top-down path,
+	// which is dead code but keeps the case honest rather than silent.
 	case MODE_TOPDOWN:
 	case MODE_GTACLASSIC:
 	//	Process_TopDown(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
@@ -891,7 +928,13 @@ CCam::KeepTrackOfTheSpeed(const CVector &source, const CVector &target, const CV
 bool
 CCam::Using3rdPersonMouseCam(void) 
 {
-	return CCamera::m_bUseMouse3rdPerson && Mode == MODE_FOLLOWPED;
+	// MODE_WII_COOP counts as a mouse camera even though the pointer cannot turn
+	// it, because that is precisely what the mode is for: the pointer is a
+	// reticle and the crosshair has to keep tracking it.  Without this the
+	// pointer-aim gate in WiiPad fails closed and the crosshair freezes on the
+	// spot the moment co-op switches the camera over.
+	return CCamera::m_bUseMouse3rdPerson &&
+		(Mode == MODE_FOLLOWPED || Mode == MODE_WII_COOP);
 }
 bool
 CCam::GetWeaponFirstPersonOn(void)
@@ -1015,6 +1058,74 @@ float fDefaultSpeedMultiplier4Avoid = 0.05f;
 float fDefaultSpeedLimit4Avoid = 0.25f;
 float fAvoidGeomThreshhold = 1.5f;
 float fMiniGunBetaOffset = 0.3f;
+
+// Couch co-op.  See the constants above; this is the whole camera.
+//
+// With one player live it degenerates to a top-down follow of that ped, which is
+// deliberate: the mode is then testable by one person, before a second remote
+// exists, and the difference from the stock camera is visible immediately.
+void
+CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
+{
+	FOV = DefaultFOV;
+	m_bFixingBeta = false;
+	bBelowMinDist = false;
+	bBehindPlayerDesired = false;
+	// The stock cadence alternates collision frames to spread the cost; with two
+	// players and a fixed angle there is less of it to spread, so always on.
+	m_bCollisionChecksOn = true;
+
+	// Where to look: the midpoint of the live player peds.  Averaging keeps the
+	// view on the line between them, so however far apart they wander the camera
+	// can never end up somewhere neither of them actually is.
+	CVector target = CameraTarget;
+	float separation = 0.0f;
+	CPlayerPed *second = CWorld::Players[1].m_pPed;
+	if(second != nil && second != CamTargetEntity){
+		const CVector other = second->GetPosition();
+		target = (target + other)*0.5f;
+		separation = (other - CameraTarget).Magnitude2D();
+	}
+
+	// Which way to look from.  Player 1's heading, deliberately, not the
+	// midpoint's: player 1 is the one the scripts are following, so the view
+	// should agree with the mission rather than with whichever way the partner
+	// happens to be drifting.
+	CVector facing(0.0f, 1.0f, 0.0f);
+	if(CamTargetEntity != nil){
+		const CVector fwd = CamTargetEntity->GetForward();
+		if(fwd.x != 0.0f || fwd.y != 0.0f){
+			facing.x = fwd.x;
+			facing.y = fwd.y;
+			if(facing.Magnitude2D() > 0.001f)
+				facing.Normalise();
+		}
+	}
+
+	// Back and up, in that order, so the angle never changes and only the
+	// distance responds to the pair separating.
+	const float back = Min(kCoopMaxBack, kCoopBaseBack + separation*kCoopSeparationGain);
+	const CVector wanted = target - facing*back + CVector(0.0f, 0.0f, kCoopBaseHeight);
+
+	// Eased.  The midpoint jumps when the two are on opposite sides of a wall,
+	// and a hard cut there is unpleasant enough to look like a bug.
+	const float follow = 1.0f - exp(-kCoopFollowRate*(float)CTimer::GetTimeStep());
+	Source += (wanted - Source)*follow;
+
+	// Still worth doing: a fixed downward angle looks straight into rooftops and
+	// overpasses, which is the one thing this angle cannot avoid.
+	const CVector origSource = Source;
+	TheCamera.AvoidTheGeometry(origSource, target, Source, FOV);
+
+	Front = target - Source;
+	m_fRealGroundDist = Front.Magnitude2D();
+	m_fMinDistAwayFromCamWhenInterPolating = m_fRealGroundDist;
+	Front.Normalise();
+	GetVectorsReadyForRW();
+	TheCamera.m_bCamDirectlyBehind = false;
+	TheCamera.m_bCamDirectlyInFront = false;
+	ResetStatics = false;
+}
 
 void
 CCam::Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, float, float)
