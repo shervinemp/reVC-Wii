@@ -625,6 +625,7 @@ mountUsbStorage()
 namespace {
 
 devoptab_t *s_stdoutWrapper;
+const devoptab_t *s_consoleDevoptab;	// libogc's own, which stdout's cookie points at
 
 ssize_t
 stdoutSwallow(struct _reent *r, void *fd, const char *ptr, size_t len)
@@ -649,13 +650,30 @@ WiiStdoutHookInstall(void)
 	const devoptab_t *original = devoptab_list[1];
 	if(original == nullptr)
 		return;
+
+	// Patched in place, which is the part that actually matters.  console_init
+	// opens "CON:" into the stdout FILE, and newlib writes through the cookie
+	// that fopen stored -- a pointer to libogc's devoptab, captured then and
+	// never looked up again.  Swapping the entry in devoptab_list changes what
+	// the table says slot 1 is, which nothing consults, so a copy installed here
+	// sits there inert while every printf goes straight to the framebuffer.  The
+	// console devoptab is ordinary data in the linked image, so overwriting its
+	// write_r does reach the FILE, and that is what silences the ~250 printf
+	// calls the engine makes.
+	devoptab_t *patched = (devoptab_t*)original;
+	patched->write_r = stdoutSwallow;
+
+	// Still installed in the table as well, and still worth it: it covers
+	// anything that resolves the devoptab by fd rather than by cookie, which is
+	// how the game's own file access reaches stdio.
 	devoptab_t *wrapper = new (std::nothrow) devoptab_t;
 	if(wrapper == nullptr)
 		return;
-	*wrapper = *original;
+	*wrapper = *patched;
 	wrapper->name = "consoleQuiet";
 	wrapper->write_r = stdoutSwallow;
 	s_stdoutWrapper = wrapper;
+	s_consoleDevoptab = original;
 	devoptab_list[1] = wrapper;
 }
 
@@ -845,9 +863,6 @@ main(int argc, char **argv)
 	// A DOL launched from a read-only stick cannot keep its log beside itself;
 	// the SD card's app folder is the fallback, when it exists yet.
 	WiiTraceOpenLog(s_userFilesDirectory);
-	// Engine printf()/debug() lines land in the log from here on, so the
-	// console and the file narrate the same boot.
-	WiiStdoutHookInstall();
 
 	// The stamp is on the screen AND in the log: whichever medium reaches the
 	// user carries the exact build that ran, so a stale DOL can no longer pose.
@@ -866,6 +881,16 @@ main(int argc, char **argv)
 	selectUserFilesDirectory();
 	WiiTraceOpenLog(s_userFilesDirectory);
 	bootPrintf("WII game boot: user files dir=%s\n", s_userFilesDirectory);
+
+	// Now that the boot banners are on the screen, stop the console device from
+	// taking any more of it.  Installed here rather than before the banners for
+	// the obvious reason, and installed over the console devoptab in place rather
+	// than over the table slot, because the table slot was never the path: see
+	// WiiStdoutHookInstall.
+	WiiStdoutHookInstall();
+	WiiTraceReport("WII log: console devoptab %s, stdout slot %s\n",
+	               s_consoleDevoptab ? s_consoleDevoptab->name : "(none)",
+	               devoptab_list[1] ? devoptab_list[1]->name : "(none)");
 
 	// psInitialize stores exactly these two into RsGlobal, and the pointer has to
 	// report against the same pair, so both are taken from the render mode here

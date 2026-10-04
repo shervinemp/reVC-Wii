@@ -48,6 +48,9 @@
 #include "Population.h"
 #include "IniFile.h"
 #include "Zones.h"
+#ifdef NINTENDO_WII
+#include "WiiTrace.h"
+#endif
 
 #include "crossplatform.h"
 
@@ -1293,7 +1296,19 @@ void re3_debug(const char *format, ...)
 #if defined ANDROID
     __android_log_print(ANDROID_LOG_DEBUG, "reVC-DEBUG", re3_buff);
 #endif
+#if defined(NINTENDO_WII)
+	// Into the log, never onto the television.  This is where OutputDebugString
+	// lands, so every one of the engine's own diagnostics arrives here: changing
+	// the radio station alone writes "FRONTEND RADIO STATION CHANGED" and then
+	// stops and starts the frontend audio track, which is three lines of console
+	// over the settings menu before anything else does it.  WiiStdout.h already
+	// sets out for the C library's printf to be swallowed; this is the same
+	// promise kept for the one path that was still reaching the framebuffer, and
+	// a reader with the card gets strictly more than a reader of the screen did.
+	WiiTraceLogLine(re3_buff);
+#else
 	printf("%s", re3_buff);
+#endif
 	CDebug::DebugAddText(re3_buff);
 #endif
 }
