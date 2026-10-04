@@ -1622,7 +1622,6 @@ int8 CRunningScript::ProcessCommands0To99(int32 command)
 		CollectParameters(&m_nIp, 4);
 		int32 index = ScriptParams[0];
 		script_assert(index < NUMPLAYERS);
-		printf("&&&&&&&&&&&&&Creating player: %d\n", index);
 		if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
 			CStreaming::RequestSpecialModel(MI_PLAYER, "player", STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
 #ifdef NINTENDO_WII

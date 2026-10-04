@@ -9249,7 +9249,16 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 #ifdef FREE_CAM
 		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {
 #else
-		if (TheCamera.Cams[0].Using3rdPersonMouseCam()) {
+		// Reticle-owner only, not merely "a mouse camera".  This block REPLACES the
+		// ped's move speed with a first-person value derived from m_fRotationCur, the
+		// direction the body faces.  Right for the player the reticle drives, because
+		// their facing IS their aim; wrong for anyone else, because with no reticle a
+		// ped's facing is its walking direction, so reinterpreting movement against it
+		// makes them strafe relative to where they are going instead of going there.  A
+		// no-op with one player, since the reticle owner is the only player; it starts
+		// mattering when a second exists, and should then follow that player's own
+		// reticle rather than staying tied to the camera.
+		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && ped == FindPlayerPed()) {
 #endif
 			float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
