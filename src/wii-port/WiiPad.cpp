@@ -203,9 +203,14 @@ struct AimBox
 	float left, right, top, bottom;
 };
 constexpr AimBox kAimBoxes[] = {
-	{ 0.38f, 0.64f, 0.28f, 0.54f },
-	{ 0.30f, 0.72f, 0.20f, 0.62f },
-	{ 0.20f, 0.82f, 0.12f, 0.70f },
+	// top, bottom, left, right.  The left/right pair is centred on 0.5, so the top/bottom
+	// pair must be too or the turn radius differs above and below the centre: a box
+	// sitting high (top too near the screen edge) leaves more room below it to reach
+	// full deflection, so aiming DOWN saturated the curve and turned fast while
+	// aiming UP ran out of screen before it ever did.  These are centred on 0.5.
+	{ 0.28f, 0.64f, 0.37f, 0.63f },
+	{ 0.20f, 0.62f, 0.29f, 0.71f },
+	{ 0.12f, 0.70f, 0.21f, 0.79f },
 };
 constexpr float kAimSaturation = 0.28f;
 constexpr float kAimSmoothTau = 0.09f;
