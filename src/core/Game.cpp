@@ -985,6 +985,9 @@ void CGame::InitialiseWhenRestarting(void)
 void CGame::Process(void) 
 {
 #ifdef NINTENDO_WII
+	WiiTraceSetStep("game process");
+#endif
+#ifdef NINTENDO_WII
 	static uint32 wiiProcessCount;
 	bool traceWiiProcess = wiiProcessCount++ < 4;
 	if(traceWiiProcess)

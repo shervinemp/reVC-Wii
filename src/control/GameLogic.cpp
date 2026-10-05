@@ -118,6 +118,9 @@ CGameLogic::PassTime(uint32 time)
 void 
 CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 {
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("sort out streaming");
+#endif
 	CTimer::Stop();
 	WII_LOAD_STEP("flush request list", CStreaming::FlushRequestList());
 	WII_LOAD_STEP("delete rw objects", CStreaming::DeleteRwObjectsAfterDeath(pos));
@@ -144,6 +147,9 @@ CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 void
 CGameLogic::Update()
 {
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("game logic");
+#endif
 	CVector vecRestartPos;
 	float fRestartFloat;
 

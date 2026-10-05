@@ -35,6 +35,27 @@ char s_step[192] = "boot";
 volatile unsigned int s_stepSerial;
 volatile bool s_watchdogRunning;
 
+// Which phase of the frame the game thread is in, set by the frame loop and by the
+// engine's own update passes.
+//
+// s_step above could not answer this, and the reason is worth stating because it is
+// the whole defect.  s_step is only written when something LOGS, so during actual
+// play -- when the log is quiet by design -- it never moves.  Every freeze report
+// therefore said "last step [boot]", which is true and useless: it named the last
+// rare event, not what the thread was doing when it stopped.
+//
+// A pointer store, not a copy, and not a log call.  Every name is a string literal
+// with static storage, so there is nothing to own or free and nothing to allocate;
+// the cost on the game thread is one store per phase per frame.  A torn read by the
+// watchdog can only produce a garbled name, which is the same trade s_step already
+// makes, and a pointer is no more tearable than a length-prefixed string is.
+volatile const char *s_zone = "none";
+// Bumped on every change.  Distinguishes "stuck in one place" from "moving between
+// places but never finishing a frame", which are different faults and the zone name
+// alone can be ambiguous about: a phase entered and left every frame looks
+// identical to a phase entered once and never left.
+volatile unsigned int s_zoneSerial;
+
 // Whether the watchdog also samples the heap on a timer.  Off, and the reason is
 // that it is the only expensive thing the watchdog does -- walking the heap from a
 // second thread while the game runs -- and it sits OUTSIDE the stall check, so it
@@ -109,8 +130,9 @@ watchdogMain(void*)
 		if(++stalledSeconds < kStallSeconds)
 			continue;
 		stalledSeconds = 0;
-		WiiTraceReport("WII watchdog: no frame for %us, last step [%s]\n",
-		               kStallSeconds, s_step);
+		WiiTraceReport("WII watchdog: no frame for %us, stuck in [%s] zone#%u,"
+		               " last log [%s]\n",
+		               kStallSeconds, s_zone, s_zoneSerial, s_step);
 		// Sampled here, on the way out, rather than on a timer while healthy.  A
 		// hang is exactly when the heap is worth having, and this is the one moment
 		WiiTraceHeap("watchdog");
@@ -119,6 +141,15 @@ watchdogMain(void*)
 }
 
 } // namespace
+
+// Outside the anonymous namespace: called from the engine's own update passes, in
+// several translation units.
+void
+WiiTraceSetStep(const char *zone)
+{
+	s_zone = zone;
+	s_zoneSerial++;
+}
 
 void
 WiiTraceOpenLog(const char *directory)

@@ -188,6 +188,42 @@ CdStreamResetWaitStats(void)
 // the worker read() and this wait had no timeout of their own.  Comfortably longer
 // than any read on slow-but-working storage has any right to take.
 static const long kCdStreamWaitTimeoutUs = 5000000L;
+
+// How long to keep trying for gCdStreamMutex before deciding it is never going to
+// be free.  Same reasoning as the wait above: a wedged read is not a slow read.
+static const unsigned int kCdStreamMutexWaitMs = 5000;
+
+// libogc has no timed mutex lock.  There is LWP_MutexLock, which blocks for ever,
+// and LWP_MutexTryLock, which never blocks -- and nothing in between.  So the bound
+// is assembled here out of TryLock plus a yield.
+//
+// This is the last unbounded wait in this port's own code, and it is worth closing
+// because of what it costs when it does happen.  Every entry point below takes
+// gCdStreamMutex, so if any thread ever holds it and does not give it back -- a
+// read wedged mid-section, a thread killed holding it, a bug that returns early --
+// then the game thread parks inside LWP_MutexLock with no timeout and nothing to
+// report.  And that is precisely the signature in the log: the frame loop stops
+// turning AND the heap stops moving, because a thread blocked on a mutex allocates
+// nothing.  A spin would be the wrong fix on a single-core console; yielding is
+// what lets whoever holds the lock actually run.
+static bool
+lockCdStreamMutex(unsigned int timeoutMs)
+{
+	struct timeval start;
+	gettimeofday(&start, NULL);
+	for(;;){
+		if(LWP_MutexTryLock(gCdStreamMutex) == 0)
+			return true;
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		const unsigned int waitedMs =
+			(unsigned int)((now.tv_sec - start.tv_sec) * 1000
+			             + (now.tv_usec - start.tv_usec) / 1000);
+		if(waitedMs >= timeoutMs)
+			return false;
+		usleep(1000);
+	}
+}
 #endif
 
 void
@@ -466,7 +502,12 @@ CdStreamRead(int32 channel, void *buffer, uint32 offset, uint32 size)
 	ASSERT( pChannel != nil );
 
 #ifdef NINTENDO_WII
-	LWP_MutexLock(gCdStreamMutex);
+	if(!lockCdStreamMutex(kCdStreamMutexWaitMs)){
+		WiiTraceReport("WII cdstream: the streaming mutex was still held after %ums"
+		               " while requesting channel %d\n",
+		               kCdStreamMutexWaitMs, channel);
+		return STREAM_NONE;
+	}
 	if(pChannel->nSectorsToRead != 0 || pChannel->bReading){
 		if(pChannel->hFile == hImage - 1 &&
 		   pChannel->nSectorOffset == _GET_OFFSET(offset) &&
@@ -536,7 +577,12 @@ CdStreamGetStatus(int32 channel)
 	ASSERT( pChannel != nil );
 
 #ifdef NINTENDO_WII
-	LWP_MutexLock(gCdStreamMutex);
+	if(!lockCdStreamMutex(kCdStreamMutexWaitMs)){
+		WiiTraceReport("WII cdstream: the streaming mutex was still held after %ums"
+		               " while polling channel %d\n",
+		               kCdStreamMutexWaitMs, channel);
+		return STREAM_NONE;
+	}
 	if(gCdStreamThreadStatus == 2){
 		LWP_MutexUnlock(gCdStreamMutex);
 		return STREAM_NONE;
@@ -616,10 +662,19 @@ CdStreamSync(int32 channel)
 	// buffer when it eventually returns.  CdStreamRead already refuses a busy
 	// channel, so returning an error here is safe and the retry paths degrade into
 	// the error handling they already had.
+	int32 status = STREAM_NONE;
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("cdstream sync");
+	if(!lockCdStreamMutex(kCdStreamMutexWaitMs)){
+		WiiTraceReport("WII cdstream: the streaming mutex was still held after %ums;"
+		               " channel %d reported as a read error so the model defers\n",
+		               kCdStreamMutexWaitMs, channel);
+		return STREAM_ERROR;
+	}
+#endif
 	struct timeval waitStart;
 	gettimeofday(&waitStart, NULL);
 	bool timedOut = false;
-	LWP_MutexLock(gCdStreamMutex);
 	for(;;){
 		if(pChannel->nSectorsToRead == 0 && !pChannel->bReading)
 			break;
@@ -644,7 +699,7 @@ CdStreamSync(int32 channel)
 		}
 	}
 	pChannel->bLocked = false;
-	int32 status;
+#ifdef NINTENDO_WII
 	if(timedOut){
 		// Read the worker's state while the mutex still protects it.  The worker is
 		// stuck inside read() and can never report itself, so this is the only place
@@ -658,6 +713,10 @@ CdStreamSync(int32 channel)
 		status = STREAM_ERROR;
 	}else
 		status = pChannel->nStatus;
+#else
+	status = pChannel->nStatus;
+	(void)timedOut;
+#endif
 	LWP_MutexUnlock(gCdStreamMutex);
 	struct timeval waitEnd;
 	gettimeofday(&waitEnd, NULL);

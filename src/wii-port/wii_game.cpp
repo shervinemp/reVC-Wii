@@ -1046,12 +1046,14 @@ main(int argc, char **argv)
 
 	while(!RsGlobal.quit){
 		const u64 frameStart = gettime();
+		WiiTraceSetStep("frame begin");
 		// Also cleared here so a stall reported on the frame after a reset cannot
 		// inherit the previous one's worst wait.  Redundant with the clear below
 		// on any frame that runs to completion, and this is the one that cannot.
 		CdStreamResetWaitStats();
 		switch(gGameState){
 		case GS_FRONTEND:
+			WiiTraceSetStep("frontend idle");
 			RsEventHandler(rsFRONTENDIDLE, nullptr);
 			if(FrontEndMenuManager.m_bWantToLoad){
 				startSavedGame(false);
@@ -1066,6 +1068,7 @@ main(int argc, char **argv)
 			break;
 
 		case GS_PLAYING_GAME:
+			WiiTraceSetStep("playing idle");
 			RsEventHandler(rsIDLE, (void*)TRUE);
 			// Load Game or New Game, chosen from the pause menu.
 			//

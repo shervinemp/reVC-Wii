@@ -347,6 +347,11 @@ uint64 timeProcessingDFF;
 void
 CStreaming::Update(void)
 {
+#ifdef NINTENDO_WII
+	// The pass that issues every CD read the game makes, so it is the first place
+	// to look when a frame stops turning.  A pointer store, no logging.
+	WiiTraceSetStep("streaming update");
+#endif
 	CStreamingInfo *si, *prev;
 	bool requestedSubway = false;
 #ifdef NINTENDO_WII

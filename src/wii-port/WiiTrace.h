@@ -76,6 +76,12 @@ int WiiTraceLogFd(void);
 // says so from its own thread.
 void WiiTraceTick(void);
 
+// Names the phase the game thread is currently in, for the watchdog to report when
+// a frame never finishes.  A pointer store of a string literal -- no copy, no
+// allocation, no logging -- so it is free enough to call from the engine's own
+// update passes rather than only once per frame.  Wii-only; a no-op elsewhere.
+void WiiTraceSetStep(const char *zone);
+
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many
 // blocks with a small top chunk is fragmentation, and allocating less will not
