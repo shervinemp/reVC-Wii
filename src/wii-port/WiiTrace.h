@@ -67,6 +67,15 @@ void WiiTraceStartWatchdog(void);
 // very thing that was held when the fault happened.
 int WiiTraceLogFd(void);
 
+// One increment per frame, from the game loop.  The watchdog judges "is the game
+// still turning" by this serial, and it used to move only when something was
+// logged -- which was an accident of how much the engine used to print, and is
+// exactly backwards now that the log is quiet.  Ticking it from the loop makes a
+// hang INSIDE a frame visible: the frame never completes, so the stall timer at
+// the end of the frame is never reached, but this stops moving and the watchdog
+// says so from its own thread.
+void WiiTraceTick(void);
+
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many
 // blocks with a small top chunk is fragmentation, and allocating less will not

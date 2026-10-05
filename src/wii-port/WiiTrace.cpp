@@ -35,6 +35,15 @@ char s_step[192] = "boot";
 volatile unsigned int s_stepSerial;
 volatile bool s_watchdogRunning;
 
+// Whether the watchdog also samples the heap on a timer.  Off, and the reason is
+// that it is the only expensive thing the watchdog does -- walking the heap from a
+// second thread while the game runs -- and it sits OUTSIDE the stall check, so it
+// used to fire every fifteen seconds whether or not anything was wrong.  That is
+// what made this whole facility look unplayable and get switched off.  The stall
+// report itself is nearly free: one comparison a second against a serial the game
+// thread already bumps, plus the log commit it would have had to do anyway.
+static bool s_heapSampling = false;
+
 lwp_t s_watchdogThread = LWP_THREAD_NULL;
 u8 s_watchdogStack[8192] ATTRIBUTE_ALIGN(8);
 
@@ -83,10 +92,10 @@ watchdogMain(void*)
 		commitLog();
 #endif
 
-		// Outside the progress check on purpose.  A game running perfectly well
-		// is exactly when the heap needs sampling, because a run that ends by
-		// vanishing leaves no other evidence of what it was doing beforehand.
-		if(++secondsSinceHeap >= kHeapReportSeconds){
+		// Outside the progress check on purpose, but opt-in: a game running
+		// perfectly well is when a heap TREND would be worth having, and that is
+		// also the one thing in this file that costs real frame time.
+		if(s_heapSampling && ++secondsSinceHeap >= kHeapReportSeconds){
 			secondsSinceHeap = 0;
 			WiiTraceHeap("running");
 		}
@@ -100,8 +109,10 @@ watchdogMain(void*)
 		if(++stalledSeconds < kStallSeconds)
 			continue;
 		stalledSeconds = 0;
-		WiiTraceReport("WII watchdog: no progress for %us, last step [%s]\n",
+		WiiTraceReport("WII watchdog: no frame for %us, last step [%s]\n",
 		               kStallSeconds, s_step);
+		// Sampled here, on the way out, rather than on a timer while healthy.  A
+		// hang is exactly when the heap is worth having, and this is the one moment
 		WiiTraceHeap("watchdog");
 	}
 	return nullptr;
@@ -154,6 +165,14 @@ WiiTraceCloseLog(void)
 	LWP_MutexUnlock(s_logMutex);
 	LWP_MutexDestroy(s_logMutex);
 	s_logMutex = LWP_MUTEX_NULL;
+#endif
+}
+
+void
+WiiTraceTick(void)
+{
+#if CREATE_LOG
+	s_stepSerial++;
 #endif
 }
 
@@ -287,9 +306,8 @@ WiiTraceHeap(const char *tag)
 void
 WiiTraceStartWatchdog(void)
 {
-#if CREATE_LOG < 2
-	// The watchdog exists to report, so with nothing to report to it is a thread
-	// and an 8KB stack spent on waking up once a second to decide to stay quiet.
+#if CREATE_LOG < 1
+	// Nothing to report to, so no thread to report from.
 #else
 	if(s_watchdogRunning)
 		return;

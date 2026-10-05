@@ -1110,6 +1110,11 @@ main(int argc, char **argv)
 		// powered off mid-game, lost precisely the lines that would have said
 		// what it was doing.  The cost is one fsync per second and it happens on
 		// a frame that has already gone past its budget anyway.
+		// One increment per completed frame, for the watchdog to judge liveness against.
+		// At the very end of the iteration on purpose: a hang INSIDE a frame never
+		// reaches this line, and that is exactly the case the end-of-frame stall
+		// timer cannot see.  It is the whole reason the watchdog exists.
+		WiiTraceTick();
 		WiiTraceService();
 
 		// One line for a frame that took longer than any frame should, and then
