@@ -100,11 +100,28 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //               1.0: the pointer gets unreliable near the edge of the sensor's
 //               field, and having to aim there to turn quickly is what makes a
 //               rate camera feel like it is fighting the player.
-//   curve       how much of the response is linear rather than quadratic.  The
-//               linear response means sensitivity scales directly with how far
-//               outside the dead zone the pointer sits, so aiming is predictable
-//               and an equal move always turns the same amount.
-constexpr float kPointerDeadzone = 0.22f;
+//   curve       how much of the response is linear rather than quadratic.
+//
+// Halved, 0.22 -> 0.11, and this is the biggest single lever on how the aim feels.
+//
+// The dead zone and the aim box are two dead zones in series: the box stops the
+// camera turning while the player aims inside the screen, and this stops it for a
+// further stretch past the box edge.  They compound, and with the medium box at
+// half-extent 0.27 they came to 0.27 + 0.22 = 0.49 of the available travel
+// producing no camera movement at all, with only 0.23 of ramp left to carry the
+// entire speed range.  That 0.23 is about 55 pixels at 640x480, so the whole
+// control lived in a band 9% of the screen high, and reaching full speed took half
+// that.  Measured like that, "coarse" is not a vague complaint: it is a control
+// whose entire speed range is 55 pixels wide.
+//
+// Halving it roughly doubles the ramp without touching the aim area or the top
+// speed, and without moving the saturation point, so both ends of the range are
+// unchanged.  The cost is that pointer tremor within about 13 pixels of the box
+// edge now nudges the camera.  That is the right way round for this complaint --
+// coarse aim is something you live with, twitchy aim is something you fight -- and
+// it is less bad than it sounds, because inside the box the reticle still tracks
+// the pointer exactly, so the camera drift is cosmetic rather than disorienting.
+constexpr float kPointerDeadzone = 0.11f;
 // Where the linear ramp reaches full turn rate.
 //
 // Was 0.75, which is further than either axis can actually travel: at 640x448 the
@@ -289,6 +306,12 @@ float s_heldSeconds;
 float s_aimX;
 float s_aimY;
 bool s_aimActive;
+
+// The turn rate the camera is actually using, eased towards whatever the response
+// curve asks for.  Shared by both pointer paths -- the aiming one and the plain
+// rate camera -- because they are never active at the same time and because the
+// two are meant to feel like the same instrument.  See applyTurnSpinUp.
+float s_turnRate;
 
 // --- carrying the reticle on past the edge of the sensor bar -----------------
 // The remote stops being tracked the instant it leaves the bar's field, and the
@@ -754,10 +777,12 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 // the player is not aiming anywhere in particular.
 // Shared turn-rate response.  `over` is the vector from the aim point (pointer
 // centre or crosshair) to the pointer, in the normalised half-height units the
-// callers use.  The response is LINEAR in how far outside the dead zone the
-// pointer sits, so equal movements always turn the camera equally.  Once the
-// pointer is off the sensor the rate is capped at kPointerOffScreenMaxFrac of the
-// maximum rather than running away, so a lost remote cannot spin the view.
+// callers use.  The response is QUADRATIC in how far outside the dead zone the
+// pointer sits: equal movements still turn the camera by more the further out you
+// are, but the curve is much finer near the box edge, which is where precision
+// lives.  Once the pointer is off the sensor the rate is capped at
+// kPointerOffScreenMaxFrac of the maximum rather than running away, so a lost
+// remote cannot spin the view.
 // Returns the scalar turn rate (0 when inside the dead zone).
 float
 pointerTurnRate(float magnitude, bool offScreen)
@@ -769,7 +794,49 @@ pointerTurnRate(float magnitude, bool offScreen)
 		t = 1.0f;
 	if(offScreen && t > kPointerOffScreenMaxFrac)
 		t = kPointerOffScreenMaxFrac;
-	return kPointerRatePerSec*t;
+	// Squared, not linear.  The point of widening the ramp above was to buy back
+	// resolution, and a linear ramp spends most of that resolution on the fast end
+	// where nobody aims -- holding a sweep needs range, placing a shot does not.
+	// t*t puts the fine control where it is useful and still reaches exactly the
+	// same full rate at exactly the same pointer position, so nothing about the
+	// ends of the range moves.  At the old deadzone the first live pixel gave a
+	// third of full speed; it now gives a twentieth.
+	return kPointerRatePerSec*t*t;
+}
+
+// How long the turn rate takes to catch up with what the ramp is asking for.
+// Time based, not per frame, so it behaves the same if the frame rate moves.
+constexpr float kTurnSpinUpTau = 0.06f;
+
+// The rate the camera is actually turning at, as opposed to the rate the response
+// curve is asking for.  Eased towards the target so that arriving at a speed is
+// a movement rather than a step.
+//
+// The step it replaces was a real part of the coarseness, and not a small one: the
+// camera used to go from stationary to the full rate the ramp allowed inside a
+// single frame, so clearing the dead zone by one pixel was the difference between
+// a still camera and a moving one.  With the whole speed range living in about 55
+// pixels of travel, most of the time was spent slamming between two speeds.
+//
+// Eased on the way up and NOT on the way down, which is deliberate.  A spin-down
+// would keep the camera drifting after the player had stopped asking for it, and
+// a camera that will not stop where you told it to is a worse complaint than one
+// that starts a touch softly.  Coming to a halt is instant; getting going is not.
+float
+applyTurnSpinUp(float targetRate)
+{
+	if(targetRate <= 0.0f){
+		s_turnRate = 0.0f;
+		return 0.0f;
+	}
+	if(targetRate <= s_turnRate){
+		// Falling, or unchanged: track it directly so the camera can stop.
+		s_turnRate = targetRate;
+		return s_turnRate;
+	}
+	const float follow = 1.0f - std::exp(-s_pointerDt/kTurnSpinUpTau);
+	s_turnRate += (targetRate - s_turnRate)*follow;
+	return s_turnRate;
 }
 
 // Whether the pointer has left the sensor bar (its position is outside the
@@ -805,7 +872,7 @@ irPointerRate(const WPADData &data, float &outX, float &outY)
 	// inside it on X but outside on Y turn the camera straight up, which is the
 	// "near the middle it only moves vertically" complaint.
 	const float magnitude = std::sqrt(unitX*unitX + unitY*unitY);
-	const float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
+	const float rate = applyTurnSpinUp(pointerTurnRate(magnitude, pointerOffScreen(data)));
 	if(rate <= 0.0f)
 		return 0;
 
@@ -963,6 +1030,9 @@ void
 releaseCrosshair(void)
 {
 	s_aimActive = false;
+	// So drawing the next weapon starts from a standstill and eases up, rather than
+	// inheriting whatever speed the last one was released at.
+	s_turnRate = 0.0f;
 	CCamera::m_f3rdPersonCHairMultX = kAimDefaultX;
 	CCamera::m_f3rdPersonCHairMultY = kAimDefaultY;
 }
@@ -1031,9 +1101,9 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	const float overY = (pointerY - heldY)*height/half;
 	const float magnitude = std::sqrt(overX*overX + overY*overY);
 
+	// Not returned early on zero.  The spin-up at the end has to see the zero in
+	// order to snap a falling rate to a stop, so this only computes the target.
 	float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
-	if(rate <= 0.0f)
-		return false;
 	// Gain from intent: a deliberate sweep that AGREES with the turn the camera is
 	// already making gets more camera, up to +45%.  The agreement test is the whole
 	// design -- without it, hauling the hand back to reverse a turn would speed the
@@ -1061,8 +1131,15 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 		}
 	}
 
-	outX = (overX/magnitude)*rate;
-	outY = (overY/magnitude)*rate*kPointerPitchScale;
+	// Applied here rather than inside pointerTurnRate, so that the intent gain above
+	// is part of what gets eased.  Easing the ramp and then boosting on top would
+	// let the boost reintroduce the very step the spin-up exists to remove.
+	const float applied = applyTurnSpinUp(rate);
+	if(applied <= 0.0f)
+		return false;
+
+	outX = (overX/magnitude)*applied;
+	outY = (overY/magnitude)*applied*kPointerPitchScale;
 	return true;
 }
 
