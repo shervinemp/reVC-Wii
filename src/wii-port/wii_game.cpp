@@ -1117,6 +1117,11 @@ main(int argc, char **argv)
 		// At the very end of the iteration on purpose: a hang INSIDE a frame never
 		// reaches this line, and that is exactly the case the end-of-frame stall
 		// timer cannot see.  It is the whole reason the watchdog exists.
+		// Last zone of the frame.  Everything the frame does is now named: game process
+		// and its tail, audio, the render, and this.  Without it the frame had no
+		// closing bracket, so a spin between the render finishing and the next frame
+		// beginning would have reported the render's own zone.
+		WiiTraceSetStep("frame end");
 		WiiTraceTick();
 		WiiTraceService();
 		// Handed over here rather than read inside the watchdog, so that the trace

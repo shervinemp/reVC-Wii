@@ -77,6 +77,7 @@
 #include "VarConsole.h"
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
+#include "wii-port/WiiTrace.h"
 #endif
 #ifdef USE_OUR_VERSIONING
 #include "GitSHA1.h"
@@ -1575,11 +1576,28 @@ Idle(void *arg)
 	tbStartTimer(0, "CGame::Process");
 	CGame::Process();
 	tbEndTimer("CGame::Process");
+#ifdef NINTENDO_WII
+	// Bracketing the tail of a frame, which had no zones in it at all.
+	//
+	// Every zone so far lives INSIDE CGame::Process, so a freeze reporting the last
+	// one only proved the spin was at or after it -- not inside it.  "car removal"
+	// was reported for sixty-five seconds and read as the culprit, when in fact
+	// everything from here to the end of the frame was unnamed: the audio service,
+	// the light setup, and the entire render with its GX calls.  A zone is a lower
+	// bound and was treated as an upper one.
+	//
+	// So the tail is bracketed explicitly.  Between these the freeze names which of
+	// the three it is in.
+	WiiTraceSetStep("game process done");
+#endif
 	POP_MEMID();
 
 	tbStartTimer(0, "DMAudio.Service");
 	DMAudio.Service();
 	tbEndTimer("DMAudio.Service");
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("audio done");
+#endif
 
 	if(CGame::bDemoMode && CTimer::GetTimeInMilliseconds() > (3*60 + 30)*1000 && !CCutsceneMgr::IsCutsceneProcessing()){
 		WANT_TO_LOAD = false;
@@ -1759,6 +1777,9 @@ Idle(void *arg)
 		tbDisplay();
 
 	DoRWStuffEndOfFrame();
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("render done");
+#endif
 
 	POP_MEMID();	// MEMID_RENDER
 
