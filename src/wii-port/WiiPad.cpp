@@ -303,9 +303,11 @@ bool s_aimActive;
 // crosshair, so the velocity is the player's own and not the filter's.
 static float s_lastTargetX;
 static float s_lastTargetY;
-static float s_lostVelX;	// screen fractions per second, at the moment of loss
+static float s_lostVelX;	// carry-on velocity, seeded from the pointer and steered by the hand
 static float s_lostVelY;
-static float s_lostX;		// the carried-on virtual reticle
+static float s_ptrVelX;	// the reticle own speed, per second, while it was still tracked
+static float s_ptrVelY;
+static float s_lostX;
 static float s_lostY;
 static bool s_lostActive;
 
@@ -1037,6 +1039,12 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 			if(alignment > 0.0f){
 				const float strength = Min(1.0f, s_handSpeed/kSwingGainFullAt);
 				rate *= 1.0f + kSwingGainBoost*alignment*strength;
+				// Ceilinged, because the boost multiplies a rate that is already at
+				// the top of its ramp, and unclamped a fast agreeing sweep landed
+				// well past anything the finger can follow.
+				const float boosted = kPointerRatePerSec;
+				if(rate > boosted)
+					rate = boosted;
 			}
 		}
 	}
@@ -1340,6 +1348,12 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			s_lostActive = true;
 			s_lostX = s_lastTargetX;
 			s_lostY = s_lastTargetY;
+			// Seeded from the reticle's OWN last speed, not the hand's.  Deriving it
+			// from hand speed alone made the dot travel at a different rate than the
+			// motion it was standing in for, which is a visible discontinuity the
+			// moment the bar comes back.  The hand only steers it from here.
+			s_lostVelX = s_ptrVelX;
+			s_lostVelY = s_ptrVelY;
 			// Half speed while the bar is out.  That cap used to be unreachable:
 			// it only ever applied to out-of-range coordinates, and losing the bar
 			// outright is the common case by far.
@@ -1347,9 +1361,19 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			s_heldRateY *= kPointerOffScreenMaxFrac;
 		}
 		if(sweeping){
-			// Live: take the direction and strength straight from the hand.
-			s_lostVelX = swingX*s_handSpeed*kLostHandGain;
-			s_lostVelY = swingY*s_handSpeed*kLostHandGain;
+			// The hand steers; it does not set the pace.  Direction from the sensor,
+			// magnitude kept from the seed so the speed the reticle was already
+			// travelling at is the speed it carries on at, and only bleeds away once
+			// the hand stops.
+			const float carried = std::sqrt(s_lostVelX*s_lostVelX + s_lostVelY*s_lostVelY);
+			const float wanted = s_handSpeed*kLostHandGain;
+			if(wanted > 0.0f){
+				s_lostVelX = swingX*wanted;
+				s_lostVelY = swingY*wanted;
+			}else if(carried > 0.0f){
+				s_lostVelX = s_lostVelX/carried*wanted;
+				s_lostVelY = s_lostVelY/carried*wanted;
+			}
 		}else{
 			// The hand has stopped, so coast on what it was doing and bleed away
 			// rather than sliding along the edge indefinitely.
@@ -1365,6 +1389,12 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	}
 
 	if(tracked){
+		// Cleared here, not inside the aimWithPointer branch and not only when the
+		// crosshair steers.  WiiPadCaptureMouse returns early while a menu is open, so
+		// a pause taken while off the bar left this latched -- and the half speed cap
+		// below is applied once on entry, so it was silently skipped for the rest of
+		// the session after one pause.
+		s_lostActive = false;
 		float rateX, rateY;
 		bool turning;
 		if(aimWithPointer){
@@ -1376,8 +1406,8 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			// depend on the frame rate, and taken before the smoothing filter so it
 			// is the player's hand rather than the filter's lag.
 			if(s_pointerDt > 0.0f){
-				s_lostVelX = (crosshairX - s_lastTargetX)/s_pointerDt;
-				s_lostVelY = (crosshairY - s_lastTargetY)/s_pointerDt;
+				s_ptrVelX = (crosshairX - s_lastTargetX)/s_pointerDt;
+				s_ptrVelY = (crosshairY - s_lastTargetY)/s_pointerDt;
 			}
 			s_lastTargetX = crosshairX;
 			s_lastTargetY = crosshairY;
