@@ -112,12 +112,21 @@ void*
 watchdogMain(void*)
 {
 	unsigned int lastSerial = 0;
-	unsigned int stalledSeconds = 0;
+	// Self-limiting by design: it only prints while memory is FALLING, so a healthy
+	// session that holds steady produces nothing at all, and a drain produces a line
+	// every five seconds until it stops.  No run-time switch, because unlike the heap
+	// walk this is two register reads -- SYS_GetArena1Size and SYS_GetArena2Size are
+	// not mallinfo and do not walk anything.
+constexpr unsigned int kArenaSampleSeconds = 5;
+
+unsigned int stalledSeconds = 0;
 	unsigned int secondsSinceHeap = 0;
 	// For the livelock check, which is on the frame-turning path and so is
 	// independent of the no-frame one above.
 	int lastPending = 0;
 	unsigned int pendingStalledSeconds = 0;
+	unsigned int secondsSinceArena = 0;
+	unsigned int lastArena2 = 0xFFFFFFFFu;
 
 	while(s_watchdogRunning){
 		usleep(1000*1000);
@@ -134,6 +143,27 @@ watchdogMain(void*)
 		if(s_heapSampling && ++secondsSinceHeap >= kHeapReportSeconds){
 			secondsSinceHeap = 0;
 			WiiTraceHeap("running");
+		}
+
+		// Arena drain.  The one measurement with no game-affecting downside, and the
+		// one thing that would settle where the memory went: streaming holds its 24MB
+		// budget every time, so the ~30MB that disappears is somewhere the streaming
+		// eviction loop cannot see, and the heap report only shows the total after the
+		// fact rather than when it went.
+		//
+		// Only logs while the arena is falling, so it is quiet on a healthy session and
+		// self-limiting during a drain: no threshold to tune, no flood, and it stops
+		// on its own the moment memory stops moving.
+		if(++secondsSinceArena >= kArenaSampleSeconds){
+			secondsSinceArena = 0;
+			const unsigned int arena1 = (unsigned int)SYS_GetArena1Size();
+			const unsigned int arena2 = (unsigned int)SYS_GetArena2Size();
+			if(lastArena2 != 0xFFFFFFFFu && arena2 < lastArena2)
+				WiiTraceReport("WII arena: MEM1 %uK free, MEM2 %uK free (down %uK)\n",
+				               (unsigned int)(arena1 / 1024u),
+				               (unsigned int)(arena2 / 1024u),
+				               (unsigned int)((lastArena2 - arena2) / 1024u));
+			lastArena2 = arena2;
 		}
 
 		if(s_stepSerial != lastSerial){

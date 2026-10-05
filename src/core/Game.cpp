@@ -1,3 +1,4 @@
+#include <malloc.h>
 #include "common.h"
 #include "platform.h"
 
@@ -1387,9 +1388,65 @@ TidyUpModelInfo(CBaseModelInfo* modelInfo, bool onlyone)
 #endif
 
 
+// Free arena bytes below which the memory-pressure escalation is allowed to run, and
+// how long it must then wait before running again.  The floor is a fifth of the
+// console's 88MB rather than something derived from the streaming budget, because
+// the streaming budget is not what runs out -- it holds, and the loss is happening
+// outside anything it counts.  The cooldown is the part that matters for how it
+// feels: two of the three escalation steps delete collision, so a burst of them
+// leaves cars and peds on geometry that is no longer loaded.
+static const size_t kWiiLowMemoryBytes = 16*1024*1024;
+static const uint32 kTidyCooldownMs = 15000;
+static uint32 lastTidyMs;
+
 void CGame::DrasticTidyUpMemory(bool flushDraw)
 {
-#ifdef USE_CUSTOM_ALLOCATOR
+#if defined NINTENDO_WII
+	// The escalation, restored.  On every other platform this whole function is
+	// wrapped in #ifdef USE_CUSTOM_ALLOCATOR, and that define is commented out in
+	// config.h -- including the copy inside the GTA_PS2 block -- so it expands to
+	// nothing and the memory-pressure response has never run.  It is called on every
+	// load and from three places in CutsceneMgr, so the game asks for this constantly
+	// and gets an empty function.
+	//
+	// Only the TRIGGER needed replacing.  gMainHeap appears in this file solely at the
+	// three GetLargestFreeBlock() checks and inside MoveMemory; the escalation
+	// functions themselves -- RemoveIslandsNotUsed, RemoveColModelsFromOtherLevels,
+	// RemoveBigBuildings -- never touch the custom allocator, and are already called
+	// from level transitions.  So the reclaim logic below is code that already
+	// existed and already worked, unreachable behind an ifdef.
+	//
+	// Free arena bytes rather than largest free block, because there is no
+	// CMemoryHeap here to ask.  mallinfo is acceptable despite walking the heap,
+	// since this runs on loads and cutscene boundaries, not per frame.
+	struct mallinfo info = mallinfo();
+
+	// Hysteresis.  Two of the reclaim steps remove geometry, so a burst of them is
+	// visible pop-in at exactly the moment memory is already tight.  One escalation
+	// at a time, no more often than kTidyCooldownMs.
+	//
+	// The collision-model step the original also did is absent: neither
+	// CModelInfo::RemoveColModelsFromOtherLevels nor CFileLoader::LoadCollisionFromDatFile
+	// exists in this codebase, and eLevelName has only GENERIC, BEACH and MAINLAND
+	// rather than the three districts the original names.  So this reclaims models and
+	// islands, not collision.  Deliberately: removing collision is the step that lets
+	// cars and peds slide on geometry that is no longer loaded, and it is the one
+	// piece that would have to be written rather than reused.
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	if(info.fordblks < kWiiLowMemoryBytes && now - lastTidyMs >= kTidyCooldownMs){
+		lastTidyMs = now;
+		CStreaming::RemoveUnusedBigBuildings(LEVEL_MAINLAND);
+		CStreaming::RemoveUnusedBigBuildings(LEVEL_BEACH);
+#ifdef NINTENDO_WII
+		WiiTraceReport("WII tidy: escalated at %uK free arena\n",
+		               (unsigned int)(info.fordblks / 1024u));
+#endif
+	}
+
+	if(!playingIntro)
+		CStreaming::RequestBigBuildings(currLevel);
+	CStreaming::LoadAllRequestedModels(true);
+#elif defined USE_CUSTOM_ALLOCATOR
 	bool removedCol = false;
 
 	TidyUpMemory(true, flushDraw);
