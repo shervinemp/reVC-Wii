@@ -1135,7 +1135,8 @@ main(int argc, char **argv)
 		// whether the arena drain is textures and rasters accumulating -- the leak the
 		// code comment in the camera work names outright -- or something else entirely.
 		WiiTraceSetResourceCounts(RwTexture::numAllocated, RwRaster::numAllocated,
-		                         CColStore::GetLoadedColBytes());
+		                         CColStore::GetLoadedColBytes(),
+		                         (int)rw::gx::nativeTextureMemory);
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely
