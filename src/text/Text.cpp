@@ -162,6 +162,14 @@ WiiFallbackText(const char *key)
 		{ "WII_MED", "MEDIUM" },
 		{ "WII_LRG", "LARGE" },
 		{ "WII_SDF", "Save failed! Check the SD card: it must be inserted, unlocked and not full." },
+		// The Load screen's Quick Save row.  Found by auditing every label this port
+		// references against this table: the card gets the USER'S untouched .gxt
+		// (deploy-wii.bat defaults to "Assets: untouched"), so any label added to
+		// utils/gxt/american.txt is absent at runtime and this table is the only
+		// thing that renders it.  This one was missing, so the row came out blank on
+		// an untouched install while looking fine on a card whose .gxt had been
+		// replaced.
+		{ "WII_QSV", "Quick Save" },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];
 

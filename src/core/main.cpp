@@ -1611,6 +1611,13 @@ Idle(void *arg)
 	}
 	
 	SetLightsWithTimeOfDayColour(Scene.world);
+#ifdef NINTENDO_WII
+	// The freeze narrowed to [audio done], which covers the light setup, the whole
+	// render, and DoRWStuffEndOfFrame.  This splits the first of those off, so what
+	// remains is unambiguously the render plus the end-of-frame RW calls -- and a GPU
+	// wait is the thing that fits a frame which stops without allocating anything.
+	WiiTraceSetStep("lights done");
+#endif
 
 	if(arg == nil)
 		return;

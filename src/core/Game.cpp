@@ -1,4 +1,8 @@
 #include <malloc.h>
+#ifdef NINTENDO_WII
+#include <ogc/system.h>
+#endif
+#include <malloc.h>
 #include "common.h"
 #include "platform.h"
 
@@ -1419,7 +1423,13 @@ void CGame::DrasticTidyUpMemory(bool flushDraw)
 	// Free arena bytes rather than largest free block, because there is no
 	// CMemoryHeap here to ask.  mallinfo is acceptable despite walking the heap,
 	// since this runs on loads and cutscene boundaries, not per frame.
-	struct mallinfo info = mallinfo();
+	// Measured the same way the arena sampler in WiiTrace measures it, deliberately.
+	// This used to read mallinfo().fordblks, and hardware showed the two disagreeing
+	// by about 37MB: the escalation fired reporting "909K free" at a moment the
+	// sampler logged as "MEM2 38627K free".  mallinfo only accounts for part of what
+	// is actually available here, so it is the wrong number to threshold on, and it
+	// made the escalation fire almost immediately after every load.
+	const size_t freeBytes = (size_t)SYS_GetArena2Size();
 
 	// Hysteresis.  Two of the reclaim steps remove geometry, so a burst of them is
 	// visible pop-in at exactly the moment memory is already tight.  One escalation
@@ -1433,13 +1443,13 @@ void CGame::DrasticTidyUpMemory(bool flushDraw)
 	// cars and peds slide on geometry that is no longer loaded, and it is the one
 	// piece that would have to be written rather than reused.
 	const uint32 now = CTimer::GetTimeInMilliseconds();
-	if(info.fordblks < kWiiLowMemoryBytes && now - lastTidyMs >= kTidyCooldownMs){
+	if(freeBytes < kWiiLowMemoryBytes && now - lastTidyMs >= kTidyCooldownMs){
 		lastTidyMs = now;
 		CStreaming::RemoveUnusedBigBuildings(LEVEL_MAINLAND);
 		CStreaming::RemoveUnusedBigBuildings(LEVEL_BEACH);
 #ifdef NINTENDO_WII
 		WiiTraceReport("WII tidy: escalated at %uK free arena\n",
-		               (unsigned int)(info.fordblks / 1024u));
+		               (unsigned int)(freeBytes / 1024u));
 #endif
 	}
 
