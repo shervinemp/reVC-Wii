@@ -32,6 +32,36 @@
 #include "screendroplets.h"
 #include "SaveBuf.h"
 
+#ifdef NINTENDO_WII
+#include <sys/time.h>
+#include "wii-port/WiiTrace.h"
+// One line per step of a load: how long it took, and what it left the heap doing.
+//
+// This is the only place the twenty second post-load stall can be attributed to
+// something.  The watchdog can say the frame loop stopped turning and the heap
+// sampler can say memory was draining, but between them they cannot say which of
+// the seven steps below was responsible -- and those steps differ by an order of
+// magnitude in cost, from a request-list flush to loading every collision file for
+// a district.  Guessing between them is what this exists to stop.
+//
+// gettimeofday rather than the game timer, because the game timer is deliberately
+// stopped for the whole of this function.
+#define WII_LOAD_STEP(label, call) \
+	do { \
+		struct timeval stepStart; \
+		gettimeofday(&stepStart, NULL); \
+		call; \
+		struct timeval stepEnd; \
+		gettimeofday(&stepEnd, NULL); \
+		WiiTraceReport("WII load: %-24s %6ldms\n", label, \
+			(long)((stepEnd.tv_sec - stepStart.tv_sec) * 1000L \
+			     + (stepEnd.tv_usec - stepStart.tv_usec) / 1000L)); \
+		WiiTraceHeap(label); \
+	} while(0)
+#else
+#define WII_LOAD_STEP(label, call) do { call; } while(0)
+#endif
+
 #ifdef MISSION_REPLAY
 #include "GenericGameStorage.h"
 #endif
@@ -89,15 +119,26 @@ void
 CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 {
 	CTimer::Stop();
-	CStreaming::FlushRequestList();
-	CStreaming::DeleteRwObjectsAfterDeath(pos);
-	CStreaming::RemoveUnusedModelsInLoadedList();
-	CGame::DrasticTidyUpMemory(true);
-	CWorld::Players[CWorld::PlayerInFocus].m_pPed->Undress("player");
-	CStreaming::LoadSceneCollision(pos);
-	CStreaming::LoadScene(pos);
-	CWorld::Players[CWorld::PlayerInFocus].m_pPed->Dress();
+	WII_LOAD_STEP("flush request list", CStreaming::FlushRequestList());
+	WII_LOAD_STEP("delete rw objects", CStreaming::DeleteRwObjectsAfterDeath(pos));
+	WII_LOAD_STEP("remove unused models", CStreaming::RemoveUnusedModelsInLoadedList());
+	// Labelled as the no-op it is.  DrasticTidyUpMemory is wrapped entirely in
+	// #ifdef USE_CUSTOM_ALLOCATOR and that define is commented out in config.h, so
+	// it expands to nothing -- which means the memory-pressure response it exists
+	// to provide never runs, on any platform, because no platform defines it.  On
+	// the Wii that matters more than it looks: this port has no CMemoryHeap behind
+	// it, so the aggressive unloads this call would have made are simply never
+	// requested.  Worth a line of its own in the log precisely because it costs
+	// nothing and is doing nothing.
+	WII_LOAD_STEP("drastic tidy [NO-OP]", CGame::DrasticTidyUpMemory(true));
+	WII_LOAD_STEP("undress", CWorld::Players[CWorld::PlayerInFocus].m_pPed->Undress("player"));
+	WII_LOAD_STEP("load scene collision", CStreaming::LoadSceneCollision(pos));
+	WII_LOAD_STEP("load scene", CStreaming::LoadScene(pos));
+	WII_LOAD_STEP("dress", CWorld::Players[CWorld::PlayerInFocus].m_pPed->Dress());
 	CTimer::Update();
+#ifdef NINTENDO_WII
+#undef WII_LOAD_STEP
+#endif
 }
 
 void
