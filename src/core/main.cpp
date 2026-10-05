@@ -1656,6 +1656,9 @@ Idle(void *arg)
 		RsMouseSetPos(&pos);
 #endif
 
+		#ifdef NINTENDO_WII
+		WiiTraceSetStep("render list");
+#endif
 		tbStartTimer(0, "CnstrRenderList");
 #ifdef PC_WATER
 		CWaterLevel::PreCalcWaterGeometry();
@@ -1674,12 +1677,21 @@ Idle(void *arg)
 		tbEndTimer("CnstrRenderList");
 
 		tbStartTimer(0, "PreRender");
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("prerender");
+#endif
 		CRenderer::PreRender();
 #ifdef NINTENDO_WII
 		if(wiiIdleFrame <= 8)
 			wiiLog("WII render: frame=%u prerender complete\n", wiiIdleFrame);
 #endif
 		tbEndTimer("PreRender");
+#ifdef NINTENDO_WII
+		// Everything left in this block is the actual draw, so this is the last name
+		// before "render done".  A freeze reporting this one is inside the draw itself,
+		// which is where a GPU wait belongs.
+		WiiTraceSetStep("scene draw");
+#endif
 
 #ifdef FIX_BUGS
 		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void *)FALSE); // TODO: temp? this fixes OpenGL render but there should be a better place for this

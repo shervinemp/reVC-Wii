@@ -66,6 +66,8 @@ volatile const char *s_zone = "none";
 volatile unsigned int s_zoneSerial;
 volatile int s_streamPending = -1;
 volatile int s_streamLoaded;
+volatile int s_textures = -1;
+volatile int s_rasters = -1;
 
 // Whether the watchdog also samples the heap on a timer.  Off, and the reason is
 // that it is the only expensive thing the watchdog does -- walking the heap from a
@@ -169,11 +171,11 @@ unsigned int stalledSeconds = 0;
 				// for the watchdog's stall line, so this costs nothing and adds no
 				// dependency on the streaming engine to this file.
 				WiiTraceReport("WII arena: MEM1 %uK free, MEM2 %uK free (down %uK),"
-				               " streaming %d pending\n",
+				               " streaming %d pending, %d textures %d rasters\n",
 				               (unsigned int)(arena1 / 1024u),
 				               (unsigned int)(arena2 / 1024u),
 				               (unsigned int)((lastArena2 - arena2) / 1024u),
-				               s_streamPending);
+				               s_streamPending, s_textures, s_rasters);
 			lastArena2 = arena2;
 		}
 
@@ -247,6 +249,13 @@ WiiTraceSetStreamingState(int pending, int loaded)
 {
 	s_streamLoaded = loaded;
 	s_streamPending = pending;
+}
+
+void
+WiiTraceSetResourceCounts(int textures, int rasters)
+{
+	s_textures = textures;
+	s_rasters = rasters;
 }
 
 void
