@@ -115,9 +115,13 @@ CColStore::LoadCol(int32 slot, uint8 *buffer, int32 bufsize)
 		success = CFileLoader::LoadCollisionFileFirstTime(buffer, bufsize, slot);
 	else
 		success = CFileLoader::LoadCollisionFile(buffer, bufsize, slot);
-	if(success)
+	if(success){
 		def->isLoaded = true;
-	else
+		// Recorded so GetLoadedColBytes can total what collision actually costs.  The
+		// streaming budget counts models only, so without this the largest single
+		// allocation outside models is entirely unmeasured.
+		def->size = bufsize;
+	}else
 		debug("Failed to load Collision\n");
 	return success;
 }
@@ -127,6 +131,7 @@ CColStore::RemoveCol(int32 slot)
 {
 	int id;
 	GetSlot(slot)->isLoaded = false;
+	GetSlot(slot)->size = 0;
 	for(id = 0; id < MODELINFOSIZE; id++){
 		CBaseModelInfo *mi = CModelInfo::GetModelInfo(id);
 		if(mi){

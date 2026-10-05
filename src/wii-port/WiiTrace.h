@@ -96,7 +96,7 @@ void WiiTraceSetStreamingState(int pending, int loaded);
 // Publishes librw's live texture and raster counts for the watchdog to report.
 // Passed in for the same reason as the streaming state: this file deliberately has
 // no librw dependency, and the frame loop can read both counters for free.
-void WiiTraceSetResourceCounts(int textures, int rasters);
+void WiiTraceSetResourceCounts(int textures, int rasters, int colBytes);
 
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many

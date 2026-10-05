@@ -10,6 +10,12 @@ struct ColDef {	// made up name
 	char name[20];
 	int16 minIndex;
 	int16 maxIndex;
+	// Bytes of collision data currently held for this slot, zero when not loaded.
+	// Kept because nothing else on the streaming path counts collision: the 24MB
+	// streaming budget covers models only, so a district's collision load is invisible
+	// to every memory check the game has.  With COLSTORESIZE slots that is a real
+	// amount of memory with nothing measuring it.
+	int32 size;
 };
 
 class CColStore
@@ -34,6 +40,19 @@ public:
 	static void RequestCollision(const CVector2D &pos);
 	static void EnsureCollisionIsInMemory(const CVector2D &pos);
 	static bool HasCollisionLoaded(const CVector2D &pos);
+
+	// Bytes of collision currently resident across all slots.  Walked on demand rather
+	// than tracked, because it is read about once a second by a log line and 31 slots
+	// is nothing to walk.
+	static int GetLoadedColBytes() {
+		int bytes = 0;
+		for(int i = 1; i < COLSTORESIZE; i++){
+			const ColDef *def = GetSlot(i);
+			if(def != nil && def->isLoaded && def->size > 0)
+				bytes += def->size;
+		}
+		return bytes;
+	}
 
 	static ColDef *GetSlot(int slot) {
 		assert(slot >= 0);

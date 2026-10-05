@@ -22,6 +22,7 @@
 #include "crossplatform.h"
 #include "audio_enums.h"
 #include "DMAudio.h"
+#include "ColStore.h"
 #include "FileMgr.h"
 #include "Font.h"
 #include "Frontend.h"
@@ -1133,7 +1134,8 @@ main(int argc, char **argv)
 		// librw already maintains both of these, so this costs two reads and tells us
 		// whether the arena drain is textures and rasters accumulating -- the leak the
 		// code comment in the camera work names outright -- or something else entirely.
-		WiiTraceSetResourceCounts(RwTexture::numAllocated, RwRaster::numAllocated);
+		WiiTraceSetResourceCounts(RwTexture::numAllocated, RwRaster::numAllocated,
+		                         CColStore::GetLoadedColBytes());
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely
