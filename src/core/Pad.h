@@ -501,4 +501,45 @@ public:
 VALIDATE_SIZE(CPad, 0xFC);
 extern CPad Pads[MAX_PADS];
 
+// Cheat handlers.
+//
+// All of these are defined unconditionally in Pad.cpp and are linked into every
+// build -- they are ordinary functions with external linkage, not CPad members.  What
+// is PS2-only is CPad::AddToCheatString, the button-sequence matcher that used to be
+// their only way in, and that is #ifdef GTA_PS2_STUFF.  Declared here so the Wii
+// cheat menu can call them directly instead of reproducing R2 R2 L1 R2 UP DOWN
+// LEFT DOWN RIGHT UP on a controller whose buttons mean something else.
+//
+// Declared rather than reached through Pad.cpp because they are not part of CPad's
+// interface; nothing here is a member of anything.
+void WeaponCheat1(void);
+void MoneyCheat(void);
+void ArmourCheat(void);
+void HealthCheat(void);
+void WantedLevelUpCheat(void);
+void WantedLevelDownCheat(void);
+void SunnyWeatherCheat(void);
+void CloudyWeatherCheat(void);
+void RainyWeatherCheat(void);
+void FoggyWeatherCheat(void);
+void FastWeatherCheat(void);
+void BlowUpCarsCheat(void);
+void ChangePlayerCheat(void);
+void MayhemCheat(void);
+void EverybodyAttacksPlayerCheat(void);
+void WeaponsForAllCheat(void);
+void FastTimeCheat(void);
+void SlowTimeCheat(void);
+void OnlyRenderWheelsCheat(void);
+void ChittyChittyBangBangCheat(void);
+void StrongGripCheat(void);
+void KangarooCheat(void);
+void AllCarsHeliCheat(void);
+void WallClimbingCheat(void);
+void NoSeaBedCheat(void);
+void RenderWaterLayersCheat(void);
+
+// Takes a model rather than being a plain toggle, so it wants a button per vehicle.
+void VehicleCheat(int model);
+
 #endif // __GTA_PAD_H__

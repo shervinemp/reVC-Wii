@@ -171,6 +171,58 @@ WiiFallbackText(const char *key)
 		// replaced.
 		{ "WII_QSV", "Quick Save" },
 		{ "WII_AIC", "AIM IN CAR" },
+
+		// The cheat menu.  Audited the same way as the rows above: every key referenced
+		// by the MENUPAGE_CHEATS pages has an entry here, because on an untouched card
+		// none of them exist in the runtime .gxt and an absent key renders as the key
+		// name followed by "missing" -- which for a menu of 28 rows means 28 rows of
+		// noise rather than one obvious fault.
+		//
+		// Page titles.  WII_CPL/WII_CWH/WII_CVH/WII_CDB are used twice on purpose, as
+		// the hub's row label and as the sub-page's own title, which is how the options
+		// pages already do it.
+		{ "WII_CHE", "CHEATS" },
+		{ "WII_CHT", "CHEATS" },
+		{ "WII_CPL", "PLAYER" },
+		{ "WII_CWH", "WORLD" },
+		{ "WII_CVH", "VEHICLES" },
+		{ "WII_CDB", "DEBUG" },
+
+		// Player
+		{ "WII_HLT", "Health" },
+		{ "WII_ARO", "Armour" },
+		{ "WII_MON", "Money" },
+		{ "WII_WPN", "Weapon" },
+		{ "WII_AWP", "All Weapons" },
+		{ "WII_WUU", "Wanted Level Up" },
+		{ "WII_WDN", "Wanted Level Down" },
+		{ "WII_GRP", "Strong Grip" },
+		{ "WII_KAN", "Kangaroo" },
+
+		// World
+		{ "WII_SUN", "Sunny" },
+		{ "WII_CLD", "Cloudy" },
+		{ "WII_RAI", "Rainy" },
+		{ "WII_FOG", "Foggy" },
+		{ "WII_FWX", "Fast Weather" },
+		{ "WII_MAY", "Mayhem" },
+		{ "WII_ATK", "Everybody Attacks Player" },
+		{ "WII_BUP", "Blow Up Cars" },
+		{ "WII_WCL", "Wall Climbing" },
+		{ "WII_NSB", "No Sea Bed" },
+
+		// Vehicles
+		{ "WII_HEL", "All Cars Heli" },
+		{ "WII_RHI", "Rhino" },
+		{ "WII_BLD", "Bloodra" },
+		{ "WII_CCB", "Chitty Chitty Bang Bang" },
+
+		// Debug
+		{ "WII_FTM", "Fast Time" },
+		{ "WII_STM", "Slow Time" },
+		{ "WII_WHL", "Wheels Only" },
+		{ "WII_WLY", "Water Layers" },
+		{ "WII_DBG", "Debug Display" },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];
 

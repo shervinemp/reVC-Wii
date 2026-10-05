@@ -25,6 +25,9 @@
 #include "Collision.h"
 #include "ModelInfo.h"
 #include "Pad.h"
+// For CPed::SwitchDebugDisplay, one of the two cheats that is a class member rather
+// than a free function.
+#include "Ped.h"
 #include "ControllerConfig.h"
 #include "DMAudio.h"
 #include "IniFile.h"
@@ -430,6 +433,59 @@ void ControllerTypeAfterChange(int8 before, int8 after)
 }
 #endif
 
+#ifdef NINTENDO_WII
+// One button wrapper per cheat row.
+//
+// ButtonPressFunc is void(*)(int8) and carries no identifier, so each row needs its
+// own function; the macro keeps them to one line instead of four apiece.  The
+// FEOPTION_ACTION_SELECT gate is not decoration: the menu delivers other actions to the
+// same handler, and RestoreDefDisplay above guards the same way.
+//
+// These call the handlers directly rather than synthesising a button sequence.  That
+// is the whole point of the menu: the sequences the handlers are matched by are PS2
+// chord combinations -- R2 R2 L1 R2 UP DOWN LEFT DOWN RIGHT UP -- and reproducing one
+// on a Wii remote would mean guessing at which face button means "R2".
+#define WII_CHEAT_BUTTON(name, call) \
+	static void name(int8 action) { if(action == FEOPTION_ACTION_SELECT) call; }
+
+WII_CHEAT_BUTTON(WiiCheat_Health,                   (void)HealthCheat())
+WII_CHEAT_BUTTON(WiiCheat_Armour,                   (void)ArmourCheat())
+WII_CHEAT_BUTTON(WiiCheat_Money,                    (void)MoneyCheat())
+WII_CHEAT_BUTTON(WiiCheat_WeaponCheat1,             (void)WeaponCheat1())
+WII_CHEAT_BUTTON(WiiCheat_WeaponsForAll,            (void)WeaponsForAllCheat())
+WII_CHEAT_BUTTON(WiiCheat_WantedLevelUp,            (void)WantedLevelUpCheat())
+WII_CHEAT_BUTTON(WiiCheat_WantedLevelDown,          (void)WantedLevelDownCheat())
+WII_CHEAT_BUTTON(WiiCheat_ChangePlayer,             (void)ChangePlayerCheat())
+WII_CHEAT_BUTTON(WiiCheat_StrongGrip,               (void)StrongGripCheat())
+WII_CHEAT_BUTTON(WiiCheat_Kangaroo,                 (void)KangarooCheat())
+
+WII_CHEAT_BUTTON(WiiCheat_Sunny,                    (void)SunnyWeatherCheat())
+WII_CHEAT_BUTTON(WiiCheat_Cloudy,                   (void)CloudyWeatherCheat())
+WII_CHEAT_BUTTON(WiiCheat_Rainy,                    (void)RainyWeatherCheat())
+WII_CHEAT_BUTTON(WiiCheat_Foggy,                    (void)FoggyWeatherCheat())
+WII_CHEAT_BUTTON(WiiCheat_FastWeather,              (void)FastWeatherCheat())
+WII_CHEAT_BUTTON(WiiCheat_Mayhem,                   (void)MayhemCheat())
+WII_CHEAT_BUTTON(WiiCheat_EverybodyAttacksPlayer,   (void)EverybodyAttacksPlayerCheat())
+WII_CHEAT_BUTTON(WiiCheat_BlowUpCars,               (void)BlowUpCarsCheat())
+WII_CHEAT_BUTTON(WiiCheat_WallClimbing,             (void)WallClimbingCheat())
+WII_CHEAT_BUTTON(WiiCheat_NoSeaBed,                 (void)NoSeaBedCheat())
+
+WII_CHEAT_BUTTON(WiiCheat_AllCarsHeli,              (void)AllCarsHeliCheat())
+// VehicleCheat takes a model rather than being a toggle, so it gets a button each.
+// MI_BLOODRA is the other model the original chain passes it.
+WII_CHEAT_BUTTON(WiiCheat_Rhino,                    (void)VehicleCheat(MI_RHINO))
+WII_CHEAT_BUTTON(WiiCheat_Bloodra,                  (void)VehicleCheat(MI_BLOODRA))
+WII_CHEAT_BUTTON(WiiCheat_ChittyChittyBangBang,     (void)ChittyChittyBangBangCheat())
+
+WII_CHEAT_BUTTON(WiiCheat_FastTime,                 (void)FastTimeCheat())
+WII_CHEAT_BUTTON(WiiCheat_SlowTime,                 (void)SlowTimeCheat())
+WII_CHEAT_BUTTON(WiiCheat_OnlyRenderWheels,         (void)OnlyRenderWheelsCheat())
+WII_CHEAT_BUTTON(WiiCheat_RenderWaterLayers,        (void)RenderWaterLayersCheat())
+WII_CHEAT_BUTTON(WiiCheat_SwitchDebugDisplay,       (void)CPed::SwitchDebugDisplay())
+
+#undef WII_CHEAT_BUTTON
+#endif
+
 CMenuScreenCustom aScreens[] = {
 	// MENUPAGE_STATS = 0
 	{ "FEH_STA", MENUPAGE_NONE, nil, nil,
@@ -761,6 +817,12 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHANGEMENU,	"FEP_STA",	{nil, SAVESLOT_NONE, MENUPAGE_STATS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FEH_BRI",	{nil, SAVESLOT_NONE, MENUPAGE_BRIEFS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FET_OPT",	{nil, SAVESLOT_NONE, MENUPAGE_OPTIONS}, 0, 0, MENUALIGN_CENTER,
+#ifdef NINTENDO_WII
+		// Reachable from the pause menu because that is the only menu the player can
+		// open mid-game on this port.  The cheats used to be a PS2 button sequence,
+		// which cannot be typed on a Wii remote.
+		MENUACTION_CHANGEMENU,	"WII_CHE",	{nil, SAVESLOT_NONE, MENUPAGE_CHEATS}, 0, 0, MENUALIGN_CENTER,
+#endif
 		MENUACTION_CHANGEMENU,	"FEP_QUI",	{nil, SAVESLOT_NONE, MENUPAGE_EXIT}, 0, 0, MENUALIGN_CENTER,
    },
 
@@ -889,6 +951,86 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHANGEMENU,		"FEM_YES",  { nil, SAVESLOT_NONE, MENUPAGE_LOADING_IN_PROGRESS }, 320, 200, MENUALIGN_CENTER,
 		MENUACTION_REJECT_RETRY,	"FEM_NO",   { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 225, MENUALIGN_CENTER,
 	},
+#endif
+
+#ifdef NINTENDO_WII
+	// One row per cheat.  A CFO dynamic with a nil variable and a non-nil button
+	// handler is a button, and "Restore Default" further up this file is already
+	// exactly that -- so no new menu action and no new option class was needed.
+	//
+	// Grouped rather than listed flat because a page holds NUM_MENUROWS (18) rows and
+	// there are 28 cheats, and because "All Cars Heli" next to "Kangaroo" helps nobody.
+	#define WII_CHEAT_ROW(label, y, fn) \
+		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, y, MENUALIGN_CENTER,
+
+	// MENUPAGE_CHEATS
+
+	{ "WII_CHT", MENUPAGE_NONE, nil, nil,
+		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 150, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 175, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 200, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 225, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 250, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_CHEATS_PLAYER
+
+	{ "WII_CPL", MENUPAGE_CHEATS, nil, nil,
+		WII_CHEAT_ROW("WII_HLT", 130, WiiCheat_Health)
+		WII_CHEAT_ROW("WII_ARO", 150, WiiCheat_Armour)
+		WII_CHEAT_ROW("WII_MON", 170, WiiCheat_Money)
+		WII_CHEAT_ROW("WII_WPN", 190, WiiCheat_WeaponCheat1)
+		WII_CHEAT_ROW("WII_AWP", 210, WiiCheat_WeaponsForAll)
+		WII_CHEAT_ROW("WII_WUU", 230, WiiCheat_WantedLevelUp)
+		WII_CHEAT_ROW("WII_WDN", 250, WiiCheat_WantedLevelDown)
+		WII_CHEAT_ROW("WII_CPL", 270, WiiCheat_ChangePlayer)
+		WII_CHEAT_ROW("WII_GRP", 290, WiiCheat_StrongGrip)
+		WII_CHEAT_ROW("WII_KAN", 310, WiiCheat_Kangaroo)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 330, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_CHEATS_WORLD
+
+	{ "WII_CWH", MENUPAGE_CHEATS, nil, nil,
+		WII_CHEAT_ROW("WII_SUN", 130, WiiCheat_Sunny)
+		WII_CHEAT_ROW("WII_CLD", 150, WiiCheat_Cloudy)
+		WII_CHEAT_ROW("WII_RAI", 170, WiiCheat_Rainy)
+		WII_CHEAT_ROW("WII_FOG", 190, WiiCheat_Foggy)
+		WII_CHEAT_ROW("WII_FWX", 210, WiiCheat_FastWeather)
+		WII_CHEAT_ROW("WII_MAY", 230, WiiCheat_Mayhem)
+		WII_CHEAT_ROW("WII_ATK", 250, WiiCheat_EverybodyAttacksPlayer)
+		WII_CHEAT_ROW("WII_BUP", 270, WiiCheat_BlowUpCars)
+		WII_CHEAT_ROW("WII_WCL", 290, WiiCheat_WallClimbing)
+		WII_CHEAT_ROW("WII_NSB", 310, WiiCheat_NoSeaBed)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 330, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_CHEATS_VEHICLES
+
+	{ "WII_CVH", MENUPAGE_CHEATS, nil, nil,
+		WII_CHEAT_ROW("WII_HEL", 150, WiiCheat_AllCarsHeli)
+		WII_CHEAT_ROW("WII_RHI", 170, WiiCheat_Rhino)
+		WII_CHEAT_ROW("WII_BLD", 190, WiiCheat_Bloodra)
+		WII_CHEAT_ROW("WII_CCB", 210, WiiCheat_ChittyChittyBangBang)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 240, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_CHEATS_DEBUG
+	//
+	// The last four are the render and debug toggles the original also exposed as
+	// button sequences.  They are here rather than hidden because on this port they
+	// are the only way to reach anything like a debug view at all.
+
+	{ "WII_CDB", MENUPAGE_CHEATS, nil, nil,
+		WII_CHEAT_ROW("WII_FTM", 150, WiiCheat_FastTime)
+		WII_CHEAT_ROW("WII_STM", 170, WiiCheat_SlowTime)
+		WII_CHEAT_ROW("WII_WHL", 190, WiiCheat_OnlyRenderWheels)
+		WII_CHEAT_ROW("WII_WLY", 210, WiiCheat_RenderWaterLayers)
+		WII_CHEAT_ROW("WII_DBG", 230, WiiCheat_SwitchDebugDisplay)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 260, MENUALIGN_CENTER,
+	},
+
+	#undef WII_CHEAT_ROW
 #endif
 
 	// MENUPAGE_OUTRO = 34

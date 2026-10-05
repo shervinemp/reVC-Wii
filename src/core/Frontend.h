@@ -239,6 +239,30 @@ enum eMenuScreen
 	MENUPAGE_MISSION_RETRY,
 #endif
 
+	// The in-game cheat menu.
+	//
+	// Every cheat handler in this codebase is already built and linked -- they are
+	// plain functions in Pad.cpp, verified present in the Wii ELF.  The only thing
+	// that is PS2-specific is CPad::AddToCheatString, the button-sequence matcher
+	// that used to be their sole entry point, and it is #ifdef GTA_PS2_STUFF.  So on
+	// this port the cheats all exist and none of them can be entered, which is what
+	// these pages are for: they call the handlers directly, so no button sequence is
+	// needed and none of the original mapping assumptions apply.
+	//
+	// Split across pages rather than listed flat because a page holds NUM_MENUROWS
+	// (18) entries and there are 28 cheats.
+	//
+	// Appended, never inserted: aScreens[] is positional and indexed by these values,
+	// so adding one in the middle would silently shift every page after it.  OUTRO has
+	// to stay last because the CFO page count is derived from it.
+#ifdef NINTENDO_WII
+	MENUPAGE_CHEATS,
+	MENUPAGE_CHEATS_PLAYER,
+	MENUPAGE_CHEATS_WORLD,
+	MENUPAGE_CHEATS_VEHICLES,
+	MENUPAGE_CHEATS_DEBUG,
+#endif
+
 	MENUPAGE_OUTRO, // Originally 34, but CFO needs last screen to be empty to count number of menu pages
 	MENUPAGES
 };
