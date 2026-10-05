@@ -1108,37 +1108,60 @@ void CGame::Process(void)
 		CCullZones::Update();
 		if (!CReplay::IsPlayingBack())
 			CGameLogic::Update();
+		// One zone per call through the tail of a frame.
+		//
+		// A freeze reported "stuck in [game logic]", which was the last zone set
+		// before the end of this function -- so the culprit was somewhere in the
+		// twenty-odd lines below it and nothing in the gap named itself.  That is a
+		// span of six calls, which is barely better than naming twenty lines.
+		//
+		// Each of these is a pointer store of a string literal, so the whole sequence
+		// costs six stores a frame and adds nothing to the log at all.  Enter/exit
+		// tracing around the calls would also work and would additionally prove
+		// blocked-versus-spinning, but it costs about sixteen lines per traced frame
+		// and has to run often enough to catch a twenty-five second freeze -- roughly
+		// a thousand lines a session, which is exactly the flood the logging was
+		// de-flooded to remove.  With six candidates left, naming the call is enough.
+		//
+		// The two rendering calls are the interesting ones.  Both allocate and both
+		// end in GX waits on the GPU, and memory was down to 6.5MB of arena when the
+		// freeze happened -- so a texture allocation failing inside one of them is a
+		// plausible way to wedge a frame without allocating anything, which is what
+		// a byte-identical heap across five samples looks like.
+#ifdef NINTENDO_WII
+#define WII_ZONE(name) WiiTraceSetStep(name)
+#else
+#define WII_ZONE(name) do { } while(0)
+#endif
+		WII_ZONE("bridge");
 		CBridge::Update();
-#ifdef NINTENDO_WII
-	// The freeze reported "stuck in [game logic]", and that is the last zone set
-	// before the end of this function -- so the spin is inside CGameLogic::Update or
-	// in the twenty-odd lines below it, and nothing in between names itself.  This
-	// marker separates the two: a freeze reporting "game logic" means the spin is
-	// inside the update, and one reporting this means it is in what follows.
-	WiiTraceSetStep("after game logic");
-#endif
+		WII_ZONE("coronas do sun");
 		CCoronas::DoSunAndMoon();
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("coronas and shadows");
-#endif
+		WII_ZONE("coronas update");
 		CCoronas::Update();
+		WII_ZONE("static shadows");
 		CShadows::UpdateStaticShadows();
+		WII_ZONE("permanent shadows");
 		CShadows::UpdatePermanentShadows();
+		WII_ZONE("phone info");
 		gPhoneInfo.Update();
 		if (!CReplay::IsPlayingBack())
 		{
 			PUSH_MEMID(MEMID_CARS);
+			WII_ZONE("car spawn");
 			if (processTime < 2)
 				CCarCtrl::GenerateRandomCars();
-#ifdef NINTENDO_WII
-			WiiTraceSetStep("car spawn");
-#endif
+			WII_ZONE("road blocks");
 			CRoadBlocks::GenerateRoadBlocks();
+			WII_ZONE("car removal");
 			CCarCtrl::RemoveDistantCars();
 			CCarCtrl::RemoveCarsIfThePoolGetsFull();
 			POP_MEMID();
 		}
 	}
+#ifdef NINTENDO_WII
+#undef WII_ZONE
+#endif
 #ifdef NINTENDO_WII
 	if(traceWiiProcess)
 		wiiLog("WII frame: game process complete frame=%u\n", wiiProcessCount);
