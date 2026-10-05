@@ -18,6 +18,7 @@
 #include "WiiPad.h"
 #include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
+#include "WiiLog.h"
 #include "WiiTrace.h"
 #include "World.h"
 #include "platform.h"
@@ -306,6 +307,7 @@ float s_heldSeconds;
 float s_aimX;
 float s_aimY;
 bool s_aimActive;
+bool s_reportedVehicle;
 
 // The turn rate the camera is actually using, eased towards whatever the response
 // curve asks for.  Shared by both pointer paths -- the aiming one and the plain
@@ -1026,9 +1028,38 @@ pointerAimWanted(void)
 	if(player == nullptr ||
 	   player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK)
 		return false;
-	if(player->bInVehicle && !WiiAimInCar)
-		return false;
-	// No weapon required.  The crosshair follows the pointer whether or not a gun
+	if(player->bInVehicle){
+#ifdef NINTENDO_WII
+		// One line, once per entry into a vehicle, naming every input to the decision
+		// above and this one.  Driving aim has now failed three explanations in a row
+		// -- the camera mode, then a missing mouse write, then a default that was off
+		// -- and each of those was wrong.  This does not guess: it reports the camera
+		// mode, the active cam, the ped state, the control method and both switches on
+		// the first frame of the refusal, which settles it whatever the answer is.
+		//
+		// Re-armed on leaving the vehicle, so it fires once per entry rather than once
+		// per session.  Rare enough to be free.
+		if(!s_reportedVehicle){
+			s_reportedVehicle = true;
+			wiiLog("WII aim: in vehicle -- camMode=%d activeCam=%d pedState=%d"
+			       " controlMethod=%d mouseCam=%d aimOn=%d inCar=%d box=%d\n",
+			       (int)TheCamera.Cams[TheCamera.ActiveCam].Mode,
+			       (int)TheCamera.ActiveCam,
+			       (int)player->m_nPedState,
+			       (int)FrontEndMenuManager.m_ControlMethod,
+			       (int)CCamera::m_bUseMouse3rdPerson,
+			       (int)WiiPointerAimEnabled,
+			       (int)WiiAimInCar,
+			       (int)WiiPointerBox);
+		}
+#endif
+		if(!WiiAimInCar)
+			return false;
+	}else{
+#ifdef NINTENDO_WII
+		s_reportedVehicle = false;
+#endif
+	}	// No weapon required.  The crosshair follows the pointer whether or not a gun
 	// is out, so the pointer position is always visible (the HUD draws a small dot
 	// when unarmed) and the shot ray keeps tracing through the same point.  The
 	// weapon used to gate this, which is why there was nothing to aim with until
