@@ -1119,8 +1119,25 @@ cameraGravityRate(CPlayerPed *player, float askedMagnitude)
 	// crosshair is camera-relative and the weapon code builds the shot ray from it --
 	// so autonomous camera motion moves where bullets go.  This gate is a rule rather
 	// than a judgement call.
+	//
+	// The named constant rather than a cast to zero, which is what this had: it
+	// happened to be right, since WEAPONTYPE_UNARMED is the first enumerator, but it
+	// was right by luck rather than by having read WeaponType.h.  Ped.h already uses
+	// this exact comparison for "has a weapon".
 	CWeapon *weapon = player->GetWeapon();
-	if(weapon != nil && weapon->m_eWeaponType != (eWeaponType)0)
+	if(weapon != nil && weapon->m_eWeaponType != WEAPONTYPE_UNARMED)
+		return 0.0f;
+
+	// Never fight a camera that something else owns.  A cutscene or a scripted
+	// sequence is driving the view along a path, and a gravity bias laid across it
+	// pulls the shot off that path for the whole sequence -- which reads as the game
+	// fighting its own cutscene rather than as assist.
+	//
+	// This gate was specified in the design and then not implemented, which is exactly
+	// the omission worth catching in review: without it the feature is at its most
+	// intrusive during the sequences least able to hide it.
+	if(TheCamera.WhoIsInControlOfTheCamera != CAMCONTROL_GAME ||
+	   TheCamera.m_bStartInterScript)
 		return 0.0f;
 
 	const CVector vel = player->GetMoveSpeed();
