@@ -1109,7 +1109,18 @@ void CGame::Process(void)
 		if (!CReplay::IsPlayingBack())
 			CGameLogic::Update();
 		CBridge::Update();
+#ifdef NINTENDO_WII
+	// The freeze reported "stuck in [game logic]", and that is the last zone set
+	// before the end of this function -- so the spin is inside CGameLogic::Update or
+	// in the twenty-odd lines below it, and nothing in between names itself.  This
+	// marker separates the two: a freeze reporting "game logic" means the spin is
+	// inside the update, and one reporting this means it is in what follows.
+	WiiTraceSetStep("after game logic");
+#endif
 		CCoronas::DoSunAndMoon();
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("coronas and shadows");
+#endif
 		CCoronas::Update();
 		CShadows::UpdateStaticShadows();
 		CShadows::UpdatePermanentShadows();
@@ -1119,6 +1130,9 @@ void CGame::Process(void)
 			PUSH_MEMID(MEMID_CARS);
 			if (processTime < 2)
 				CCarCtrl::GenerateRandomCars();
+#ifdef NINTENDO_WII
+			WiiTraceSetStep("car spawn");
+#endif
 			CRoadBlocks::GenerateRoadBlocks();
 			CCarCtrl::RemoveDistantCars();
 			CCarCtrl::RemoveCarsIfThePoolGetsFull();
