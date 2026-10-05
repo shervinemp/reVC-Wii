@@ -1631,6 +1631,17 @@ Idle(void *arg)
 
 	PUSH_MEMID(MEMID_RENDER);
 
+#ifdef NINTENDO_WII
+	// The freeze reported "stuck in [lights done]" for twelve consecutive samples
+	// across forty-five seconds, which brackets it to this function between the light
+	// setup and the end-of-frame RW calls.  This splits those two apart, so the next
+	// occurrence names the render or DoRWStuffEndOfFrame specifically rather than the
+	// pair.  A GPU wait fits everything observed -- a frame that stops without
+	// allocating anything, which is what a byte-identical heap across every sample
+	// has said from the start.
+	WiiTraceSetStep("render start");
+#endif
+
 	if(!FrontEndMenuManager.m_bMenuActive && TheCamera.GetScreenFadeStatus() != FADE_2)
 	{
 #ifdef NINTENDO_WII
