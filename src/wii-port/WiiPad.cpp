@@ -104,9 +104,17 @@ constexpr float kDegreesToRadians = 3.14159265358979323846f/180.0f;
 //               linear response means sensitivity scales directly with how far
 //               outside the dead zone the pointer sits, so aiming is predictable
 //               and an equal move always turns the same amount.
-constexpr float kPointerDeadzone = 0.18f;
+constexpr float kPointerDeadzone = 0.22f;
 // Where the linear ramp reaches full turn rate.
-constexpr float kPointerSaturation = 0.75f;
+//
+// Was 0.75, which is further than either axis can actually travel: at 640x448 the
+// medium aim box leaves 0.77 half-heights horizontally past its edge but only
+// 0.54 vertically, so horizontal saturated and vertical topped out around 63%.
+// Two axes on two different parts of the same curve cannot be balanced by one
+// pitch factor -- it is not a scale, it is a different shape. 0.45 is inside both
+// ranges, so BOTH axes reach full rate and kPointerPitchScale becomes a plain
+// balance between them.
+constexpr float kPointerSaturation = 0.45f;
 // When the pointer is off the sensor entirely the turn rate is held at this
 // fraction of the maximum instead of running away, so losing the remote never
 // spins the camera.
@@ -125,7 +133,7 @@ constexpr float kPointerOffScreenMaxFrac = 0.5f;
 // pointer with it, which is the control to reach for rather than this number:
 // Frontend.cpp clamps it between 1/3200 and 1/200, so the pointer can be tuned
 // across a factor of sixteen without touching the source.
-constexpr float kPointerRatePerSec = 330.0f;
+constexpr float kPointerRatePerSec = 420.0f;
 
 // The same delta pitches further than it yaws: Cam.cpp scales the vertical one
 // by 4.0*m_fMouseAccelVertical against 2.5*m_fMouseAccelHorzntl for the
@@ -136,7 +144,7 @@ constexpr float kPointerRatePerSec = 330.0f;
 // chase "up/down is sluggish", which was the wrong diagnosis: the sluggishness
 // was the aim box sitting off-centre (see kAimBoxes), and once that is fixed 0.32
 // is the value that matches the stick, so it is back there.
-constexpr float kPointerPitchScale = 0.32f;
+constexpr float kPointerPitchScale = 0.26f;
 
 // The pointer stops being tracked the moment it leaves the sensor bar's field,
 // which is exactly what happens at the END of a long turn: the remote is still
