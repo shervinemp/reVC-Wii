@@ -1,175 +1,189 @@
 # TXD eviction — the texture memory leak
 
 Branch: `txd-eviction` (from `definitive-qol`)
-Status: **planned, not implemented.** Nothing in this branch changes behaviour yet.
+Status: **implemented, not yet measured.** The fix is in and builds clean. Whether it
+works is a question only hardware can answer.
 
 ---
 
-## The defect, in one paragraph
+## The defect
 
 GX texture memory is allocated per `Raster` by librw and freed **only in `~GxRaster`**.
-Textures are reference counted, and `Texture::destroy()` at refcount zero destroys its
-`Raster` — so freeing texture memory requires the owning TXD to be deleted. The game
-never deletes TXDs during gameplay: every place it drops a TXD reference calls
-`CTxdStore::RemoveRefWithoutDelete()`, which decrements and **never deletes**. The one
-real `CTxdStore::RemoveRef()` in the codebase is in `BaseModelInfo.cpp:75`, a
-destructor that only runs at shutdown. Therefore `nativeTextureMemory` only rises.
+The chain that reaches it is:
+
+```
+CTxdStore::RemoveTxd(slot)
+  -> RwTexDictionaryDestroy(texDict)        (src/fakerw/fake.cpp:338)
+  -> TexDictionary::destroy()               (vendor/librw/src/texture.cpp:131)
+  -> for each texture: Texture::destroy()   -> refCount-- -> at 0: raster->destroy()
+  -> ~GxRaster                              -> frees nativeAllocation
+```
+
+All of that verified by reading, not assumed. So **freeing texture memory requires
+deleting a TXD**, and the game never deletes one during gameplay.
 
 ## The measurement
 
 ```
 MEM2 free   textures
- 47647K        112    ← boot
+ 47647K        112    <- boot
  25423K       1766
  12607K       1960
- 10579K       1977    ← peak
-  6715K       1858    ← freeze, every session
+ 10579K       1977    <- peak
+  6715K       1858    <- freeze, every session
 ```
 
-librw exports `nativeTextureMemory` (`rw::gx::nativeTextureMemory`, `rwgx.h:182`) and
-maintains it in `gxraster.cpp:319` / `:67`. It is now on the arena log line.
+librw exports `rw::gx::nativeTextureMemory` (`rwgx.h`) and maintains it in
+`gxraster.cpp`. It is on the arena log line as `tex <N>K`.
 
-## Consequence: the freeze and the mesh bug are this bug
+## Consequence
 
-1. Texture memory climbs ~30MB over a session
-2. Arena2 drains 47.6MB → ~6.7MB
-3. Below roughly that level the render cannot allocate what it is drawing
-4. `scene draw` blocks forever — frozen heap, no allocation, no log
+Texture memory climbs ~30MB over a session; arena2 drains 47.6MB -> ~6.7MB; below
+roughly that level `scene draw` cannot allocate what it is drawing and blocks
+forever. **Every session freezes at the same level**, which is a threshold and not a
+coincidence. The enemy mesh flattened onto the ground plane is most likely the same
+cause -- a failed allocation mid-frame -- and it resolved when the ped died, freeing
+its textures, which fits.
 
-**Every session freezes at the same level**, which is a threshold and not a
-coincidence. The enemy mesh flattened onto the ground plane is what a failed
-allocation mid-frame looks like, and it resolved when the ped was killed (freeing its
-textures), which fits.
+---
 
-## What is already correct
+## The correction: refcount is not liveness
 
-**The reference counting balances.** Every `AddRef` has a matching
-`RemoveRefWithoutDelete`:
+The first version of this plan said the fix was "make deletion happen, deferred" —
+queue a TXD when its refcount reaches zero, drain it next frame. **That would have
+destroyed the textures of every loaded model.** It is wrong, and the reason matters:
 
-| take | release |
-|---|---|
-| `Streaming.cpp:604` model load | `Streaming.cpp:633` load complete, TXD no longer needed |
-| `Streaming.cpp:828` model finalize | `Streaming.cpp:833` |
-| `Streaming.cpp:850` TXD load | `Streaming.cpp:854` |
+`Streaming.cpp:604` is the **only** place in the codebase that AddRefs a gameplay
+model's TXD, and `Streaming.cpp:633` drops it the moment the load completes. So:
 
-So **there is no counting bug to find.** The design is right and only its final step
-was removed. No audit of the 17 `AddRef` sites is needed.
+> a world model sitting fully loaded on screen holds a **refcount of zero**.
 
-## Why `WithoutDelete` is in use, and why it must stay
+The refcount covers *loads in flight*, not *models resident*. `refCount == 0` means
+"nothing is reading it at this instant", which is not the same as "nobody wants it".
+The escape hatch (`RemoveRefWithoutDelete`) is therefore not merely a re-entrancy
+workaround -- dropping to zero is a normal state that the original code also passes
+through.
 
-All three call sites are *immediately after* a load completes, mid-streaming-operation.
-Deleting there would free textures belonging to a model that was just loaded, and
-`RemoveTxd` → `RemoveModel` re-enters the streaming system. **Deferral is not a
-convenience here, it is required.**
+Every AddRef/RemoveRef pair balances perfectly (604/633, 828/833, 850/854), and that
+balance is exactly what makes the naive fix dangerous rather than merely wrong.
+
+## The real relationship, and the missing wiring
+
+A TXD must outlive the models that draw with it. Nothing in the game expresses that,
+and `CStreaming::CanRemoveTxd()` -- the game's own "is this safe to remove" predicate
+-- **had zero callers**, while `CanRemoveModel` had eight and `CanRemoveCol` had one.
+
+Not because it was forgotten. Because there was no TXD eviction pass for it to gate.
+That is the whole defect in one line: the gate was written, correctly, and nothing was
+ever built to pass through it.
+
+Same shape as the rest of this project's findings: a mechanism that exists, correctly
+designed, routed around by omission.
 
 ---
 
 ## The fix
 
-A deferred deletion queue. Three parts.
+`CTxdStore::EvictUnusedTxds()` in `src/rw/TxdStore.cpp`. State-derived, no bookkeeping.
 
-### 1. `CTxdStore` — queue instead of delete
+**Pass one** marks every TXD slot named by a currently loaded model, using a static
+bit-per-slot bitmap (`(TXDSTORESIZE+7)/8` = 174 bytes).
 
-`TxdStore.h` / `TxdStore.cpp`:
+**Pass two** tears down every loaded TXD that passes all three gates:
 
-```cpp
-// TXDs whose last reference went away during a streaming operation.  They cannot be
-// torn down there -- RemoveTxd re-enters CStreaming, and the model that was just
-// loaded may still reference their textures -- so they wait for the next frame's
-// streaming update.
-static void QueueForDeletion(int slot);
-static void DrainDeletionQueue(void);
-static int GetPendingDeletionCount(void);   // for the log
-```
+| gate | protects |
+|---|---|
+| `CStreaming::CanRemoveTxd(slot)` | radar tiles, male ped, script-owned -- anything pinned with `STREAMFLAGS_CANT_REMOVE` |
+| `GetNumRefs(slot) <= 0` | a load reading it right now (the crash `RemoveRefWithoutDelete` exists to avoid) |
+| bitmap bit clear | anything still on screen drawing with it |
 
-`RemoveRef()` becomes: decrement; **queue** at zero instead of calling
-`CStreaming::RemoveTxd` directly.
+Each gate was checked against the real permanent TXDs rather than assumed:
 
-Implementation notes:
-- Fixed array of `COLSTORESIZE` entries (31), not a heap allocation — this is on a
-  console that has already leaked 46MB.
-- **Ignore duplicates.** `CStreaming::RemoveModel` early-returns when the streaming
-  entry is not `STREAMSTATE_LOADED`, so a duplicate is harmless, but dedupe on insert
-  to keep the array from filling.
-- Overflow behaviour: if full, drop the entry and log. Losing a deletion is the same
-  as today's behaviour, not worse.
+- `generic` (`Game.cpp:441`) and `particle` (`Game.cpp:454`) take an `AddRef` at init
+  and never release it -> refcount > 0 -> protected by gate two
+- splash TXDs (`main.cpp:604`) AddRef per splash -> protected by gate two
+- radar tiles (`Radar.cpp:163`) and male ped (`Game.cpp:572`) request with
+  `STREAMFLAGS_DONT_REMOVE` -> protected by gate one
+- script TXDs (`Script4.cpp:1358`) AddRef -> protected by gate two
 
-### 2. The drain point
+Every permanent case is covered by one of the two liveness gates. That consistency is
+the main reason to believe the design.
 
-`CStreaming::Update()`, at the **top**, before `LoadRequestedModels()`:
+**Called from** `CStreaming::Update`, immediately after `LoadRequestedModels()` -- the
+earliest point at which this frame's unloads have happened and a dictionary nobody
+needs is knowable. Throttled to every 30th frame; the sweep is ~7900 cheap iterations
+and what it acts on only changes when the frame above does something.
 
-```cpp
-CTxdStore::DrainDeletionQueue();
-```
+Gated `#ifdef NINTENDO_WII`. The logic is platform-independent and correct, but this
+branch can only be tested on hardware I have, and it should not be able to regress
+builds I cannot test.
 
-That is the earliest point in a frame where nothing is mid-load and
-`CStreaming::RemoveTxd` is safe — `TexRead.cpp:499`, `Radar.cpp:169` and
-`Game.cpp:571` already call `RemoveTxd` from comparable contexts, so this is not a
-new calling convention.
+### Why derived state rather than a counter
 
-### 3. Safety at drain time
+A per-TXD loaded-model counter would be O(1) per event instead of O(7900) per sweep,
+and is the obvious optimisation. It was rejected because **model loads complete in
+five separate places** (`Streaming.cpp:760, 868, 2227, 2572, 2754`) and hooking all of
+them correctly is a worse way to be wrong than reading the state that already exists.
+A missed hook silently under-counts and untextures the world; a sweep cannot miss.
 
-For each queued slot, re-validate before deleting:
-
-- **Re-check the refcount.** A model may have been loaded between queueing and
-  draining and re-referenced the TXD. Skip if `GetNumRefs(slot) > 0`.
-- **Re-check the slot is valid.** `CTxdStore::RemoveTxdSlot` frees a slot; a queued
-  index could be reused. Verify via `FindTxdSlot(GetColName(slot)) == slot` — or
-  simply that `GetSlot(slot)` is non-nil and its name still matches what was queued.
-  **This is the one real hazard and it needs care.**
-- **Do not drain during `LoadAllRequestedModels`.** Guard with the same flag
-  `CStreaming::ms_disableStreaming` uses, or a dedicated one.
+If the sweep ever shows up as a frame cost, that is the moment to add the counter --
+with the sweep left in as a cross-check that the two agree.
 
 ---
 
 ## What must be measured to call it done
 
-The arena line already carries what is needed. Success is:
+The arena line already carries it. Success is:
 
 ```
-tex <N>K    ← must rise during play and FALL when the player moves away
+tex <N>K    <- must become a sawtooth, not a monotonic climb
+txd free N  <- must be non-zero regularly; if it is always 0 the sweep refuses everything
 ```
 
-Today `nativeTextureMemory` climbs 112 → 1977 textures and never drops. After the
-fix it should be **sawtooth**, not monotonic. That single number is the acceptance
-test — no new instrumentation required.
+Today `tex` goes 112 -> 1977 and never falls. After the fix it should rise during play
+and **fall when the player moves away**.
 
-Secondary: the freeze should stop recurring, and `MEM2 free` should plateau rather
-than walking to 6.7MB.
+Read the two together. `tex` flat with `txd free 0` means nothing is being evicted;
+`tex` flat with `txd free` non-zero means eviction is running but not reclaiming --
+which would mean the leak is not (only) in TXDs.
 
-## Risk
+Secondary: the freeze should stop recurring and MEM2 free should plateau rather than
+walk to 6.7MB.
 
-- **Re-entrancy** is the whole risk, and it is why the drain is a separate frame from
-  the decrement. If a crash appears during a load, the drain point is wrong — move it
-  later in `CStreaming::Update`, not earlier.
-- **Slot reuse** is the other. If the game removes and re-adds a TXD slot, a stale
-  queue entry could delete the wrong one. The re-validation above is mandatory, not
-  defensive.
-- The `~Raster` path frees `nativeRaster->pixels` and `nativeAllocation` and asserts
-  `nativeSize <= nativeTextureMemory`. Double-free would trip that assert — but
-  asserts are compiled out in Release, so **verify by measurement, not by the assert
-  passing.**
+## Risks
+
+- **Too aggressive** is the live risk: freeing a TXD a model still draws with. The
+  three gates are the defence, and the bitmap is the one that matters. If the world
+  goes untextured, the bitmap is wrong -- check `GetTxdSlot()` on loaded models before
+  anything else.
+- **Slot reuse.** Unlike the queued design this plan started with, the sweep holds no
+  entries across frames, so there is no stale-slot hazard and no generation counter is
+  needed. It re-reads live state every time.
+- **Thrash.** A TXD freed and immediately re-requested reloads from disc each time.
+  If `tex` sawtooths but the world stutters, that is this, and the fix is a residency
+  grace period rather than a different gate.
+- Asserts are compiled out in Release, so `~Raster`'s `assert(nativeSize <=
+  nativeTextureMemory)` proving nothing is not evidence. **Verify by measurement.**
 
 ## Explicitly not doing
 
-- **`RemoveRef` on the three streaming sites directly.** This is the trap: it restores
-  designed behaviour but reintroduces the mid-stream deletion the escape hatch exists
-  to prevent.
-- **A texture-memory budget with forced eviction.** It bounds the symptom while
-  fighting the refcount design. Worth doing *later* as a safety net if the sawtooth
-  turns out too generous, not instead of this.
-- **libogc's GX texture cache.** The purpose-built answer, but a rewrite of librw's
+- **Deferred queue on refcount zero** -- the design this plan started with, and wrong.
+  Recorded above because the reasoning error is the useful part.
+- **Budget with forced eviction** -- bounds the symptom while fighting the design.
+  Worth adding later as a safety net if the sawtooth proves too generous.
+- **libogc's GX texture cache** -- the purpose-built answer, but a rewrite of librw's
   raster path on hardware that cannot be tested here.
-- **Making texture upload fail soft.** Cheap insurance against the freeze specifically,
-  and worth adding eventually — but it hides the leak rather than removing it, and the
-  user asked for the proper fix.
+- **Fail-soft texture upload** -- cheap insurance against the freeze specifically.
+  Genuinely worth adding eventually, but it hides a leak rather than removing one.
 
 ## Verification discipline
 
-This leak has been misdiagnosed twice this session: textures were "exonerated" from a
-window where the count happened to be flat, when the real curve runs 112 → 1977. So:
+This leak was misdiagnosed twice: textures were "exonerated" from a window where the
+count happened to be flat, when the real curve runs 112 -> 1977. So:
 
 - **Measure the curve across a whole session**, not a window.
-- **`nativeTextureMemory` is the number**, not the raster count — the count plateaus
+- **`nativeTextureMemory` is the number**, not the raster count -- the count plateaus
   at the top and reads as flat while the bytes climb.
 - Every "exonerated" in this project has come from generalising a slice.
+- Check what a predicate *does* before trusting its name. `CanRemoveTxd` sounds like
+  it governs TXD removal; for a whole session it governed nothing at all.

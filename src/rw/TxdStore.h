@@ -34,6 +34,12 @@ public:
 	static bool StartLoadTxd(int slot, RwStream *stream);
 	static bool FinishLoadTxd(int slot, RwStream *stream);
 	static void RemoveTxd(int slot);
+	// Tear down every TXD that no loaded model names any more.  This is the only
+	// thing in the game that gives GX texture memory back: RwTexDictionaryDestroy
+	// walks the dictionary's textures, each one drops to refcount zero and destroys
+	// its raster, and ~GxRaster is the only place librw frees the allocation.
+	static void EvictUnusedTxds(void);
+	static int GetEvictedTxdCount(void);
 
 	static TxdDef *GetSlot(int slot) {
 		assert(slot >= 0);

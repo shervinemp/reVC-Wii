@@ -2,6 +2,7 @@
 
 #include "templates.h"
 #include "General.h"
+#include "ModelInfo.h"
 #include "Streaming.h"
 #include "RwHelper.h"
 #include "TxdStore.h"
@@ -188,4 +189,72 @@ CTxdStore::RemoveTxd(int slot)
 	if(def->texDict)
 		RwTexDictionaryDestroy(def->texDict);
 	def->texDict = nil;
+}
+
+// Scratch for EvictUnusedTxds: one bit per TXD slot, recording whether any loaded
+// model still names that slot as its texture dictionary.  Static rather than
+// allocated, because a function whose whole purpose is to return memory should not
+// be holding a chunk of it.
+static uint8 ms_aTxdInUse[(TXDSTORESIZE + 7) / 8];
+static int ms_evictedTxds;
+
+int
+CTxdStore::GetEvictedTxdCount(void)
+{
+	return ms_evictedTxds;
+}
+
+void
+CTxdStore::EvictUnusedTxds(void)
+{
+	int i;
+
+	ms_evictedTxds = 0;
+
+	if(ms_pTxdPool == nil)
+		return;
+
+	memset(ms_aTxdInUse, 0, sizeof(ms_aTxdInUse));
+
+	// A TXD has to outlive the models that draw with it, and the TXD reference count
+	// does not track that.  The count is taken when a model load starts and dropped
+	// again the instant the load finishes, so a world model sitting fully loaded on
+	// screen holds a refcount of zero.  Only the loaded-model set knows which
+	// dictionaries are still wanted.
+	//
+	// So derive it from the streaming state instead of maintaining a parallel count.
+	// There are five separate places a model load completes, and hooking all of them
+	// would be a worse way to be wrong than reading the state that already exists.
+	for(i = 0; i < STREAM_OFFSET_TXD; i++){
+		if(CStreaming::ms_aInfoForModel[i].m_loadState != STREAMSTATE_LOADED)
+			continue;
+		int16 slot = CModelInfo::GetModelInfo(i)->GetTxdSlot();
+		if(slot >= 0 && slot < TXDSTORESIZE)
+			ms_aTxdInUse[slot / 8] |= (uint8)(1 << (slot % 8));
+	}
+
+	for(i = 0; i < TXDSTORESIZE; i++){
+		// Nothing resident, so nothing to give back.
+		if(CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + i].m_loadState != STREAMSTATE_LOADED)
+			continue;
+		// The pool slot can be empty for an index the streamer still knows about.
+		if(!GetSlot(i))
+			continue;
+		// Pinned by whoever asked for it to stay resident: radar tiles, the male ped,
+		// anything a script owns.  This is the game's own predicate, and it has never
+		// been called for a TXD -- CanRemoveModel has eight callers and CanRemoveCol
+		// has one, but CanRemoveTxd had none, because there was never a TXD eviction
+		// pass for it to gate.
+		if(!CStreaming::CanRemoveTxd(i))
+			continue;
+		// A load is reading it right now.  Tearing one down mid-read is the crash
+		// that made every unload path reach for RemoveRefWithoutDelete.
+		if(GetNumRefs(i) > 0)
+			continue;
+		// Something on screen still draws with it.
+		if(ms_aTxdInUse[i / 8] & (1 << (i % 8)))
+			continue;
+		CStreaming::RemoveTxd(i);
+		ms_evictedTxds++;
+	}
 }

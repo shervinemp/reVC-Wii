@@ -398,6 +398,20 @@ CStreaming::Update(void)
 	if(traceWiiUpdate)
 		wiiLog("WII streaming: requested models processed frame=%u requested=%d channels=%d/%d\n",
 		       wiiUpdateCount, ms_numModelsRequested, ms_channel[0].state, ms_channel[1].state);
+
+	// Give texture memory back now that this frame's unloads have happened, which is
+	// the earliest point at which a dictionary nobody needs any more is knowable.
+	//
+	// Throttled rather than every frame: the sweep walks the whole model table, and
+	// what it acts on -- models leaving the streaming set -- only changes when the
+	// frame above does something.  Thirty frames is half a second, well inside the
+	// time it takes the arena to drain.
+	{
+		static uint32 txdSweepCount;
+		if((txdSweepCount++ % 30) == 0)
+			CTxdStore::EvictUnusedTxds();
+		WiiTraceSetTxdEvictions(CTxdStore::GetEvictedTxdCount());
+	}
 #endif
 
 	if(CWorld::Players[0].m_pRemoteVehicle){
