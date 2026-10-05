@@ -75,7 +75,10 @@ public:
 	static int32 ChoosePoliceCarModel(void);
 	static int32 ChooseGangCarModel(int32 gang);
 	static void RemoveDistantCars(void);
-	static void PossiblyRemoveVehicle(CVehicle*);
+	// Returns true if the vehicle was deleted, so callers never touch it again.
+	// It used to return void, and RemoveDistantCars read pVehicle straight after the
+	// call -- on a pointer the function had very likely just freed.
+	static bool PossiblyRemoveVehicle(CVehicle*);
 	static bool IsThisVehicleInteresting(CVehicle*);
 	static void RegisterVehicleOfInterest(CVehicle*);
 	static int32 CountCarsOfType(int32 mi);

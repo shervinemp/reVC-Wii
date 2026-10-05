@@ -906,7 +906,18 @@ CCarCtrl::RemoveDistantCars()
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if (!pVehicle)
 			continue;
-		PossiblyRemoveVehicle(pVehicle);
+		// The freeze reported "stuck in [car removal]" for sixty-five seconds with a
+		// byte-identical heap, and this is the code that zone named.
+		//
+		// PossiblyRemoveVehicle used to return void, so the read below happened
+		// unconditionally -- on a pointer the callee had very likely just freed, on
+		// any vehicle that was off-screen, faded out, wrecked or stopped at a light.
+		// Reading freed memory is how a loop bound or a pool slot ends up holding
+		// garbage, which is a far better explanation for an unbounded hang than any
+		// spin: neither loop in this function is unbounded, and both are simple
+		// counted walks over the vehicle pool.
+		if(PossiblyRemoveVehicle(pVehicle))
+			continue;	// freed; the pool slot must not be touched again
 		if (pVehicle->bCreateRoadBlockPeds){
 			if ((pVehicle->GetPosition() - FindPlayerCentreOfWorld(CWorld::PlayerInFocus)).Magnitude2D() < DISTANCE_TO_SPAWN_ROADBLOCK_PEDS) {
 				CRoadBlocks::GenerateRoadBlockCopsForCar(pVehicle, pVehicle->m_nRoadblockType);
@@ -946,12 +957,17 @@ CCarCtrl::RemoveCarsIfThePoolGetsFull(void)
 	}
 }
 
-void
+bool
 CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 {
+	// True once this function has freed pVehicle, so no path can return without
+	// saying so.  There are four delete sites below and the last one falls through
+	// to the end rather than returning, which is exactly how a caller ends up
+	// reading a freed vehicle.
+	bool deleted = false;
 #ifdef FIX_BUGS
 	if (pVehicle->bIsLocked)
-		return;
+		return false;
 #endif
 	CVector vecPlayerPos = FindPlayerCentreOfWorld(CWorld::PlayerInFocus);
 	/* BUG: this variable is initialized only in if-block below but can be used outside of it. */
@@ -960,7 +976,7 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 		if (pVehicle->bFadeOut && CVisibilityPlugins::GetClumpAlpha(pVehicle->GetClump()) == 0){
 			CWorld::Remove(pVehicle);
 			delete pVehicle;
-			return;
+			return true;
 		}
 		float distanceToPlayer = (pVehicle->GetPosition() - vecPlayerPos).Magnitude2D();
 		float threshold = OFFSCREEN_DESPAWN_RANGE;
@@ -994,7 +1010,7 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 				CWorld::Remove(pVehicle);
 				delete pVehicle;
 			}
-			return;
+			return true;
 		}
 	}
 	if ((pVehicle->GetStatus() == STATUS_SIMPLE || pVehicle->GetStatus() == STATUS_PHYSICS &&
@@ -1010,7 +1026,7 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 		!CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){
 		CWorld::Remove(pVehicle);
 		delete pVehicle;
-		return;
+		return true;
 	}
 	if (pVehicle->GetStatus() == STATUS_WRECKED) {
 		if (pVehicle->m_nTimeOfDeath != 0) {
@@ -1021,11 +1037,13 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 					if (!CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())) {
 						CWorld::Remove(pVehicle);
 						delete pVehicle;
+						deleted = true;
 					}
 				}
 			}
 		}
 	}
+	return deleted;
 }
 
 int32

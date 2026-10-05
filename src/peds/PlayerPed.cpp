@@ -980,7 +980,11 @@ CPlayerPed::KeepAreaAroundPlayerClear(void)
 
 					veh->AutoPilot.m_nTimeTempAction = CTimer::GetTimeInMilliseconds() + 2000;
 				}
-				CCarCtrl::PossiblyRemoveVehicle(veh);
+				// Returns whether it freed the vehicle.  Nothing is done with it here, but
+				// discarding the result would be how the use-after-free in
+				// CCarCtrl::RemoveDistantCars happened in the first place, so it is
+				// explicitly ignored rather than silently so.
+				(void)CCarCtrl::PossiblyRemoveVehicle(veh);
 			}
 		}
 	}
