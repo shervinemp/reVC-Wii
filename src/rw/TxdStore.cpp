@@ -236,22 +236,27 @@ CTxdStore::ReclaimUnusedTxds(void)
 
 	memset(ms_aTxdInUse, 0, sizeof(ms_aTxdInUse));
 
-	// A TXD has to outlive the models that draw with it, and the TXD reference count
-	// does not track that.  The count is taken in ConvertBufferToObject, which runs
-	// when a read has already completed, and dropped again the instant the conversion
-	// finishes -- so a world model sitting fully loaded on screen holds a refcount of
-	// zero.  Only the streaming state knows which dictionaries are still wanted.
+	// Which dictionaries are still wanted.  Two mechanisms already track this and
+	// neither is sufficient alone.
 	//
-	// So derive it instead of maintaining a parallel count.  There are five separate
-	// places a model load completes, and hooking all of them would be a worse way to
-	// be wrong than reading the state that already exists.
+	// The TXD reference count does cover most of it: CBaseModelInfo::AddRef and
+	// RemoveRef both adjust it, so a model with a live entity on it holds a count and
+	// the refcount gate below is an independent safety net maintained by the engine's
+	// own entity lifecycle rather than by anything in this file.
 	//
-	// "Wanted" means anything short of NOTLOADED, not just LOADED.  A model still
-	// queued or mid-read has its dictionary loaded and its refcount back at zero,
-	// because the refcount is not taken until the read finishes.  Testing for LOADED
-	// alone would free the dictionary out from under it; ConvertBufferToObject would
-	// then re-request it on its next pass and the model would ping-pong between
-	// loading a dictionary and having it pulled, which reads as a hang.
+	// What the count misses is a model that is loaded but not yet on an entity, and a
+	// model that is still queued or mid-read.  The streaming-level count is taken in
+	// ConvertBufferToObject, which runs once the CD read has already completed, and
+	// dropped again as soon as the conversion finishes -- so between a model entering
+	// the request list and its conversion completing, the count is genuinely zero while
+	// the dictionary is needed.  This bitmap is what covers that window.
+	//
+	// Derived from the streaming state rather than maintained as a parallel count
+	// because there are five separate places a model load completes, and a missed hook
+	// in a counter would silently under-count and untexture the world.  A sweep cannot
+	// miss.
+	//
+	// "Wanted" means anything short of NOTLOADED, not just LOADED, for the reason above.
 	for(i = 0; i < STREAM_OFFSET_TXD; i++){
 		if(CStreaming::ms_aInfoForModel[i].m_loadState == STREAMSTATE_NOTLOADED)
 			continue;

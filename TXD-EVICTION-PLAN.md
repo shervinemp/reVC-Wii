@@ -47,38 +47,63 @@ its textures, which fits.
 
 ---
 
-## The correction: refcount is not liveness
+## The correction: the refcount covers more than it first appeared
 
 The first version of this plan said the fix was "make deletion happen, deferred" —
 queue a TXD when its refcount reaches zero, drain it next frame. **That would have
-destroyed the textures of every loaded model.** It is wrong, and the reason matters:
+destroyed the textures of every loaded model.** It is wrong.
 
-`Streaming.cpp:604` is the **only** place in the codebase that AddRefs a gameplay
-model's TXD, and `Streaming.cpp:633` drops it the moment the load completes. So:
+The reasoning error was assuming `Streaming.cpp:604` was the only thing that ever
+AddRefs a gameplay model's TXD, because it is the only *explicit* one. It is not the
+only one: `CBaseModelInfo::AddRef` and `RemoveRef` both adjust the TXD refcount, so
+the **entity lifecycle** drives it too.
 
-> a world model sitting fully loaded on screen holds a **refcount of zero**.
+```cpp
+void CBaseModelInfo::AddRef(void)    { m_refCount++; AddTexDictionaryRef(); }    // CTxdStore::AddRef
+void CBaseModelInfo::RemoveRef(void) { m_refCount--; RemoveTexDictionaryRef(); } // CTxdStore::RemoveRef
+```
 
-The refcount covers *loads in flight*, not *models resident*. `refCount == 0` means
-"nothing is reading it at this instant", which is not the same as "nobody wants it".
-The escape hatch (`RemoveRefWithoutDelete`) is therefore not merely a re-entrancy
-workaround -- dropping to zero is a normal state that the original code also passes
-through.
+So a model with a live entity on it holds a TXD refcount above zero, and the mechanism
+is wired after all. Two consequences:
 
-Every AddRef/RemoveRef pair balances perfectly (604/633, 828/833, 850/854), and that
-balance is exactly what makes the naive fix dangerous rather than merely wrong.
+- The **refcount gate in the reclaim is an independent safety net**, maintained by the
+  engine's own entity lifecycle rather than by anything in this fix. That is the main
+  reason to expect no crash: a live model with a live entity cannot have its dictionary
+  freed, whatever the bitmap says.
+- The count still misses two cases, and they are why the bitmap exists: a model that is
+  **loaded but not yet on an entity**, and a model **queued or mid-read** — the
+  streaming-level count is only taken in `ConvertBufferToObject`, once the CD read has
+  already completed, so between entering the request list and converting, it is
+  genuinely zero while the dictionary is needed.
 
-## The real relationship, and the missing wiring
+Earlier in this investigation the reverse mistake was made too — reading "17 AddRef
+sites, 1 RemoveRef site" and concluding nothing was ever released. It missed this
+pairing entirely. Both errors are the same error: reading one mechanism and inferring
+the absence of another.
 
-A TXD must outlive the models that draw with it. Nothing in the game expresses that,
-and `CStreaming::CanRemoveTxd()` -- the game's own "is this safe to remove" predicate
--- **had zero callers**, while `CanRemoveModel` had eight and `CanRemoveCol` had one.
+## What is actually missing
 
-Not because it was forgotten. Because there was no TXD eviction pass for it to gate.
-That is the whole defect in one line: the gate was written, correctly, and nothing was
-ever built to pass through it.
+The entity lifecycle does express the TXD/model coupling, via the refcount. So the
+mechanism is wired, and the honest question is why it under-fires. Two candidates, both
+unverified and both worth instrumenting rather than guessing:
 
-Same shape as the rest of this project's findings: a mechanism that exists, correctly
-designed, routed around by omission.
+1. **Model refcount residue.** `CTxdStore::RemoveRef` only reaches `RemoveTxd` when a
+   TXD's count hits zero, which needs every model's entity ref to be released. Anything
+   that holds a model without a matching release -- the level mesh, sector lists, an
+   imbalanced delete path -- keeps its dictionary resident forever.
+2. **`RemoveModel` early-returns on `STREAMSTATE_NOTLOADED`.** A TXD loaded *directly*
+   through `CTxdStore::LoadTxd` (particle, splash screens) never has its streaming entry
+   marked LOADED, so a refcount-driven `RemoveTxd` silently does nothing and the
+   dictionary survives with `texDict` still set. Bounded set, but a real hole.
+
+`CStreaming::CanRemoveTxd()` -- the game's own "is this safe to remove" predicate --
+had **zero callers**, while `CanRemoveModel` had eight and `CanRemoveCol` had one. Not
+forgotten: there was no pressure path for it to gate, because `MakeSpaceFor` counts CD
+bytes and never asks about texture memory.
+
+This fix does not depend on resolving either candidate. It reclaims on reachability
+rather than on a count reaching zero, so it covers whatever the refcount path misses --
+and the refcount gate in it is the engine's own, which is why it should not crash.
 
 ---
 
