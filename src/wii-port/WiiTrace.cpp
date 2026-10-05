@@ -159,10 +159,21 @@ unsigned int stalledSeconds = 0;
 			const unsigned int arena1 = (unsigned int)SYS_GetArena1Size();
 			const unsigned int arena2 = (unsigned int)SYS_GetArena2Size();
 			if(lastArena2 != 0xFFFFFFFFu && arena2 < lastArena2)
-				WiiTraceReport("WII arena: MEM1 %uK free, MEM2 %uK free (down %uK)\n",
+				// The pending request count rides along because the arena drain and the
+				// request list may or may not be the same curve, and that difference is
+				// the whole question.  If both fall together, something is queued that
+				// nothing will satisfy.  If the arena falls while the count stays flat,
+				// it is a plain leak and nothing is waiting on it.
+				//
+				// Free to read: s_streamPending is written by the frame loop already,
+				// for the watchdog's stall line, so this costs nothing and adds no
+				// dependency on the streaming engine to this file.
+				WiiTraceReport("WII arena: MEM1 %uK free, MEM2 %uK free (down %uK),"
+				               " streaming %d pending\n",
 				               (unsigned int)(arena1 / 1024u),
 				               (unsigned int)(arena2 / 1024u),
-				               (unsigned int)((lastArena2 - arena2) / 1024u));
+				               (unsigned int)((lastArena2 - arena2) / 1024u),
+				               s_streamPending);
 			lastArena2 = arena2;
 		}
 
