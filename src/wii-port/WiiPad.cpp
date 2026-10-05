@@ -1080,6 +1080,97 @@ steerCrosshair(float targetX, float targetY)
 // is and is capped at half the maximum once the pointer is off the sensor.
 // Returns false when the pointer is inside the turn ring (pure aiming, camera
 // still), which is what leaves the camera steady while the player aims.
+// --- camera gravity --------------------------------------------------------
+// A gentle pull toward the direction of travel, so that walking or driving does not
+// need a separate camera correction.
+//
+// Expressed as a bias to the TURN RATE rather than as a rotation of the camera.  That
+// is the whole architectural choice: everything the camera does still arrives by the
+// same path as the player's own input, through the same spin-up and under the same
+// ceiling.  Rotating the camera directly reads as a camera with a mind of its own,
+// and is the thing to avoid here.
+constexpr float kGravityBaseRate = 26.0f;	// deg/sec at full alignment and speed
+
+// Roughly 60 degrees either side.  This gate is what makes the feature assistance
+// rather than a fight: gravity only pulls you back toward your path when you are NEAR
+// it, and shuts off completely the moment you deliberately look somewhere else.
+// Without it this would fight every back-aim, which is the objection that matters.
+constexpr float kGravityAlignLimit = 1.05f;
+
+// Below this there is no meaningful heading -- a standing ped's velocity is noise --
+// and above it gravity is at full strength.  Scaling with speed is what stops it
+// feeling like a push during a stroll.
+constexpr float kGravitySpeedMin = 1.2f;
+constexpr float kGravitySpeedFull = 12.0f;
+
+// cos of the largest angle off the entity's own facing that still counts as going
+// forward.  The gate that matters most, and it has nothing to do with the camera: a
+// ped strafing sideways has a velocity heading 90 degrees off their facing, and
+// gravity toward it would swing the camera on every strafe, which in a game with
+// combat strafing is intolerable.  Backpedalling fails the same test.
+constexpr float kGravityForwardMin = 0.5f;
+
+// Returns the yaw rate to add this frame, in the same units and the same sign as the
+// pointer's own turn rate, or zero when any gate says no.
+float
+cameraGravityRate(CPlayerPed *player, float askedMagnitude)
+{
+	// No gravity with a weapon out.  There the camera's yaw IS the aim -- the
+	// crosshair is camera-relative and the weapon code builds the shot ray from it --
+	// so autonomous camera motion moves where bullets go.  This gate is a rule rather
+	// than a judgement call.
+	CWeapon *weapon = player->GetWeapon();
+	if(weapon != nil && weapon->m_eWeaponType != (eWeaponType)0)
+		return 0.0f;
+
+	const CVector vel = player->GetMoveSpeed();
+	const float speed = std::sqrt(vel.x*vel.x + vel.y*vel.y);
+	if(speed < kGravitySpeedMin)
+		return 0.0f;
+
+	// Facing from the ped's own matrix rather than a heading angle, so there is no
+	// convention between the two to get wrong.
+	const CVector pedFwd = player->GetForward();
+	const float pedLen = std::sqrt(pedFwd.x*pedFwd.x + pedFwd.y*pedFwd.y);
+	if(pedLen < 0.001f)
+		return 0.0f;
+	const float forwardness = (vel.x*pedFwd.x + vel.y*pedFwd.y)/(speed*pedLen);
+	if(forwardness < kGravityForwardMin)
+		return 0.0f;
+
+	// Misalignment, signed, relative to where the CAMERA looks.  CamFrontXNorm and
+	// CamFrontYNorm are the camera's normalised forward; a perpendicular to them is its
+	// right, so this stays independent of how heading angles are defined, and positive
+	// means the direction of travel is to the camera's right -- the same sign the
+	// pointer produces when pushed right.
+	const float fx = TheCamera.CamFrontXNorm;
+	const float fy = TheCamera.CamFrontYNorm;
+	if(fx*fx + fy*fy < 0.000001f)
+		return 0.0f;
+	const float sinErr = (vel.x*fy - vel.y*fx)/speed;
+
+	const float err = std::fabs(sinErr);
+	if(err > kGravityAlignLimit)
+		return 0.0f;
+
+	// Yield to the player.  askedMagnitude is how far past the aim box the pointer
+	// already sits, which is a direct measure of the player asking for a turn.  Unlike
+	// a recent-input window it cannot go stale, and it cannot be confused by a held
+	// input versus a flick, because both mean the same thing: the player is driving.
+	float asked = askedMagnitude/kPointerSaturation;
+	if(asked > 1.0f)
+		asked = 1.0f;
+
+	// Full strength dead ahead, falling to zero at the alignment limit.
+	const float align = 1.0f - err/kGravityAlignLimit;
+	float speedFactor = (speed - kGravitySpeedMin)/(kGravitySpeedFull - kGravitySpeedMin);
+	if(speedFactor > 1.0f)
+		speedFactor = 1.0f;
+
+	const float magnitude = kGravityBaseRate*align*speedFactor*(1.0f - asked);
+	return sinErr >= 0.0f ? magnitude : -magnitude;
+}
+
 bool
 irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	float &outX, float &outY)
@@ -1145,12 +1236,36 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	// Applied here rather than inside pointerTurnRate, so that the intent gain above
 	// is part of what gets eased.  Easing the ramp and then boosting on top would
 	// let the boost reintroduce the very step the spin-up exists to remove.
+	//
+	// No early return before gravity.  That early return used to sit here, which meant
+	// a player not touching the pointer got no camera movement at all -- and gravity
+	// is precisely the thing that has to work when the player is not asking for
+	// anything.
+	float turnX = 0.0f;
+	float turnY = 0.0f;
 	const float applied = applyTurnSpinUp(rate);
-	if(applied <= 0.0f)
+	if(applied > 0.0f){
+		turnX = (overX/magnitude)*applied;
+		turnY = (overY/magnitude)*applied*kPointerPitchScale;
+	}
+
+	// Yaw only.  The vertical angle is as much a part of the aim as the horizontal one
+	// and nothing here should be nudging it.
+	CPlayerPed *gravityPed = FindPlayerPed();
+	if(gravityPed != nil)
+		turnX += cameraGravityRate(gravityPed, magnitude);
+
+	// The ceiling the player's own input is already held to, and the one gravity is
+	// held to as well.  A feature the player can out-turn is a nudge; one that can
+	// out-turn the player is not.
+	if(turnX > kPointerRatePerSec) turnX = kPointerRatePerSec;
+	else if(turnX < -kPointerRatePerSec) turnX = -kPointerRatePerSec;
+
+	if(turnX == 0.0f && turnY == 0.0f)
 		return false;
 
-	outX = (overX/magnitude)*applied;
-	outY = (overY/magnitude)*applied*kPointerPitchScale;
+	outX = turnX;
+	outY = turnY;
 	return true;
 }
 
