@@ -794,14 +794,28 @@ pointerTurnRate(float magnitude, bool offScreen)
 		t = 1.0f;
 	if(offScreen && t > kPointerOffScreenMaxFrac)
 		t = kPointerOffScreenMaxFrac;
-	// Squared, not linear.  The point of widening the ramp above was to buy back
-	// resolution, and a linear ramp spends most of that resolution on the fast end
-	// where nobody aims -- holding a sweep needs range, placing a shot does not.
-	// t*t puts the fine control where it is useful and still reaches exactly the
-	// same full rate at exactly the same pointer position, so nothing about the
-	// ends of the range moves.  At the old deadzone the first live pixel gave a
-	// third of full speed; it now gives a twentieth.
-	return kPointerRatePerSec*t*t;
+	// Shape, chosen by the player.  All three reach exactly 1.0 at exactly the same
+	// pointer position, so the top speed and the range are identical between them
+	// and only the feel between those two points differs:
+	//
+	//   LINEAR      an equal move always turns the same amount, which is the most
+	//               predictable and the least fine.  Sensitivity is constant.
+	//   QUADRATIC   no slope at all at the box edge, so the first pixel out is a
+	//               crawl and it is very fine to place a shot.  Also cuts mid-ramp
+	//               speed to a quarter, which is a real cost: a medium push turns
+	//               at half the linear rate.
+	//   MID         the compromise, and the reason it exists: zero slope at the edge
+	//               like the quadratic, but back to the linear rate by three quarters
+	//               of the way along, so sweeps keep almost all their speed.
+	//
+	// Only the slope at each end is what differs -- all three are flat-start,
+	// full-rate-at-the-same-place.  The point of offering them is that this is a
+	// preference, and preferences are exactly what arithmetic cannot settle.
+	switch(WiiAimCurve){
+	case 0:  return kPointerRatePerSec*t;          // linear
+	case 2:  return kPointerRatePerSec*t*t*(2.0f - t);	// fine start, linear top
+	default: return kPointerRatePerSec*t*t;        // quadratic
+	}
 }
 
 // How long the turn rate takes to catch up with what the ramp is asking for.
@@ -1147,6 +1161,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 1;
+int8_t WiiAimCurve = 2;
 
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls this.
 bool

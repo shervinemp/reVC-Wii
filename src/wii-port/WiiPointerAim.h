@@ -17,4 +17,10 @@ extern int8_t WiiPointerAimEnabled;
 // 0 small, 1 medium (the default), 2 large.  Persisted to the INI.
 extern int8_t WiiPointerBox;
 
+// Which shape the turn-rate ramp takes.  A player setting rather than a constant
+// because the right answer is a matter of hand and hardware, not arithmetic: the
+// width of the control band can be computed, but whether precision or mid-range
+// speed matters more cannot, and guessing has already been wrong once.
+extern int8_t WiiAimCurve;
+
 #endif
