@@ -45,6 +45,13 @@ public:
 	// than tracked, because it is read about once a second by a log line and 31 slots
 	// is nothing to walk.
 	static int GetLoadedColBytes() {
+		// Before Initialise there is no pool, and this is called from the frame loop
+		// which starts before collision is set up.  GetSlot asserts the pool is
+		// non-null, and with asserts compiled out in a release build that assert
+		// vanishes and the very next line dereferences nil -- which is a crash on the
+		// first frame, before the menu, rather than a wrong number later.
+		if(ms_pColPool == nil)
+			return 0;
 		int bytes = 0;
 		for(int i = 1; i < COLSTORESIZE; i++){
 			const ColDef *def = GetSlot(i);
@@ -56,7 +63,14 @@ public:
 
 	static ColDef *GetSlot(int slot) {
 		assert(slot >= 0);
-		assert(ms_pColPool);
+		// Returns nil rather than asserting on a missing pool.  It is a public
+		// accessor, and every caller already handles nil -- LoadCollision skips it,
+		// GetLoadedColBytes skips it -- so the assert only ever converted a
+		// survivable "not set up yet" into a hard dereference of null once NDEBUG
+		// removed it.  Callers that legitimately require the pool use the accessors
+		// below, which still assert.
+		if(ms_pColPool == nil)
+			return nil;
 		assert(slot < ms_pColPool->GetSize());
 		return ms_pColPool->GetSlot(slot);
 	}
