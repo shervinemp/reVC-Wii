@@ -1158,7 +1158,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 0;
-int8_t WiiAimInCar = 0;
+int8_t WiiAimInCar = 1;
 
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls this.
 bool
@@ -1519,37 +1519,6 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			s_heldRateX = rateX;
 			s_heldRateY = rateY;
 			s_heldSeconds = 0.0f;
-			// Feed the engine's mouse, which is what makes the camera turn in a car.
-			//
-			// The drive-by camera look lives at Cam.cpp:5176 and reads
-			// pad->GetMouseX()/GetMouseY(), scaled by m_fMouseAccelHorzntl.  Nothing on
-			// this port ever wrote those -- they are only ever cleared and copied from
-			// PCTempMouseControllerState, the PC mouse handler, which does not exist
-			// here -- so that block had never executed a single line of its body, and
-			// the camera in a vehicle could not turn by any input at all.
-			//
-			// On foot this was invisible, because the port drives the camera a
-			// different way: it moves the crosshair through
-			// m_f3rdPersonCHairMultX/Y and the camera follows the ped.  That is exactly
-			// why aiming in a car half worked -- the reticle moved and the shot ray
-			// followed it -- while the view itself never swung.
-			//
-			// rateX/rateY are already in the units GetMouseX is read in; the turn-rate
-			// constants are documented that way at the top of this file.  No conversion.
-			//
-			// Only while in a vehicle.  On foot the crosshair path owns the camera, and
-			// feeding this as well would turn it twice for one input.
-			//
-			// Nothing was needed on CVehicle::m_bDisableMouseSteering, which is true by
-			// default here and looks like the thing that should change.  It gates the
-			// opposite of what its name suggests: the camera block REQUIRES it to be
-			// true, because that is how the pointer is kept from steering the car as
-			// well as looking around in it.
-			CPlayerPed *camPed = FindPlayerPed();
-			if(camPed != nil && camPed->bInVehicle){
-				CPad::NewMouseControllerState.x = rateX;
-				CPad::NewMouseControllerState.y = rateY;
-			}
 		}else{
 			// Aimed near the middle on purpose, which is a request to STOP rather
 			// than a tracking dropout.  Nothing to hold.
