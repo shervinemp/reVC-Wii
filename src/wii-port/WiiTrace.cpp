@@ -55,6 +55,8 @@ volatile const char *s_zone = "none";
 // alone can be ambiguous about: a phase entered and left every frame looks
 // identical to a phase entered once and never left.
 volatile unsigned int s_zoneSerial;
+volatile int s_streamPending = -1;
+volatile int s_streamLoaded;
 
 // Whether the watchdog also samples the heap on a timer.  Off, and the reason is
 // that it is the only expensive thing the watchdog does -- walking the heap from a
@@ -131,8 +133,9 @@ watchdogMain(void*)
 			continue;
 		stalledSeconds = 0;
 		WiiTraceReport("WII watchdog: no frame for %us, stuck in [%s] zone#%u,"
-		               " last log [%s]\n",
-		               kStallSeconds, s_zone, s_zoneSerial, s_step);
+		               " streaming %d pending / %d loaded, last log [%s]\n",
+		               kStallSeconds, s_zone, s_zoneSerial,
+		               s_streamPending, s_streamLoaded, s_step);
 		// Sampled here, on the way out, rather than on a timer while healthy.  A
 		// hang is exactly when the heap is worth having, and this is the one moment
 		WiiTraceHeap("watchdog");
@@ -149,6 +152,13 @@ WiiTraceSetStep(const char *zone)
 {
 	s_zone = zone;
 	s_zoneSerial++;
+}
+
+void
+WiiTraceSetStreamingState(int pending, int loaded)
+{
+	s_streamLoaded = loaded;
+	s_streamPending = pending;
 }
 
 void

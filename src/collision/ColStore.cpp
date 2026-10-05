@@ -5,6 +5,9 @@
 #include "ModelInfo.h"
 #include "Streaming.h"
 #include "FileLoader.h"
+#ifdef NINTENDO_WII
+#include "wii-port/WiiTrace.h"
+#endif
 #include "Script.h"
 #include "Timer.h"
 #include "Camera.h"
@@ -169,6 +172,14 @@ void
 CColStore::LoadCollision(const CVector2D &pos)
 {
 	int i;
+
+#ifdef NINTENDO_WII
+	// Its own zone rather than sharing the load's.  Draw distance drives this: more
+	// of the fixed col set gets requested, and the actual col file loads happen
+	// downstream in the streaming pass.  If a freeze names the load rather than
+	// "sort out streaming", the request side is clean and the loading side is not.
+	WiiTraceSetStep("collision request");
+#endif
 
 	if(CStreaming::ms_disableStreaming)
 		return;

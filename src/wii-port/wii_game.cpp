@@ -1119,6 +1119,12 @@ main(int argc, char **argv)
 		// timer cannot see.  It is the whole reason the watchdog exists.
 		WiiTraceTick();
 		WiiTraceService();
+		// Handed over here rather than read inside the watchdog, so that the trace
+		// code stays independent of the streaming engine.  A hang that reports a
+		// large pending count is spinning on a request set it cannot satisfy; one
+		// that reports zero has nothing to do with streaming at all.
+		WiiTraceSetStreamingState(CStreaming::ms_numModelsRequested,
+		                          CStreaming::ms_numPedsLoaded);
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely

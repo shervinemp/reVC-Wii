@@ -82,6 +82,17 @@ void WiiTraceTick(void);
 // update passes rather than only once per frame.  Wii-only; a no-op elsewhere.
 void WiiTraceSetStep(const char *zone);
 
+// Publishes the streaming system's state for the watchdog to report: how many
+// models are queued and how many are loaded.  Passed in rather than read from
+// CStreaming so that this file keeps no dependency on the engine -- the frame loop
+// already has both numbers for the stall line, so it costs nothing to hand them over.
+//
+// This is the number that decides between the two live theories about the freeze.
+// A hang with a large pending count means the request set cannot be satisfied and
+// something is spinning on it; a hang with a pending count of zero means the
+// request set is not involved at all.
+void WiiTraceSetStreamingState(int pending, int loaded);
+
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many
 // blocks with a small top chunk is fragmentation, and allocating less will not

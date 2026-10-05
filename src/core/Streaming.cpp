@@ -1913,9 +1913,21 @@ CStreaming::StreamZoneModels(const CVector &pos)
 		ms_currentPedGrp = info.pedGroup;
 
 		for(i = 0; i < MAXZONEPEDSLOADED; i++){
+			// Bounded.  This spins until it draws a slot that is not already taken,
+			// and if every slot is taken it never returns.  Nothing in the loop
+			// allocates, so a spin here is indistinguishable from the freeze we
+			// spent this whole debugging pass chasing: no frame completes, no log
+			// line is written, and the heap does not move.
+			//
+			// MAXZONEPEDSLOADED is meant to be no greater than NUMMODELSPERPEDGROUP,
+			// and while that holds the bound is never reached and the picking is
+			// unchanged -- it only fires in the case that should be impossible.
+			int tries = 0;
 			do
 				j = CGeneral::GetRandomNumberInRange(0, NUMMODELSPERPEDGROUP);
-			while(ms_bIsPedFromPedGroupLoaded[j]);
+			while(ms_bIsPedFromPedGroupLoaded[j] && ++tries < NUMMODELSPERPEDGROUP);
+			if(ms_bIsPedFromPedGroupLoaded[j])
+				break;	// every slot is taken; requesting more would not help
 			ms_bIsPedFromPedGroupLoaded[j] = true;
 			if(CPopulation::ms_pPedGroups[ms_currentPedGrp].models[j] != -1)
 				RequestModel(CPopulation::ms_pPedGroups[ms_currentPedGrp].models[j], STREAMFLAGS_DEPENDENCY);
@@ -1938,9 +1950,26 @@ CStreaming::StreamZoneModels(const CVector &pos)
 			}
 		// And load a new one
 		if(i != NUMMODELSPERPEDGROUP || ms_numPedsLoaded < MAXZONEPEDSLOADED){
+			// Bounded, and this one is a genuine livelock rather than a
+			// should-be-impossible one.  The search above can come up empty -- every
+			// loaded ped model still has references -- and then i ==
+			// NUMMODELSPERPEDGROUP, so nothing below clears a slot.  Combine that
+			// with ms_numPedsLoaded having drifted below MAXZONEPEDSLOADED and every
+			// slot is already marked loaded, at which point this spins for ever on a
+			// condition nothing in the loop can change.
+			//
+			// Same signature as the freeze: a tight loop that allocates nothing, so
+			// the heap freezes, the frame never completes, and nothing is logged.
+			int tries = 0;
 			do
 				j = CGeneral::GetRandomNumberInRange(0, NUMMODELSPERPEDGROUP);
-			while(ms_bIsPedFromPedGroupLoaded[j]);
+			while(ms_bIsPedFromPedGroupLoaded[j] && ++tries < NUMMODELSPERPEDGROUP);
+			// Guard rather than break: this sits inside an if, not a loop, so there is
+			// nothing to break out of.  Skipping the swap leaves the loaded set exactly
+			// as it was, and the next streaming update tries again -- which is the
+			// right behaviour when the only reason there is no free slot is that every
+			// candidate still has references.
+			if(!ms_bIsPedFromPedGroupLoaded[j]){
 			if(ms_numPedsLoaded == MAXZONEPEDSLOADED)
 				ms_bIsPedFromPedGroupLoaded[i] = false;
 			ms_bIsPedFromPedGroupLoaded[j] = true;
@@ -1956,6 +1985,7 @@ CStreaming::StreamZoneModels(const CVector &pos)
 					ms_numPedsLoaded++;
 				timeBeforeNextLoad = 300;
 			}
+			}	// no free slot: loaded set left untouched, retried next update
 		}
 	}
 
