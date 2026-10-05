@@ -19,6 +19,15 @@ namespace
 // quiet, short enough to notice a stall while watching.
 constexpr unsigned int kStallSeconds = 5;
 
+// Thresholds for the livelock check -- frames completing while the streaming
+// request count refuses to fall.  kStallPendingFloor is deliberately far above
+// anything real hardware has shown: logs from actual play put the pending count
+// between 0 and 10, so 64 cannot fire on ordinary streaming churn.  The window is
+// long because the condition is a count that is not decreasing, and a busy street
+// produces bursts that dip and recover well inside ten seconds.
+constexpr int kStallPendingFloor = 64;
+constexpr unsigned int kStallPendingSeconds = 10;
+
 // How often the heap is reported while the game is simply running.  The failure
 // this is here to catch takes minutes of play to show up -- streaming in new
 // blocks while driving is what grows the heap -- and it is a TREND rather than
@@ -105,6 +114,10 @@ watchdogMain(void*)
 	unsigned int lastSerial = 0;
 	unsigned int stalledSeconds = 0;
 	unsigned int secondsSinceHeap = 0;
+	// For the livelock check, which is on the frame-turning path and so is
+	// independent of the no-frame one above.
+	int lastPending = 0;
+	unsigned int pendingStalledSeconds = 0;
 
 	while(s_watchdogRunning){
 		usleep(1000*1000);
@@ -126,6 +139,40 @@ watchdogMain(void*)
 		if(s_stepSerial != lastSerial){
 			lastSerial = s_stepSerial;
 			stalledSeconds = 0;
+			// Frames turning is necessary but not sufficient.  A livelock inside the
+			// streaming update can keep completing frames while the request count
+			// sits unchanged, and every other check in this thread is blind to that
+			// by construction: the serial moves, so nothing is reported at all.
+			//
+			// Only reached on a frame boundary, which is what makes it safe.  A slow
+			// load legitimately parks here for twenty seconds with a high pending
+			// count, and that case never enters this branch because no frame is
+			// completing to trigger it.
+			//
+			// The threshold is far above anything observed on real hardware.  Logs
+			// from actual play show a pending count of 0 to 10, so a floor of 64 is
+			// an order of magnitude clear of normal streaming churn and will not fire
+			// on a busy street.  Ten seconds of not falling is long enough that
+			// ordinary bursts, where the count dips and recovers, cannot accumulate
+			// into it.
+			if(s_streamPending >= kStallPendingFloor){
+				if(s_streamPending >= lastPending){
+					if(++pendingStalledSeconds >= kStallPendingSeconds){
+						pendingStalledSeconds = 0;
+						WiiTraceReport("WII streaming: %d models pending and not"
+						               " falling for %ds while frames kept completing"
+						               " (zone [%s]); the request set is not being"
+						               " satisfied\n",
+						               s_streamPending, kStallPendingSeconds,
+						               s_zone);
+					}
+				}else
+					pendingStalledSeconds = 0;
+				lastPending = s_streamPending;
+			}else{
+				pendingStalledSeconds = 0;
+				lastPending = 0;
+			}
 			continue;
 		}
 
