@@ -51,6 +51,11 @@ CColStore::AddColSlot(const char *name)
 	assert(def);
 	def->isLoaded = false;
 	def->unused = 0;
+	// Initialised with the rest of the slot rather than relied upon being zero.  The
+	// byte total only reads it where isLoaded is set, so leaving it would not have
+	// produced a wrong number today -- but a field that is only safe because of the
+	// guard next to it is a field the next reader will get wrong.
+	def->size = 0;
 	def->bounds.left = 1000000.0f;
 	def->bounds.top = 1000000.0f;
 	def->bounds.right = -1000000.0f;
