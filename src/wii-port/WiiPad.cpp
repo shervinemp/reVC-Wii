@@ -303,10 +303,15 @@ bool s_aimActive;
 // crosshair, so the velocity is the player's own and not the filter's.
 static float s_lastTargetX;
 static float s_lastTargetY;
-static float s_lostVelX;	// carry-on velocity, seeded from the pointer and steered by the hand
-static float s_lostVelY;
-static float s_ptrVelX;	// the reticle own speed, per second, while it was still tracked
+// The reticle's own speed while it was still tracked, per second.  This is what
+// the carry-on is seeded from, so it continues at exactly the rate the player was
+// already seeing rather than at a rate invented from the hand.
+static float s_ptrVelX;
 static float s_ptrVelY;
+// The carry-on itself: a velocity seeded from the above and steered by the hand,
+// and the virtual position it has produced, clamped to the screen.
+static float s_lostVelX;
+static float s_lostVelY;
 static float s_lostX;
 static float s_lostY;
 static bool s_lostActive;
@@ -1032,20 +1037,20 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	if(s_handSpeed > 0.0f && magnitude > 0.0f){
 		const float turnX = overX/magnitude;
 		const float turnY = overY/magnitude;
-		// The hand's direction, in the same screen axes the turn uses.
-		const float handMag = 1.0f;
-		if(handMag > 0.0f){
-			const float alignment = s_handDirX*turnX + s_handDirY*turnY;
-			if(alignment > 0.0f){
-				const float strength = Min(1.0f, s_handSpeed/kSwingGainFullAt);
-				rate *= 1.0f + kSwingGainBoost*alignment*strength;
-				// Ceilinged, because the boost multiplies a rate that is already at
-				// the top of its ramp, and unclamped a fast agreeing sweep landed
-				// well past anything the finger can follow.
-				const float boosted = kPointerRatePerSec;
-				if(rate > boosted)
-					rate = boosted;
-			}
+		// The hand's direction, in the same screen axes the turn uses, so the dot
+		// product is the cosine between them.  s_handDirX/Y is unit length or zero:
+		// pointerSwing zeroes it below its noise threshold rather than reporting a
+		// stale direction, which is what keeps a hand at rest from boosting on the
+		// strength of a direction it is no longer travelling in.
+		const float alignment = s_handDirX*turnX + s_handDirY*turnY;
+		if(alignment > 0.0f){
+			const float strength = Min(1.0f, s_handSpeed/kSwingGainFullAt);
+			rate *= 1.0f + kSwingGainBoost*alignment*strength;
+			// Ceilinged, because the boost multiplies a rate that is already at
+			// the top of its ramp, and unclamped a fast agreeing sweep landed
+			// well past anything the finger can follow.
+			if(rate > kPointerRatePerSec)
+				rate = kPointerRatePerSec;
 		}
 	}
 
@@ -1411,7 +1416,6 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			}
 			s_lastTargetX = crosshairX;
 			s_lastTargetY = crosshairY;
-			s_lostActive = false;
 			steerCrosshair(crosshairX, crosshairY);
 		}else
 			turning = irPointerRate(*data, rateX, rateY);
