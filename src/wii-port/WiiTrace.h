@@ -61,6 +61,12 @@ void WiiTraceService(void);
 // loop or blocked on storage still gets described.
 void WiiTraceStartWatchdog(void);
 
+// The open log's file descriptor, or -1 if there is no log.  Exists so a crash
+// handler can write() straight to the card: inside a signal handler that is the
+// only call available, since the log's own path takes a mutex that may be the
+// very thing that was held when the fault happened.
+int WiiTraceLogFd(void);
+
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many
 // blocks with a small top chunk is fragmentation, and allocating less will not

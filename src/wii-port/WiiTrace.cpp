@@ -157,6 +157,19 @@ WiiTraceCloseLog(void)
 #endif
 }
 
+int
+WiiTraceLogFd(void)
+{
+#if CREATE_LOG
+	// Deliberately takes no mutex.  The one caller is a signal handler, where
+	// taking the log mutex could deadlock against the thread that faulted while
+	// holding it -- which is the most likely way to have faulted at all.
+	return s_logFile != nullptr ? fileno(s_logFile) : -1;
+#else
+	return -1;
+#endif
+}
+
 void
 WiiTraceLogLine(const char *message)
 {

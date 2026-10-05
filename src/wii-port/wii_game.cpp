@@ -7,6 +7,7 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+#include <signal.h>
 
 #include <fat.h>
 #include <gccore.h>
@@ -643,6 +644,86 @@ stdoutSwallow(struct _reent *r, void *fd, const char *ptr, size_t len)
 
 } // namespace
 
+#ifdef NINTENDO_WII
+// --- a crash has to be caught at the moment it happens ------------------------
+// A line-oriented log cannot tell you where a hard fault was.  Everything it
+// holds was written by frames that already finished; the faulting frame writes
+// nothing at all, because the process is gone before it gets to.  That is
+// exactly what a real log showed: no stall line before the end, and a tail of
+// unrelated streaming chatter that correlated with nothing.
+//
+// So the fault gets its own writer.  Three rules make it safe inside a signal
+// handler: no printf and no snprintf (both allocate), no mutex (the log mutex
+// may well be the thing that was held when it faulted), and the message is
+// assembled with a hand-rolled hex writer into a stack buffer.  write() is
+// async-signal-safe, so one call to it is all it takes to put the faulting
+// address on the card.
+//
+// After writing it hands the signal back to the default disposition and
+// re-raises, so the console still does whatever it would normally have done
+// rather than this swallowing the crash.
+static int s_crashFd = -1;
+
+static char *
+putHex(char *p, u32 v)
+{
+	static const char digits[] = "0123456789ABCDEF";
+	for(int shift = 28; shift >= 0; shift -= 4)
+		*p++ = digits[(v >> shift) & 0xF];
+	return p;
+}
+
+static void
+crashHandler(int sig)
+{
+	char line[64];
+	char *p = line;
+
+	const char *tag = "WII CRASH sig=";
+	while(*tag)
+		*p++ = *tag++;
+	p = putHex(p, (u32)sig);
+	*p++ = ' ';
+	tag = "t=";
+	while(*tag)
+		*p++ = *tag++;
+	p = putHex(p, (u32)ticks_to_millisecs(gettime()));
+	*p++ = '\n';
+
+	if(s_crashFd >= 0){
+		// The one async-signal-safe call here, and the whole point of the handler.
+		ssize_t written = write(s_crashFd, line, (size_t)(p - line));
+		(void)written;
+	}
+
+	// Back to the default disposition and re-raise, so the crash still happens
+	// rather than being swallowed -- and so libogc's own handler, if it installs
+	// one, gets its turn afterwards.
+	signal(sig, SIG_DFL);
+	raise(sig);
+}
+
+// Installed once the log has a file to write to, since the handler needs its
+// descriptor.
+//
+// Deliberately signal() and not sigaction(): devkitPro's bare-metal newlib has
+// no SA_SIGINFO, no si_addr and no sa_sigaction, so the POSIX route does not
+// exist here and the faulting context is not available through the standard
+// handler.  The consequence is that this records THAT and WHEN a fault happened
+// but not the faulting PC -- that needs libogc's own exception API, which is a
+// separate piece of work.
+static void
+installCrashHandler(void)
+{
+	const int signals[] = { SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE };
+	for(unsigned i = 0; i < sizeof(signals)/sizeof(signals[0]); i++){
+		if(signal(signals[i], crashHandler) == SIG_ERR)
+			WiiTraceReport("WII crash: cannot handle signal %d\n", signals[i]);
+	}
+	WiiTraceReport("WII crash: handler installed\n");
+}
+#endif
+
 void
 WiiStdoutHookInstall(void)
 {
@@ -882,6 +963,11 @@ main(int argc, char **argv)
 	selectUserFilesDirectory();
 	WiiTraceOpenLog(s_userFilesDirectory);
 	bootPrintf("WII game boot: user files dir=%s\n", s_userFilesDirectory);
+
+	// Now that there is a log to write to, catch a hard fault where it happens.
+	// Placed here rather than earlier because the handler needs the descriptor.
+	s_crashFd = WiiTraceLogFd();
+	installCrashHandler();
 
 	// Now that the boot banners are on the screen, stop the console device from
 	// taking any more of it.  Installed here rather than before the banners for

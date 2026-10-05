@@ -1297,15 +1297,14 @@ void re3_debug(const char *format, ...)
     __android_log_print(ANDROID_LOG_DEBUG, "reVC-DEBUG", re3_buff);
 #endif
 #if defined(NINTENDO_WII)
-	// Into the log, never onto the television.  This is where OutputDebugString
-	// lands, so every one of the engine's own diagnostics arrives here: changing
-	// the radio station alone writes "FRONTEND RADIO STATION CHANGED" and then
-	// stops and starts the frontend audio track, which is three lines of console
-	// over the settings menu before anything else does it.  WiiStdout.h already
-	// sets out for the C library's printf to be swallowed; this is the same
-	// promise kept for the one path that was still reaching the framebuffer, and
-	// a reader with the card gets strictly more than a reader of the screen did.
-	WiiTraceLogLine(re3_buff);
+	// Swallowed, not logged.  This used to go to WiiTraceLogLine, on the reasoning that
+	// the card beats the screen.  A real log says otherwise: 819 of 877 lines were [DBG],
+	// because every asset load and ped swap in the engine comes through here.  That
+	// drowned the stalls, the save results and the boot markers, and it is why the
+	// tail after a crash read "Removing ANIMS sunbathe".  The console devoptab is
+	// patched in place by WiiStdoutHookInstall, so the printf on the other branch of
+	// this if goes nowhere at all, which was always the point.
+	(void)0;
 #else
 	printf("%s", re3_buff);
 #endif
