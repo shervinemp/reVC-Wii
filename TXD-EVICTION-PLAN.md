@@ -100,13 +100,14 @@ it, and the model ping-pongs between loading a dictionary and having it pulled, 
 reads as a hang rather than as churn. `GetModelInfo` is also nil-checked here: it is
 an unchecked array read and this loop walks every model index.
 
-**Pass two** tears down every loaded TXD that passes all three gates:
+**Pass two** takes every loaded TXD that passes all four gates:
 
 | gate | protects |
 |---|---|
 | `CStreaming::CanRemoveTxd(slot)` | radar tiles, male ped, script-owned -- anything pinned with `STREAMFLAGS_CANT_REMOVE` |
 | `GetNumRefs(slot) <= 0` | a conversion reading it right now (the crash `RemoveRefWithoutDelete` exists to avoid) |
 | bitmap bit clear | any model in play that still names it |
+| unwanted for `kTxdReclaimGraceMs` | see below |
 
 Each gate was checked against the real permanent TXDs rather than assumed:
 
@@ -159,16 +160,64 @@ libogc arena register that no other platform has. The logic is platform-independ
 correct, but this branch can only be tested on hardware I have, and it should not be able
 to regress builds I cannot test.
 
-### Why derived state rather than a counter
+## The policy is reachability, not LRU
 
-A per-TXD loaded-model counter would be O(1) per event instead of O(7900) per sweep,
-and is the obvious optimisation. It was rejected because **model loads complete in
-five separate places** (`Streaming.cpp:760, 868, 2227, 2572, 2754`) and hooking all of
-them correctly is a worse way to be wrong than reading the state that already exists.
-A missed hook silently under-counts and untextures the world; a sweep cannot miss.
+The reclaim answers one question per dictionary -- *is any model in play naming this?*
+-- and frees on no. There is no access-time ordering and no victim ranking, and that is
+deliberate rather than merely simple.
 
-If the sweep ever shows up as a frame cost, that is the moment to add the counter --
-with the sweep left in as a cross-check that the two agree.
+**LRU would be worse here.** The player moves through space, so the dictionary used a
+moment ago is likelier to be needed again than one used long ago, which is by now
+probably behind them. That is the standard result that LRU is pessimal for sequential
+scans; MRU- or generation-based ordering beats it for traversal. Adding LRU would make
+pop-in worse.
+
+**The game already has a real LRU, and it already handles TXDs.** Verified rather than
+assumed: new entries go to the head of the loaded list
+(`AddToList(&ms_startLoadedList)`, lines 764/771/938/1738/1757) and
+`RemoveLeastUsedModel` walks `ms_endLoadedList.m_prev` back toward the head, so it
+walks tail to head, oldest first. Its TXD branch gates on
+`IsTxdUsedByRequestedModels`.
+
+So the policy was never missing. The trigger is in the wrong unit, which is the real
+root cause:
+
+```cpp
+while(ms_memoryUsed >= ms_memoryAvailable - size)
+    if(!RemoveLeastUsedModel(STREAMFLAGS_20)){ ... }
+```
+
+`ms_memoryUsed` is maintained incrementally (`+=` at 778/886 on load, `-=` at 1253 on
+remove) **in CD bytes**, and `ms_memoryAvailable` is 24MB of the same. Freeing a TXD
+relieves its *disc* size from that budget -- a few hundred KB -- while freeing megabytes
+of GX texture memory. The loop therefore stops as soon as disc bytes are under budget,
+and texture memory is never the binding constraint.
+
+That is also why the budget appeared to "hold at ~23MB" while 30MB of textures piled
+up: **two different units, and only one of them gates anything.** Reading that as a
+working eviction loop was reading a coincidence as a mechanism.
+
+This reclaim sidesteps `MakeSpaceFor` deliberately, and gates on arena2 free bytes
+instead -- the unit that actually causes the freeze.
+
+`IsTxdUsedByRequestedModels` is also a weaker predicate than the bitmap: it checks the
+requested list and the in-flight channel ids, and **not** loaded models.
+
+### The grace period is a duration, not an ordering
+
+`kTxdReclaimGraceMs` (5s) holds a dictionary that has only just stopped being wanted.
+The failure it prevents is a dictionary being freed and immediately re-requested, which
+`ConvertBufferToObject:605` turns into a re-request loop -- a hang, not churn. That is a
+question about *how long ago* something stopped being wanted, which no access-time
+ranking can answer.
+
+5s covers looking away and coming back, which is a couple of seconds of driving. The
+reclaim is not budget-limited -- when the grace expires a single pass frees everything
+eligible -- so a long grace delays the first reclaim but never reduces the final one.
+
+Cost: if memory goes critically low while every candidate is still inside its grace,
+nothing is freed for up to 5s. Against a freeze that previously took minutes to develop,
+that is not the thing that will bite.
 
 ---
 
@@ -197,26 +246,34 @@ threshold rather than walk to 6.7MB.
 ## Risks
 
 - **Too aggressive** is the live risk: freeing a TXD a model still draws with. The
-  three gates are the defence, and the bitmap is the one that matters. If the world
-  goes untextured, the bitmap is wrong -- check `GetTxdSlot()` on in-play models
-  before anything else.
-- **Ping-pong** is the second risk, and the reason the bitmap tests for "in play"
-  rather than "loaded". If a dictionary is freed and immediately re-requested, the
-  model re-requests forever. The fix is a residency grace period (do not free a TXD
-  freed within the last N sweeps), not a different gate.
+  gates are the defence, and the bitmap is the one that matters. If the world goes
+  untextured, the bitmap is wrong -- check `GetTxdSlot()` on in-play models before
+  anything else.
+- **Ping-pong** is mitigated by the grace period but not impossible; a cycle longer
+  than 5s would survive it. If loads visibly crawl, raise `kTxdReclaimGraceMs` rather
+  than adding gates.
 - **The threshold could be wrong in the aggressive direction.** `kWiiLowMemoryBytes`
-  predates this work and was chosen for geometry reclaim. If `tex` now sawtooths but
-  loads visibly crawl, that is the symptom, and the answer is to raise the floor
-  rather than to add gates.
-- **Slot reuse.** Unlike the queued design this plan started with, the reclaim holds
-  no entries across frames, so there is no stale-slot hazard and no generation counter
-  is needed. It re-reads live state every time.
+  predates this work and was chosen for geometry reclaim. If `tex` sawtooths but loads
+  visibly crawl, that is also the symptom, and the answer is to raise the floor rather
+  than to add gates.
+- **Slot reuse.** Unlike the queued design this plan started with, the reclaim holds no
+  entries across frames, so there is no stale-slot hazard and no generation counter is
+  needed. It re-reads live state every time.
 - Asserts are compiled out in Release, so `~Raster`'s `assert(nativeSize <=
   nativeTextureMemory)` proving nothing is not evidence. **Verify by measurement.**
 - `DrasticTidyUpMemory` is labelled `"drastic tidy [NO-OP]"` in `GameLogic.cpp` and
   that label was wrong -- the Wii branch is restored and the function does run.
   Relabelled. Worth remembering that the stale label would have survived a dozen
   correct fixes and still been misleading.
+
+## Not doing: charge texture memory against the streaming budget
+
+The root-cause fix is to make `MakeSpaceFor` govern in real bytes rather than CD bytes,
+which would let the game's own LRU do this work and retire this reclaim entirely. It is
+the right fix and it is not being done blind: it changes eviction for models, collision
+and animation as well, on a path that cannot be exercised without hardware, and getting
+it wrong turns a leak into a world that untextures itself. It is the first thing to
+attempt with a long test session and a way to back it out.
 
 ## Explicitly not doing
 

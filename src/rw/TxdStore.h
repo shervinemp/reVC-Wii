@@ -7,6 +7,14 @@ struct TxdDef {
 	RwTexDictionary *texDict;
 	int refCount;
 	char name[20];
+
+	// Reclaim grace period state.  Set by CTxdStore::ReclaimUnusedTxds, not by the
+	// streaming engine.  "Has been reclaimable since" rather than "last used",
+	// because the thing being prevented is a dictionary being freed and immediately
+	// re-requested -- a question about how long ago it stopped being wanted, which is
+	// the one thing an access-time ordering cannot answer.
+	uint32 reclaimableSinceMs;
+	bool reclaimCandidate;
 };
 
 class CTxdStore

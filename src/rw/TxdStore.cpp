@@ -5,7 +5,22 @@
 #include "ModelInfo.h"
 #include "Streaming.h"
 #include "RwHelper.h"
+#include "Timer.h"
 #include "TxdStore.h"
+
+// How long a dictionary must have been continuously unwanted before it may be freed.
+//
+// Not an access-time ordering.  The failure this prevents is a dictionary being freed
+// and then immediately re-requested by a model that comes back, which reads as a hang
+// rather than as churn because ConvertBufferToObject keeps re-requesting it.  So the
+// question is not "which dictionary was used least recently" -- it is "how long has
+// this one been nobody's", and that is a duration, not a ranking.
+//
+// Long enough to cover looking away and coming back, which is a couple of seconds of
+// driving.  Short enough to matter: the reclaim is not budget-limited, it takes
+// everything eligible, so a pass after the grace expires clears the whole backlog in
+// one go rather than trickling.
+static const uint32 kTxdReclaimGraceMs = 5000;
 
 CPool<TxdDef,TxdDef> *CTxdStore::ms_pTxdPool;
 RwTexDictionary *CTxdStore::ms_pStoredTxd;
@@ -43,6 +58,8 @@ CTxdStore::AddTxdSlot(const char *name)
 	assert(def);
 	def->texDict = nil;
 	def->refCount = 0;
+	def->reclaimableSinceMs = 0;
+	def->reclaimCandidate = false;
 	strcpy(def->name, name);
 	return ms_pTxdPool->GetJustIndex(def);
 }
@@ -208,6 +225,9 @@ int
 CTxdStore::ReclaimUnusedTxds(void)
 {
 	int i;
+	// Unsigned, and the subtraction below relies on that: it wraps at ~49 days and
+	// still gives the right elapsed time across the wrap.
+	const uint32 now = CTimer::GetTimeInMilliseconds();
 
 	ms_lastReclaim = 0;
 
@@ -246,27 +266,51 @@ CTxdStore::ReclaimUnusedTxds(void)
 	}
 
 	for(i = 0; i < TXDSTORESIZE; i++){
-		// Nothing resident, so nothing to give back.
-		if(CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + i].m_loadState != STREAMSTATE_LOADED)
-			continue;
+		TxdDef *def = GetSlot(i);
+
 		// The pool slot can be empty for an index the streamer still knows about.
-		if(!GetSlot(i))
+		if(!def)
 			continue;
-		// Pinned by whoever asked for it to stay resident: radar tiles, the male ped,
-		// anything a script owns.  This is the game's own predicate, and it had no
-		// callers at all until now -- CanRemoveModel has eight and CanRemoveCol has
-		// one, but CanRemoveTxd had none, because there was never a TXD reclaim for
-		// it to gate.
-		if(!CStreaming::CanRemoveTxd(i))
+
+		// Everything above is the eligibility test; this is the grace period.  Kept as
+		// a separate step so that "not eligible" and "eligible but too young" are
+		// visibly different states, and so that a dictionary which becomes wanted again
+		// clears its candidacy rather than inheriting a stale countdown.
+		//
+		// Note the reclaim is not budget-limited: when the grace does expire, a single
+		// pass frees every dictionary that has been unwanted longer than it, so a long
+		// grace period delays the first reclaim but never reduces the final one.
+		bool eligible =
+			// Nothing resident, so nothing to give back.
+			CStreaming::ms_aInfoForModel[STREAM_OFFSET_TXD + i].m_loadState == STREAMSTATE_LOADED &&
+			// Pinned by whoever asked for it to stay resident: radar tiles, the male ped,
+			// anything a script owns.  This is the game's own predicate, and it had no
+			// callers at all until now -- CanRemoveModel has eight and CanRemoveCol has
+			// one, but CanRemoveTxd had none, because there was never a TXD reclaim for
+			// it to gate.
+			CStreaming::CanRemoveTxd(i) &&
+			// A conversion is reading it right now.  Tearing one down mid-read is the
+			// crash that made every unload path reach for RemoveRefWithoutDelete.
+			GetNumRefs(i) == 0 &&
+			// Some model in play still names it.
+			!(ms_aTxdInUse[i / 8] & (1 << (i % 8)));
+
+		if(!eligible){
+			def->reclaimCandidate = false;
 			continue;
-		// A conversion is reading it right now.  Tearing one down mid-read is the
-		// crash that made every unload path reach for RemoveRefWithoutDelete.
-		if(GetNumRefs(i) > 0)
+		}
+		if(!def->reclaimCandidate){
+			// First pass that saw it unwanted.  Start the clock rather than free it:
+			// freeing on the same pass that discovers it is exactly the ping-pong.
+			def->reclaimCandidate = true;
+			def->reclaimableSinceMs = now;
 			continue;
-		// Some model in play still names it.
-		if(ms_aTxdInUse[i / 8] & (1 << (i % 8)))
+		}
+		if(now - def->reclaimableSinceMs < kTxdReclaimGraceMs)
 			continue;
+
 		CStreaming::RemoveTxd(i);
+		def->reclaimCandidate = false;
 		ms_lastReclaim++;
 	}
 	return ms_lastReclaim;
