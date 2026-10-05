@@ -34,12 +34,19 @@ public:
 	static bool StartLoadTxd(int slot, RwStream *stream);
 	static bool FinishLoadTxd(int slot, RwStream *stream);
 	static void RemoveTxd(int slot);
-	// Tear down every TXD that no loaded model names any more.  This is the only
-	// thing in the game that gives GX texture memory back: RwTexDictionaryDestroy
-	// walks the dictionary's textures, each one drops to refcount zero and destroys
-	// its raster, and ~GxRaster is the only place librw frees the allocation.
-	static void EvictUnusedTxds(void);
-	static int GetEvictedTxdCount(void);
+	// Free every TXD that no model in play names, and return how many went.  This is
+	// the only thing in the game that gives GX texture memory back:
+	// RwTexDictionaryDestroy walks the dictionary's textures, each one drops to
+	// refcount zero and destroys its raster, and ~GxRaster is the only place librw
+	// frees the allocation.
+	//
+	// Deliberately not called on a timer.  A cache that holds exactly its working
+	// set reloads every dictionary the moment the player looks away from it, which
+	// is pop-in on every area transition -- a worse symptom than the leak, and paid
+	// for on every frame rather than only when memory is short.  Callers gate it on
+	// CGame::IsMemoryTight() instead.
+	static int ReclaimUnusedTxds(void);
+	static int GetLastReclaimCount(void);
 
 	static TxdDef *GetSlot(int slot) {
 		assert(slot >= 0);

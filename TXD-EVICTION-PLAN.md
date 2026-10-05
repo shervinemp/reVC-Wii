@@ -120,14 +120,44 @@ Each gate was checked against the real permanent TXDs rather than assumed:
 Every permanent case is covered by one of the two liveness gates. That consistency is
 the main reason to believe the design.
 
-**Called from** `CStreaming::Update`, immediately after `LoadRequestedModels()` -- the
-earliest point at which this frame's unloads have happened and a dictionary nobody
-needs is knowable. Throttled to every 30th frame; the sweep is ~7900 cheap iterations
-and what it acts on only changes when the frame above does something.
+## The trigger: the escalation that already existed
 
-Gated `#ifdef NINTENDO_WII`. The logic is platform-independent and correct, but this
-branch can only be tested on hardware I have, and it should not be able to regress
-builds I cannot test.
+GX texture memory is not the only thing that accumulates, and reclaiming it on a timer
+is the wrong shape. The game already has a memory-pressure escalation:
+`CGame::DrasticTidyUpMemory`, restored for Wii, which fires when arena2 free drops below
+`kWiiLowMemoryBytes` (16MB, comfortably above the 6.7MB freeze point) and then waits
+`kTidyCooldownMs` (15s) between attempts. Its comment already records the reasoning that
+governs this whole area: the steps delete geometry, so a burst of them "leaves cars and
+peds on geometry that is no longer loaded", and it measures with `SYS_GetArena2Size`
+rather than `mallinfo` because the latter under-reports free memory here by tens of
+megabytes.
+
+So the reclaim is wired into that escalation rather than invented:
+
+- **`CTxdStore::ReclaimUnusedTxds()` is a step in `DrasticTidyUpMemory`**, ahead of the
+  building removals because it is the step that recovers the tens of megabytes. Safe in
+  that position: it only frees dictionaries no model in play names, so buildings that
+  are about to be unloaded keep their textures either way.
+- **`CGame::IsMemoryTight()`** exposes the single threshold, so the escalation and the
+  reclaim cannot each pick their own number and disagree about when memory is a problem.
+- **The same reclaim also runs from `CStreaming::Update`, behind that same threshold.**
+  The escalation only fires on loads and cutscene boundaries, and the freeze happened
+  while *driving*, where no load happens for minutes. Throttled to every 30th frame;
+  `SYS_GetArena2Size()` is two register reads, so the per-frame gate is free.
+
+**Why not on a timer unconditionally.** The first cut of this ran the reclaim every 30
+frames regardless of pressure. That is a cache holding exactly its working set, so every
+dictionary reloads the moment the player looks away from it -- pop-in on every area
+transition, paid on every frame, as a regression introduced by the fix for the freeze.
+With the threshold in front of it, a session with memory to spare never takes the branch
+and every dictionary stays resident exactly as the stock game left it. The cost is a
+constant that has to be right; `kWiiLowMemoryBytes` already existed and already sits
+above the observed failure point, so nothing new had to be guessed.
+
+Gated `#ifdef NINTENDO_WII`, including the `IsMemoryTight` definition, because it reads a
+libogc arena register that no other platform has. The logic is platform-independent and
+correct, but this branch can only be tested on hardware I have, and it should not be able
+to regress builds I cannot test.
 
 ### Why derived state rather than a counter
 
@@ -144,22 +174,25 @@ with the sweep left in as a cross-check that the two agree.
 
 ## What must be measured to call it done
 
-The arena line already carries it. Success is:
+Two lines now, because they answer different questions:
 
 ```
-tex <N>K    <- must become a sawtooth, not a monotonic climb
-txd free N  <- must be non-zero regularly; if it is always 0 the sweep refuses everything
+WII tidy: escalated at <N>K free arena, freed <M> unused TXDs
+WII arena: ... tex <N>K in <count>, ..., txd free <M>
 ```
 
-Today `tex` goes 112 -> 1977 and never falls. After the fix it should rise during play
-and **fall when the player moves away**.
+Success is **`tex <N>K` falling after each escalation**, and `freed <M>` being
+non-zero — a reclaim that frees nothing while reporting pressure means it is refusing
+everything, which is the failure mode to look for first.
 
-Read the two together. `tex` flat with `txd free 0` means nothing is being evicted;
-`tex` flat with `txd free` non-zero means eviction is running but not reclaiming --
-which would mean the leak is not (only) in TXDs.
+Today `tex` goes 112 -> 1977 and never falls. It should now fall whenever arena2 drops
+below 16MB, which is what keeps it from ever reaching the 6.7MB freeze.
 
-Secondary: the freeze should stop recurring and MEM2 free should plateau rather than
-walk to 6.7MB.
+Read `tex` and `freed` together. `tex` still climbing with `freed > 0` means eviction
+is running but not reclaiming -- which would mean the leak is not (only) in TXDs.
+
+Secondary: the freeze should stop recurring, and MEM2 free should sawtooth around the
+threshold rather than walk to 6.7MB.
 
 ## Risks
 
@@ -168,17 +201,22 @@ walk to 6.7MB.
   goes untextured, the bitmap is wrong -- check `GetTxdSlot()` on in-play models
   before anything else.
 - **Ping-pong** is the second risk, and the reason the bitmap tests for "in play"
-  rather than "loaded". If `tex` sawtooths but load times climb and the disc is busy,
-  a dictionary is being freed and re-requested. The fix is a residency grace period
-  (do not free a TXD freed within the last N sweeps), not a different gate.
-- **Slot reuse.** Unlike the queued design this plan started with, the sweep holds no
-  entries across frames, so there is no stale-slot hazard and no generation counter is
-  needed. It re-reads live state every time.
-- **Thrash.** A TXD freed and immediately re-requested reloads from disc each time.
-  If `tex` sawtooths but the world stutters, that is this, and the fix is a residency
-  grace period rather than a different gate.
+  rather than "loaded". If a dictionary is freed and immediately re-requested, the
+  model re-requests forever. The fix is a residency grace period (do not free a TXD
+  freed within the last N sweeps), not a different gate.
+- **The threshold could be wrong in the aggressive direction.** `kWiiLowMemoryBytes`
+  predates this work and was chosen for geometry reclaim. If `tex` now sawtooths but
+  loads visibly crawl, that is the symptom, and the answer is to raise the floor
+  rather than to add gates.
+- **Slot reuse.** Unlike the queued design this plan started with, the reclaim holds
+  no entries across frames, so there is no stale-slot hazard and no generation counter
+  is needed. It re-reads live state every time.
 - Asserts are compiled out in Release, so `~Raster`'s `assert(nativeSize <=
   nativeTextureMemory)` proving nothing is not evidence. **Verify by measurement.**
+- `DrasticTidyUpMemory` is labelled `"drastic tidy [NO-OP]"` in `GameLogic.cpp` and
+  that label was wrong -- the Wii branch is restored and the function does run.
+  Relabelled. Worth remembering that the stale label would have survived a dozen
+  correct fixes and still been misleading.
 
 ## Explicitly not doing
 

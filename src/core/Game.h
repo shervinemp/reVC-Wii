@@ -77,6 +77,18 @@ public:
 	static void TidyUpMemory(bool, bool);
 	static void DrasticTidyUpMemory(bool);
 	static void ProcessTidyUpMemory(void);
+
+	// The one definition of "this console is short of memory", so that
+	// DrasticTidyUpMemory and the texture reclaim cannot each pick their own
+	// threshold and disagree about when memory is actually a problem.  Measured
+	// with SYS_GetArena2Size rather than mallinfo, for the reason spelled out at
+	// DrasticTidyUpMemory: mallinfo under-reports what is actually free here by
+	// tens of megabytes.
+	//
+	// Exposed because DrasticTidyUpMemory only runs on loads and cutscene
+	// boundaries, and the freeze this guards against happens while driving, where
+	// no load occurs for minutes at a time.
+	static bool IsMemoryTight(void);
 };
 
 inline bool IsAreaVisible(int area) { return area == CGame::currArea || area == AREA_EVERYWHERE; }

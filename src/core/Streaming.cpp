@@ -399,18 +399,20 @@ CStreaming::Update(void)
 		wiiLog("WII streaming: requested models processed frame=%u requested=%d channels=%d/%d\n",
 		       wiiUpdateCount, ms_numModelsRequested, ms_channel[0].state, ms_channel[1].state);
 
-	// Give texture memory back now that this frame's unloads have happened, which is
-	// the earliest point at which a dictionary nobody needs any more is knowable.
+	// DrasticTidyUpMemory reclaims unused TXDs too, but it only runs on loads and
+	// cutscene boundaries, and the freeze this guards against happens while driving,
+	// where no load happens for minutes at a time.  So the same reclaim runs here as
+	// well, behind the same threshold, which is what keeps it off the frame budget:
+	// with memory to spare this branch is not taken at all and every dictionary stays
+	// resident exactly as the stock game left it.
 	//
-	// Throttled rather than every frame: the sweep walks the whole model table, and
-	// what it acts on -- models leaving the streaming set -- only changes when the
-	// frame above does something.  Thirty frames is half a second, well inside the
-	// time it takes the arena to drain.
-	{
-		static uint32 txdSweepCount;
-		if((txdSweepCount++ % 30) == 0)
-			CTxdStore::EvictUnusedTxds();
-		WiiTraceSetTxdEvictions(CTxdStore::GetEvictedTxdCount());
+	// Throttled because the reclaim walks the whole model table, and what it acts on
+	// only changes when the frame above does something.
+	if(CGame::IsMemoryTight()){
+		static uint32 txdReclaimCount;
+		if((txdReclaimCount++ % 30) == 0)
+			CTxdStore::ReclaimUnusedTxds();
+		WiiTraceSetTxdEvictions(CTxdStore::GetLastReclaimCount());
 	}
 #endif
 

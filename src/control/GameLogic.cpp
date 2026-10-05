@@ -125,15 +125,18 @@ CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 	WII_LOAD_STEP("flush request list", CStreaming::FlushRequestList());
 	WII_LOAD_STEP("delete rw objects", CStreaming::DeleteRwObjectsAfterDeath(pos));
 	WII_LOAD_STEP("remove unused models", CStreaming::RemoveUnusedModelsInLoadedList());
-	// Labelled as the no-op it is.  DrasticTidyUpMemory is wrapped entirely in
-	// #ifdef USE_CUSTOM_ALLOCATOR and that define is commented out in config.h, so
-	// it expands to nothing -- which means the memory-pressure response it exists
-	// to provide never runs, on any platform, because no platform defines it.  On
-	// the Wii that matters more than it looks: this port has no CMemoryHeap behind
-	// it, so the aggressive unloads this call would have made are simply never
-	// requested.  Worth a line of its own in the log precisely because it costs
-	// nothing and is doing nothing.
-	WII_LOAD_STEP("drastic tidy [NO-OP]", CGame::DrasticTidyUpMemory(true));
+	// Not a no-op on Wii.  This used to be labelled "drastic tidy [NO-OP]" on the
+	// strength of DrasticTidyUpMemory being wrapped entirely in #ifdef
+	// USE_CUSTOM_ALLOCATOR, which is commented out in config.h.  That is still true of
+	// every other platform, but the Wii branch was restored ahead of it, so on this
+	// port the memory-pressure response does run: it fires when arena2 drops below
+	// kWiiLowMemoryBytes, waits kTidyCooldownMs between attempts, and now also reclaims
+	// texture dictionaries, which is the step that recovers the tens of megabytes the
+	// leak was sitting on.
+	//
+	// Relabelled because a log line that says a thing is inert is worse than no log
+	// line: it reads as a measurement, and it is now the opposite of the truth.
+	WII_LOAD_STEP("drastic tidy", CGame::DrasticTidyUpMemory(true));
 	WII_LOAD_STEP("undress", CWorld::Players[CWorld::PlayerInFocus].m_pPed->Undress("player"));
 	WII_LOAD_STEP("load scene collision", CStreaming::LoadSceneCollision(pos));
 	WII_LOAD_STEP("load scene", CStreaming::LoadScene(pos));

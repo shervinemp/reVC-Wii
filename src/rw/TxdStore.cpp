@@ -191,28 +191,28 @@ CTxdStore::RemoveTxd(int slot)
 	def->texDict = nil;
 }
 
-// Scratch for EvictUnusedTxds: one bit per TXD slot, recording whether any loaded
-// model still names that slot as its texture dictionary.  Static rather than
+// Scratch for ReclaimUnusedTxds: one bit per TXD slot, recording whether any model
+// in play still names that slot as its texture dictionary.  Static rather than
 // allocated, because a function whose whole purpose is to return memory should not
 // be holding a chunk of it.
 static uint8 ms_aTxdInUse[(TXDSTORESIZE + 7) / 8];
-static int ms_evictedTxds;
+static int ms_lastReclaim;
 
 int
-CTxdStore::GetEvictedTxdCount(void)
+CTxdStore::GetLastReclaimCount(void)
 {
-	return ms_evictedTxds;
+	return ms_lastReclaim;
 }
 
-void
-CTxdStore::EvictUnusedTxds(void)
+int
+CTxdStore::ReclaimUnusedTxds(void)
 {
 	int i;
 
-	ms_evictedTxds = 0;
+	ms_lastReclaim = 0;
 
 	if(ms_pTxdPool == nil)
-		return;
+		return 0;
 
 	memset(ms_aTxdInUse, 0, sizeof(ms_aTxdInUse));
 
@@ -253,20 +253,21 @@ CTxdStore::EvictUnusedTxds(void)
 		if(!GetSlot(i))
 			continue;
 		// Pinned by whoever asked for it to stay resident: radar tiles, the male ped,
-		// anything a script owns.  This is the game's own predicate, and it has never
-		// been called for a TXD -- CanRemoveModel has eight callers and CanRemoveCol
-		// has one, but CanRemoveTxd had none, because there was never a TXD eviction
-		// pass for it to gate.
+		// anything a script owns.  This is the game's own predicate, and it had no
+		// callers at all until now -- CanRemoveModel has eight and CanRemoveCol has
+		// one, but CanRemoveTxd had none, because there was never a TXD reclaim for
+		// it to gate.
 		if(!CStreaming::CanRemoveTxd(i))
 			continue;
-		// A load is reading it right now.  Tearing one down mid-read is the crash
-		// that made every unload path reach for RemoveRefWithoutDelete.
+		// A conversion is reading it right now.  Tearing one down mid-read is the
+		// crash that made every unload path reach for RemoveRefWithoutDelete.
 		if(GetNumRefs(i) > 0)
 			continue;
-		// Something on screen still draws with it.
+		// Some model in play still names it.
 		if(ms_aTxdInUse[i / 8] & (1 << (i % 8)))
 			continue;
 		CStreaming::RemoveTxd(i);
-		ms_evictedTxds++;
+		ms_lastReclaim++;
 	}
+	return ms_lastReclaim;
 }

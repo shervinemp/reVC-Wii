@@ -1403,6 +1403,16 @@ static const size_t kWiiLowMemoryBytes = 16*1024*1024;
 static const uint32 kTidyCooldownMs = 15000;
 static uint32 lastTidyMs;
 
+#if defined NINTENDO_WII
+bool
+CGame::IsMemoryTight(void)
+{
+	// Two register reads, so this is safe to call every frame from the streaming
+	// update rather than only where DrasticTidyUpMemory happens to run.
+	return (size_t)SYS_GetArena2Size() < kWiiLowMemoryBytes;
+}
+#endif
+
 void CGame::DrasticTidyUpMemory(bool flushDraw)
 {
 #if defined NINTENDO_WII
@@ -1445,12 +1455,17 @@ void CGame::DrasticTidyUpMemory(bool flushDraw)
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	if(freeBytes < kWiiLowMemoryBytes && now - lastTidyMs >= kTidyCooldownMs){
 		lastTidyMs = now;
+		// First, because this is the step that actually recovers the tens of
+		// megabytes: texture dictionaries accumulate over a session and nothing
+		// else here touches them.  Safe to run before the building removals
+		// because it only frees dictionaries no model in play names, so the
+		// buildings that are about to be unloaded keep their textures either way.
+		int txdsFreed = CTxdStore::ReclaimUnusedTxds();
 		CStreaming::RemoveUnusedBigBuildings(LEVEL_MAINLAND);
 		CStreaming::RemoveUnusedBigBuildings(LEVEL_BEACH);
-#ifdef NINTENDO_WII
-		WiiTraceReport("WII tidy: escalated at %uK free arena\n",
-		               (unsigned int)(freeBytes / 1024u));
-#endif
+		WiiTraceReport("WII tidy: escalated at %uK free arena, freed %d unused TXDs\n",
+		               (unsigned int)(freeBytes / 1024u), txdsFreed);
+		WiiTraceSetTxdEvictions(txdsFreed);
 	}
 
 	if(!playingIntro)
