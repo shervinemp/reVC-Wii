@@ -19,9 +19,30 @@ if(NINTENDO_WII)
             "${CMAKE_CURRENT_SOURCE_DIR}/wii-port/WiiTrace.cpp"
         )
         list(REMOVE_DUPLICATES WII_GAME_SOURCES)
-        configure_file("${CMAKE_CURRENT_SOURCE_DIR}/extras/GitSHA1.cpp.in"
-            "${CMAKE_CURRENT_BINARY_DIR}/extras/GitSHA1.cpp" @ONLY)
-        list(APPEND WII_GAME_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/extras/GitSHA1.cpp")
+        # The SHA in the boot banner, regenerated per build rather than per cmake
+        # configure.  configure_file() only runs at configure time and CMake only
+        # reconfigures when a CMakeLists.txt changes, so committing did nothing to
+        # it: the dol went out reporting a revision several commits behind what was
+        # actually on it.  Same always-fires target and OBJECT_DEPENDS pair the
+        # build timestamp already uses one block below, so both halves of the banner
+        # are per-build facts.  "dirty" is appended for an uncommitted tree, because
+        # that build matches no revision and reporting only the SHA would claim
+        # otherwise.
+        set(WII_GIT_SHA_SRC "${CMAKE_CURRENT_BINARY_DIR}/extras/GitSHA1.cpp")
+        execute_process(COMMAND ${CMAKE_COMMAND} -DSHA_CPP=${WII_GIT_SHA_SRC}
+                    -DSRC_DIR=${PROJECT_SOURCE_DIR}
+                    -P "${PROJECT_SOURCE_DIR}/scripts/write-git-sha.cmake"
+        )
+        add_custom_target(reVC_wii_git_sha ALL
+            COMMAND ${CMAKE_COMMAND} -DSHA_CPP=${WII_GIT_SHA_SRC}
+                    -DSRC_DIR=${PROJECT_SOURCE_DIR}
+                    -P "${PROJECT_SOURCE_DIR}/scripts/write-git-sha.cmake"
+        )
+        set_source_files_properties(${WII_GIT_SHA_SRC} PROPERTIES
+            OBJECT_DEPENDS ${WII_GIT_SHA_SRC}
+            GENERATED TRUE
+        )
+        list(APPEND WII_GAME_SOURCES "${WII_GIT_SHA_SRC}")
 
 find_path(WII_MPG123_INCLUDE_DIR NAMES mpg123.h
     HINTS "$ENV{DEVKITPRO}/portlibs/ppc" "$ENV{DEVKITPRO}/portlibs/wii" "/opt/devkitpro/portlibs/ppc" "C:/devkitPro/portlibs/ppc"
