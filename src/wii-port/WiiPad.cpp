@@ -794,28 +794,24 @@ pointerTurnRate(float magnitude, bool offScreen)
 		t = 1.0f;
 	if(offScreen && t > kPointerOffScreenMaxFrac)
 		t = kPointerOffScreenMaxFrac;
-	// Shape, chosen by the player.  All three reach exactly 1.0 at exactly the same
-	// pointer position, so the top speed and the range are identical between them
-	// and only the feel between those two points differs:
+	// Linear, and settled by measurement rather than by argument.  This was a
+	// player-selectable curve for one build, offering linear, quadratic and a
+	// blend; the answer on real hardware was that SMALL box with LINEAR is what
+	// feels best, so the setting is gone and this is the curve.
 	//
-	//   LINEAR      an equal move always turns the same amount, which is the most
-	//               predictable and the least fine.  Sensitivity is constant.
-	//   QUADRATIC   no slope at all at the box edge, so the first pixel out is a
-	//               crawl and it is very fine to place a shot.  Also cuts mid-ramp
-	//               speed to a quarter, which is a real cost: a medium push turns
-	//               at half the linear rate.
-	//   MID         the compromise, and the reason it exists: zero slope at the edge
-	//               like the quadratic, but back to the linear rate by three quarters
-	//               of the way along, so sweeps keep almost all their speed.
+	// Which is the more interesting half of that answer.  SMALL wins because a
+	// smaller box leaves more travel outside it for the ramp to use: half-extent
+	// 0.19 instead of 0.27, so with the halved dead zone only 0.30 of the travel is
+	// dead rather than 0.49.  LINEAR wins because a constant slope means an equal
+	// move always turns the same amount, and that predictability is worth more
+	// than the fine placement the curved ramps bought -- at least with a pointer,
+	// where the reticle itself already provides the precision and the camera does
+	// not need to.
 	//
-	// Only the slope at each end is what differs -- all three are flat-start,
-	// full-rate-at-the-same-place.  The point of offering them is that this is a
-	// preference, and preferences are exactly what arithmetic cannot settle.
-	switch(WiiAimCurve){
-	case 0:  return kPointerRatePerSec*t;          // linear
-	case 2:  return kPointerRatePerSec*t*t*(2.0f - t);	// fine start, linear top
-	default: return kPointerRatePerSec*t*t;        // quadratic
-	}
+	// The curves are one expression away if that ever stops being true: t*t for
+	// fine-at-the-edge, t*t*(2.0f - t) to keep the flat start and recover the
+	// mid-range.
+	return kPointerRatePerSec*t;
 }
 
 // How long the turn rate takes to catch up with what the ramp is asking for.
@@ -1160,8 +1156,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 } // namespace
 
 int8_t WiiPointerAimEnabled = 1;
-int8_t WiiPointerBox = 1;
-int8_t WiiAimCurve = 2;
+int8_t WiiPointerBox = 0;
 
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls this.
 bool

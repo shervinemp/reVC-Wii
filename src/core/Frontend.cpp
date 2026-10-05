@@ -5032,8 +5032,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #endif
 #ifdef NINTENDO_WII
 					WiiPointerAimEnabled = 1;
-					WiiPointerBox = 1;
-					WiiAimCurve = 2;
+					WiiPointerBox = 0;
 					m_PrefsUseVibration = true;
 #endif
 					SaveSettings();

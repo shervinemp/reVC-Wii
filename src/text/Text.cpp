@@ -161,10 +161,6 @@ WiiFallbackText(const char *key)
 		{ "WII_SML", "SMALL" },
 		{ "WII_MED", "MEDIUM" },
 		{ "WII_LRG", "LARGE" },
-		{ "WII_CRV", "AIM CURVE" },
-		{ "WII_CRV_L", "LINEAR" },
-		{ "WII_CRV_Q", "FINE" },
-		{ "WII_CRV_M", "MIXED" },
 		{ "WII_SDF", "Save failed! Check the SD card: it must be inserted, unlocked and not full." },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];

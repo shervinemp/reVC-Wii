@@ -110,12 +110,10 @@
 #ifdef NINTENDO_WII
 	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
-	#define POINTER_CURVE_SELECT MENUACTION_CFO_SELECT, "WII_CRV", { new CCFOSelect((int8*)&WiiAimCurve, "Controller", "AimCurve", aimCurveNames, 3, false) }, 0, 0, MENUALIGN_LEFT,
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
-	#define POINTER_CURVE_SELECT
 	#define VIBRATION_TOGGLE
 #endif
 
@@ -132,7 +130,6 @@ const char *off_on[] = { "FEM_OFF", "FEM_ON" };
 extern uint32 TimeToStopPadShaking;
 
 const char *pointerBoxSizes[] = { "WII_SML", "WII_MED", "WII_LRG" };
-const char *aimCurveNames[] = { "WII_CRV_L", "WII_CRV_Q", "WII_CRV_M" };
 const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
 
 // A short buzz when vibration is switched on, so it can be felt from the menu.  The
@@ -749,7 +746,6 @@ CMenuScreenCustom aScreens[] = {
 		AIM_ASSIST_TOGGLE
 		POINTER_AIM_TOGGLE
 		POINTER_BOX_SELECT
-		POINTER_CURVE_SELECT
 		VIBRATION_TOGGLE
 		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
