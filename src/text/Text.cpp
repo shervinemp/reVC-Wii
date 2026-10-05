@@ -170,6 +170,7 @@ WiiFallbackText(const char *key)
 		// an untouched install while looking fine on a card whose .gxt had been
 		// replaced.
 		{ "WII_QSV", "Quick Save" },
+		{ "WII_AIC", "AIM IN CAR" },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];
 

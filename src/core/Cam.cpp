@@ -858,38 +858,22 @@ CCam::KeepTrackOfTheSpeed(const CVector &source, const CVector &target, const CV
 	PreviousFov = fov;
 }
 
+// Reverted to the original test.  An earlier version widened this to also accept
+// MODE_BEHINDCAR, on the belief that sitting in a car put the camera in that mode.  It
+// does not: Camera.cpp picks ReqMode = MODE_FOLLOWPED unconditionally for the player
+// camera, and MODE_BEHINDCAR is only ever reached through TakeControl from the
+// remote-car and the scene-edit code.  So the widening was dead on arrival -- and since
+// this function is consulted in about thirty places it was thirty places of blast
+// radius for no behaviour change at all.
+//
+// Which also settles what it did not fix: driving aim does not work, and never worked
+// because of this.  The mode was already the one this accepts.  The real blocker is
+// elsewhere and still open.
 bool
 CCam::Using3rdPersonMouseCam(void) 
 {
-	if(!CCamera::m_bUseMouse3rdPerson)
-		return false;
-	if(Mode == MODE_FOLLOWPED)
-		return true;
-	// Driving is the one case the original test could not reach.  The camera is
-	// MODE_BEHINDCAR out of a car, not MODE_FOLLOWPED, so this was false for the
-	// whole time the player was behind the wheel -- and it is consulted by the
-	// weapon code to decide whether the shot ray reads the crosshair at all.  So
-	// the effect was not merely a camera that would not turn: the crosshair was
-	// pinned to the car's nose and shots went where the car faced, no matter what
-	// the pointer did.  This mode does have a usable mouse camera; it simply was
-	// not reachable, which is why the pointer aim code gated on it and found
-	// itself permanently off in a vehicle.
-	//
-	// Deliberately narrow: only behind-car, only while actually in a vehicle, and
-	// not while getting in or out of one, where the camera is mid-transition and
-	// the crosshair is being handed over anyway.  Every other case keeps the
-	// original answer, so the on-foot paths this touches in thirty-odd places are
-	// unchanged.
-	if(Mode == MODE_BEHINDCAR){
-		CPed *player = FindPlayerPed();
-		if(player != nil && player->bInVehicle &&
-		   player->m_nPedState != PED_ENTER_CAR &&
-		   player->m_nPedState != PED_CARJACK)
-			return true;
-	}
-	return false;
+	return CCamera::m_bUseMouse3rdPerson && Mode == MODE_FOLLOWPED;
 }
-
 bool
 CCam::GetWeaponFirstPersonOn(void)
 {

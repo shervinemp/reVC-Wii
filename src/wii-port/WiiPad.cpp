@@ -1015,17 +1015,18 @@ pointerAimWanted(void)
 		return false;
 	CPlayerPed *player = FindPlayerPed();
 	// Getting in or out of a car is excluded because the camera is mid-hand-over
-	// there and the crosshair is about to be claimed by the car.  Driving itself
-	// is NOT excluded: that exclusion was what made the pointer dead behind the
-	// wheel, and it was redundant anyway, because Using3rdPersonMouseCam() was
-	// false for every frame of a drive (the camera is MODE_BEHINDCAR, not
-	// MODE_FOLLOWPED) and has now been taught to answer true there.  Keeping the
-	// vehicle case would have meant the function returned false for both reasons
-	// at once, and fixing only one of them would have changed nothing.
+	// there.  Driving sits behind its own switch, off by default: it does not work,
+	// and this is a toggle to try it with, not a claim that it works.
+	//
+	// Using3rdPersonMouseCam() is NOT the blocker.  The player camera is MODE_FOLLOWPED
+	// out of a car -- Camera.cpp picks ReqMode that way unconditionally -- and that
+	// function already accepts MODE_FOLLOWPED.  So whatever stops this is elsewhere,
+	// and the switch is here so the question gets settled by playing rather than by
+	// reading more code.
 	if(player == nullptr ||
 	   player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK)
 		return false;
-	if(!TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
+	if(player->bInVehicle && !WiiAimInCar)
 		return false;
 	// No weapon required.  The crosshair follows the pointer whether or not a gun
 	// is out, so the pointer position is always visible (the HUD draws a small dot
@@ -1157,6 +1158,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 0;
+int8_t WiiAimInCar = 0;
 
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls this.
 bool

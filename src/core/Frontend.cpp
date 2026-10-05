@@ -5033,6 +5033,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 #ifdef NINTENDO_WII
 					WiiPointerAimEnabled = 1;
 					WiiPointerBox = 0;
+					WiiAimInCar = 0;
 					m_PrefsUseVibration = true;
 #endif
 					SaveSettings();

@@ -17,4 +17,9 @@ extern int8_t WiiPointerAimEnabled;
 // 0 small, 1 medium (the default), 2 large.  Persisted to the INI.
 extern int8_t WiiPointerBox;
 
+// Whether the pointer aims while driving.  Off by default because it does not work
+// yet, and shipping a broken behaviour as the default is worse than not having it:
+// this is a switch to try it on and off in one sitting, not a promise that it works.
+extern int8_t WiiAimInCar;
+
 #endif
