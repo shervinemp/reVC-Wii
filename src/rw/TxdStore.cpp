@@ -217,18 +217,30 @@ CTxdStore::EvictUnusedTxds(void)
 	memset(ms_aTxdInUse, 0, sizeof(ms_aTxdInUse));
 
 	// A TXD has to outlive the models that draw with it, and the TXD reference count
-	// does not track that.  The count is taken when a model load starts and dropped
-	// again the instant the load finishes, so a world model sitting fully loaded on
-	// screen holds a refcount of zero.  Only the loaded-model set knows which
-	// dictionaries are still wanted.
+	// does not track that.  The count is taken in ConvertBufferToObject, which runs
+	// when a read has already completed, and dropped again the instant the conversion
+	// finishes -- so a world model sitting fully loaded on screen holds a refcount of
+	// zero.  Only the streaming state knows which dictionaries are still wanted.
 	//
-	// So derive it from the streaming state instead of maintaining a parallel count.
-	// There are five separate places a model load completes, and hooking all of them
-	// would be a worse way to be wrong than reading the state that already exists.
+	// So derive it instead of maintaining a parallel count.  There are five separate
+	// places a model load completes, and hooking all of them would be a worse way to
+	// be wrong than reading the state that already exists.
+	//
+	// "Wanted" means anything short of NOTLOADED, not just LOADED.  A model still
+	// queued or mid-read has its dictionary loaded and its refcount back at zero,
+	// because the refcount is not taken until the read finishes.  Testing for LOADED
+	// alone would free the dictionary out from under it; ConvertBufferToObject would
+	// then re-request it on its next pass and the model would ping-pong between
+	// loading a dictionary and having it pulled, which reads as a hang.
 	for(i = 0; i < STREAM_OFFSET_TXD; i++){
-		if(CStreaming::ms_aInfoForModel[i].m_loadState != STREAMSTATE_LOADED)
+		if(CStreaming::ms_aInfoForModel[i].m_loadState == STREAMSTATE_NOTLOADED)
 			continue;
-		int16 slot = CModelInfo::GetModelInfo(i)->GetTxdSlot();
+		// GetModelInfo is an unchecked array read, and this loop walks every model
+		// index rather than only the ones known to be real.
+		CBaseModelInfo *mi = CModelInfo::GetModelInfo(i);
+		if(!mi)
+			continue;
+		int16 slot = mi->GetTxdSlot();
 		if(slot >= 0 && slot < TXDSTORESIZE)
 			ms_aTxdInUse[slot / 8] |= (uint8)(1 << (slot % 8));
 	}

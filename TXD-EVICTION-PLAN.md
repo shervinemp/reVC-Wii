@@ -86,16 +86,27 @@ designed, routed around by omission.
 
 `CTxdStore::EvictUnusedTxds()` in `src/rw/TxdStore.cpp`. State-derived, no bookkeeping.
 
-**Pass one** marks every TXD slot named by a currently loaded model, using a static
-bit-per-slot bitmap (`(TXDSTORESIZE+7)/8` = 174 bytes).
+**Pass one** marks every TXD slot named by a model that is *in play* -- any streaming
+state except `NOTLOADED` -- using a static bit-per-slot bitmap
+(`(TXDSTORESIZE+7)/8` = 174 bytes).
+
+The state test is `!= STREAMSTATE_NOTLOADED`, **not** `== STREAMSTATE_LOADED`, and the
+distinction is load bearing. `ConvertBufferToObject` takes the TXD refcount at
+`Streaming.cpp:618`, which runs *after* the CD read has already completed, and drops
+it as soon as the conversion finishes. So a model that is still **queued or mid-read**
+has its dictionary loaded and its refcount back at zero. Testing for `LOADED` alone
+frees the dictionary out from under it; `ConvertBufferToObject:605` then re-requests
+it, and the model ping-pongs between loading a dictionary and having it pulled, which
+reads as a hang rather than as churn. `GetModelInfo` is also nil-checked here: it is
+an unchecked array read and this loop walks every model index.
 
 **Pass two** tears down every loaded TXD that passes all three gates:
 
 | gate | protects |
 |---|---|
 | `CStreaming::CanRemoveTxd(slot)` | radar tiles, male ped, script-owned -- anything pinned with `STREAMFLAGS_CANT_REMOVE` |
-| `GetNumRefs(slot) <= 0` | a load reading it right now (the crash `RemoveRefWithoutDelete` exists to avoid) |
-| bitmap bit clear | anything still on screen drawing with it |
+| `GetNumRefs(slot) <= 0` | a conversion reading it right now (the crash `RemoveRefWithoutDelete` exists to avoid) |
+| bitmap bit clear | any model in play that still names it |
 
 Each gate was checked against the real permanent TXDs rather than assumed:
 
@@ -154,8 +165,12 @@ walk to 6.7MB.
 
 - **Too aggressive** is the live risk: freeing a TXD a model still draws with. The
   three gates are the defence, and the bitmap is the one that matters. If the world
-  goes untextured, the bitmap is wrong -- check `GetTxdSlot()` on loaded models before
-  anything else.
+  goes untextured, the bitmap is wrong -- check `GetTxdSlot()` on in-play models
+  before anything else.
+- **Ping-pong** is the second risk, and the reason the bitmap tests for "in play"
+  rather than "loaded". If `tex` sawtooths but load times climb and the disc is busy,
+  a dictionary is being freed and re-requested. The fix is a residency grace period
+  (do not free a TXD freed within the last N sweeps), not a different gate.
 - **Slot reuse.** Unlike the queued design this plan started with, the sweep holds no
   entries across frames, so there is no stale-slot hazard and no generation counter is
   needed. It re-reads live state every time.
