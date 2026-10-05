@@ -135,6 +135,15 @@ constexpr float kPointerOffScreenMaxFrac = 0.5f;
 // across a factor of sixteen without touching the source.
 constexpr float kPointerRatePerSec = 420.0f;
 
+// How much a deliberate sweep raises the gain, and how fast the hand has to be
+// travelling before it counts as deliberate.  Applied ONLY when the hand is
+// moving the same way the camera is already turning, so a counter-move gets no
+// boost -- without that, pulling against a turn would speed the camera up and
+// you would be fighting it.  A still hand scores zero, which is the important
+// property: aiming is a still hand with small adjustments, so precise aim is
+// bit-for-bit unchanged and only a deliberate sweep gets more camera.
+constexpr float kSwingGainBoost = 0.45f;		// up to +45% on a fast same-way sweep
+constexpr float kSwingGainFullAt = 1.2f;		// hand speed (g/s) that earns all of it
 // The same delta pitches further than it yaws: Cam.cpp scales the vertical one
 // by 4.0*m_fMouseAccelVertical against 2.5*m_fMouseAccelHorzntl for the
 // horizontal, and m_fMouseAccelVertical is m_fMouseAccelHorzntl + 0.0005, so at
@@ -280,6 +289,44 @@ float s_heldSeconds;
 float s_aimX;
 float s_aimY;
 bool s_aimActive;
+
+// --- carrying the reticle on past the edge of the sensor bar -----------------
+// The remote stops being tracked the instant it leaves the bar's field, and the
+// last known screen position says which edge it went through.  Replaying the last
+// turn rate alone loses that: the camera keeps moving while the reticle sits
+// still, so aiming dies silently and the player is told nothing.
+//
+// So the reticle is carried on in the direction it was already travelling and
+// clamped to the edge it left through, which is both the physically honest guess
+// and the legible one -- the dot visibly parks against the edge of the screen
+// instead of vanishing.  Position is the raw target rather than the smoothed
+// crosshair, so the velocity is the player's own and not the filter's.
+static float s_lastTargetX;
+static float s_lastTargetY;
+static float s_lostVelX;	// screen fractions per second, at the moment of loss
+static float s_lostVelY;
+static float s_lostX;		// the carried-on virtual reticle
+static float s_lostY;
+static bool s_lostActive;
+
+// How fast that carried-on velocity bleeds away.  Per second, so a sweep coasts
+// to a stop over a few frames instead of running at the edge forever.
+static const float kLostCoastDecay = 0.35f;
+// How fast a hand's motion carries the reticle while the bar is invisible, in
+// screen fractions per second per g/s of hand speed.  Sized so a deliberate sweep
+// walks the dot to the edge of the screen in roughly the time the sweep took to
+// leave it, rather than teleporting there or crawling.
+static const float kLostHandGain = 0.55f;
+// The accelerometer's speed reading, in g per second, shared between the
+// off-screen test and the aim gain so both read one measurement rather than two
+// integrations of the same accelerometer.
+static float s_handSpeed;
+// The hand's direction, unit length, straight from the accelerometer.  Kept
+// separate from s_lostVelX/Y because that one is the carry-on velocity and goes
+// stale; this is refreshed every frame from the sensor and is what the aim gain
+// judges intent by.
+static float s_handDirX;
+static float s_handDirY;
 
 int16
 toAxis(float value, float sensitivity)
@@ -795,7 +842,7 @@ static SwingTracker s_swing = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, false };
 // case acts on the answer, but a tracker that stops running while the bar is in
 // sight has nothing useful left to say the moment it loses it.
 bool
-pointerSwing(const WPADData &data, float &outX, float &outY)
+pointerSwing(const WPADData &data, float &outX, float &outY, float &speedOut)
 {
 	const float ax = (float)data.accel.x;
 	const float ay = (float)data.accel.y;
@@ -849,6 +896,7 @@ pointerSwing(const WPADData &data, float &outX, float &outY)
 	s_swing.vy = s_swing.vy*keep + moveY*dt;
 
 	const float speed = std::sqrt(s_swing.vx*s_swing.vx + s_swing.vy*s_swing.vy);
+	speedOut = speed;
 	if(speed < kSwingThreshold){
 		outX = 0.0f;
 		outY = 0.0f;
@@ -969,9 +1017,29 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	const float overY = (pointerY - heldY)*height/half;
 	const float magnitude = std::sqrt(overX*overX + overY*overY);
 
-	const float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
+	float rate = pointerTurnRate(magnitude, pointerOffScreen(data));
 	if(rate <= 0.0f)
 		return false;
+	// Gain from intent: a deliberate sweep that AGREES with the turn the camera is
+	// already making gets more camera, up to +45%.  The agreement test is the whole
+	// design -- without it, hauling the hand back to reverse a turn would speed the
+	// camera up and you would be fighting it, so a counter-move must score zero.
+	// A still hand scores zero too, which is what keeps precise aim untouched:
+	// aiming is a still hand with small adjustments, so the boost only ever appears
+	// on a sweep, which is exactly when more camera is wanted.
+	if(s_handSpeed > 0.0f && magnitude > 0.0f){
+		const float turnX = overX/magnitude;
+		const float turnY = overY/magnitude;
+		// The hand's direction, in the same screen axes the turn uses.
+		const float handMag = 1.0f;
+		if(handMag > 0.0f){
+			const float alignment = s_handDirX*turnX + s_handDirY*turnY;
+			if(alignment > 0.0f){
+				const float strength = Min(1.0f, s_handSpeed/kSwingGainFullAt);
+				rate *= 1.0f + kSwingGainBoost*alignment*strength;
+			}
+		}
+	}
 
 	outX = (overX/magnitude)*rate;
 	outY = (overY/magnitude)*rate*kPointerPitchScale;
@@ -1244,12 +1312,56 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	float swingX = 0.0f, swingY = 0.0f;
 	bool sweeping = false;
 	if(data->err == WPAD_ERR_NONE){
-		sweeping = pointerSwing(*data, swingX, swingY);
+		sweeping = pointerSwing(*data, swingX, swingY, s_handSpeed);
+		s_handDirX = swingX;
+		s_handDirY = swingY;
 	}else{
 		// A remote that has gone quiet leaves the accelerometer flat; integrating
 		// that as motion would be the one thing that could start a turn from
 		// nothing, so the tracker is dropped instead.
 		resetPointerSwing();
+	}
+
+	if(!tracked){
+		// Carrying the reticle on past the edge of the bar, from the MOTION SENSOR
+		// rather than from the pointer.  This is the difference that matters: the
+		// pointer's last known velocity is frozen the instant tracking dies, so it
+		// knows the direction the hand was going and nothing else.  The
+		// accelerometer keeps reporting the whole time the bar is out of sight, so
+		// the direction -- and how hard -- is still live.  That makes the carry-on
+		// steerable: you can keep aiming off-screen by moving your hand, instead of
+		// watching a dot that has stopped and a camera that has not.
+		//
+		// Clamped to the screen, so it parks against the edge it left through.  That
+		// is the legible part -- the player can see they have run out of sensor --
+		// and it is why the sensor is worth using rather than just coasting on a
+		// remembered number.
+		if(!s_lostActive){
+			s_lostActive = true;
+			s_lostX = s_lastTargetX;
+			s_lostY = s_lastTargetY;
+			// Half speed while the bar is out.  That cap used to be unreachable:
+			// it only ever applied to out-of-range coordinates, and losing the bar
+			// outright is the common case by far.
+			s_heldRateX *= kPointerOffScreenMaxFrac;
+			s_heldRateY *= kPointerOffScreenMaxFrac;
+		}
+		if(sweeping){
+			// Live: take the direction and strength straight from the hand.
+			s_lostVelX = swingX*s_handSpeed*kLostHandGain;
+			s_lostVelY = swingY*s_handSpeed*kLostHandGain;
+		}else{
+			// The hand has stopped, so coast on what it was doing and bleed away
+			// rather than sliding along the edge indefinitely.
+			s_lostVelX -= s_lostVelX*kLostCoastDecay*s_pointerDt;
+			s_lostVelY -= s_lostVelY*kLostCoastDecay*s_pointerDt;
+		}
+		s_lostX += s_lostVelX*s_pointerDt;
+		s_lostY += s_lostVelY*s_pointerDt;
+		if(s_lostX < 0.0f) s_lostX = 0.0f; else if(s_lostX > 1.0f) s_lostX = 1.0f;
+		if(s_lostY < 0.0f) s_lostY = 0.0f; else if(s_lostY > 1.0f) s_lostY = 1.0f;
+		if(aimWithPointer)
+			steerCrosshair(s_lostX, s_lostY);
 	}
 
 	if(tracked){
@@ -1258,6 +1370,18 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		if(aimWithPointer){
 			float crosshairX, crosshairY;
 			turning = irAimRate(*data, crosshairX, crosshairY, rateX, rateY);
+			// How fast the reticle was actually travelling, so that losing the bar
+			// halfway through a sweep can carry on the same way instead of stopping
+			// dead.  Divided by the frame time so it is per second and does not
+			// depend on the frame rate, and taken before the smoothing filter so it
+			// is the player's hand rather than the filter's lag.
+			if(s_pointerDt > 0.0f){
+				s_lostVelX = (crosshairX - s_lastTargetX)/s_pointerDt;
+				s_lostVelY = (crosshairY - s_lastTargetY)/s_pointerDt;
+			}
+			s_lastTargetX = crosshairX;
+			s_lastTargetY = crosshairY;
+			s_lostActive = false;
 			steerCrosshair(crosshairX, crosshairY);
 		}else
 			turning = irPointerRate(*data, rateX, rateY);
@@ -1295,6 +1419,13 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 			// been put down: keep the last rate for a moment in case the bar is
 			// reacquired, then give the crosshair back to rest rather than sit in a
 			// corner for a remote nobody is holding.
+			//
+			// First time through, the reticle is picked up where the bar was lost.
+			if(!s_lostActive){
+				s_lostActive = true;
+				s_lostX = s_lastTargetX;
+				s_lostY = s_lastTargetY;
+			}
 			s_heldSeconds += s_pointerDt;
 			if(s_heldSeconds >= kPointerHoldSeconds){
 				stopPointerHold();
