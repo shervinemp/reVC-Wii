@@ -2552,16 +2552,32 @@ CStreaming::LoadAllRequestedModels(bool priority)
 
 		//printf("process: order %d, ch %d, id %d\n", processI, nextChannel, streamIds[nextChannel]);
 
-		// Try again on error
-		while (CdStreamSync(nextChannel) != STREAM_NONE) {
+		// Try again on error.  Bounded, for the same reason as the sibling loop in
+		// LoadAllRequestedModels: this had no attempt counter, so a read that kept
+		// failing became a spin on the game thread that could not report itself.
+		// CdStreamSync is timed now, so each pass costs up to that timeout rather
+		// than nothing, and this bound is what turns a wedged channel into a
+		// deferred model instead of a very slow freeze.
+		int attempts = 0;
+		while(CdStreamSync(nextChannel) != STREAM_NONE && attempts < kLoadReadMaxAttempts){
+			attempts++;
 			CdStreamRead(nextChannel, ms_pStreamingBuffer[nextChannel], imgOffset+streamPoses[nextChannel], streamSizes[nextChannel]);
 		}
+		// Spent the whole budget without the read ever completing, so the buffer
+		// holds whatever was in it last and must NOT be handed to the converter --
+		// that would build an object out of uninitialised memory, which is a worse
+		// failure than the freeze this is here to prevent.  The model is left in
+		// STREAMSTATE_READING instead, which is the streaming system's own way of
+		// asking for it again later.
+		const bool readGaveUp = attempts >= kLoadReadMaxAttempts;
 		ms_aInfoForModel[streamIds[nextChannel]].m_loadState = STREAMSTATE_READING;
 
 		MakeSpaceFor(streamSizes[nextChannel] * CDSTREAM_SECTOR_SIZE);
-		ConvertBufferToObject(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
-		if(ms_aInfoForModel[streamIds[nextChannel]].m_loadState == STREAMSTATE_STARTED)
-			FinishLoadingLargeFile(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
+		if(!readGaveUp){
+			ConvertBufferToObject(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
+			if(ms_aInfoForModel[streamIds[nextChannel]].m_loadState == STREAMSTATE_STARTED)
+				FinishLoadingLargeFile(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
+		}
 
 		if(streamIds[nextChannel] < STREAM_OFFSET_TXD){
 			CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(streamIds[nextChannel]);

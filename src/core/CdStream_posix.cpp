@@ -50,6 +50,7 @@ static inline u32 elapsedMs(const struct timeval &from, const struct timeval &to
 #include "MemoryMgr.h"
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
+#include "wii-port/WiiTrace.h"
 #endif
 
 #define CDDEBUG(f, ...)   debug ("%s: " f "\n", "cdvd_stream", ## __VA_ARGS__)
@@ -180,6 +181,13 @@ CdStreamResetWaitStats(void)
 {
 	g_cdStreamLongestWaitMs = 0;
 }
+
+// How long the game thread will wait for the streaming worker before deciding the
+// read is never going to finish.  This is not a performance knob; it is the only
+// thing standing between a wedged card and a silent infinite freeze, because both
+// the worker read() and this wait had no timeout of their own.  Comfortably longer
+// than any read on slow-but-working storage has any right to take.
+static const long kCdStreamWaitTimeoutUs = 5000000L;
 #endif
 
 void
@@ -588,18 +596,68 @@ CdStreamSync(int32 channel)
 	ASSERT( pChannel != nil );
 
 #ifdef NINTENDO_WII
-	// Timed, because this wait has no timeout of its own and the stall report in
-	// wii_game.cpp cannot otherwise tell "parked on storage" from "the frame was
-	// merely slow".  See g_cdStreamLongestWaitMs in CdStream.h.
+	// Bounded.  This wait had no timeout of its own, and the worker it is waiting
+	// on ends in a blocking read() on the SD or USB store, which has no timeout
+	// either.  So a single wedged read parked the worker for ever, and the game
+	// thread parked in here for ever behind it: two unbounded waits stacked, with
+	// everything able to report either of them sitting downstream of both.
+	//
+	// The signature is now known from hardware rather than guessed at.  A run that
+	// froze produced WII watchdog lines every five seconds with nothing after them,
+	// inside a frame that reported cdwait=110ms.  That gap is the whole diagnosis:
+	// a wait that returns records its own duration, and a wait that never returns
+	// records nothing at all, so 110ms out of a twenty second frame means the rest
+	// of the frame was spent in a wait that never came back.
+	//
+	// Generous on purpose.  A slow card is not a wedged one, and the cost of being
+	// wrong here is a model that never arrives, so this only fires on a read that is
+	// genuinely never going to finish.  Giving up mutates nothing: the channel still
+	// belongs to the worker, which is still inside read() and will write into the
+	// buffer when it eventually returns.  CdStreamRead already refuses a busy
+	// channel, so returning an error here is safe and the retry paths degrade into
+	// the error handling they already had.
 	struct timeval waitStart;
 	gettimeofday(&waitStart, NULL);
+	bool timedOut = false;
 	LWP_MutexLock(gCdStreamMutex);
-	while(pChannel->nSectorsToRead != 0 || pChannel->bReading){
+	for(;;){
+		if(pChannel->nSectorsToRead == 0 && !pChannel->bReading)
+			break;
 		pChannel->bLocked = true;
-		LWP_CondWait(pChannel->pDoneCondition, gCdStreamMutex);
+		// Relative, and recomputed from the wall clock on each pass, so that a
+		// spurious wakeup shortens what is left rather than restarting the timeout.
+		struct timeval now;
+		gettimeofday(&now, NULL);
+		const long elapsedUs = (long)(now.tv_sec - waitStart.tv_sec) * 1000000L
+		                     + (long)(now.tv_usec - waitStart.tv_usec);
+		const long remainingUs = kCdStreamWaitTimeoutUs - elapsedUs;
+		if(remainingUs <= 0){
+			timedOut = true;
+			break;
+		}
+		struct timespec rel;
+		rel.tv_sec = remainingUs / 1000000L;
+		rel.tv_nsec = (remainingUs % 1000000L) * 1000L;
+		if(LWP_CondTimedWait(pChannel->pDoneCondition, gCdStreamMutex, &rel) != 0){
+			timedOut = true;
+			break;
+		}
 	}
 	pChannel->bLocked = false;
-	int32 status = pChannel->nStatus;
+	int32 status;
+	if(timedOut){
+		// Read the worker's state while the mutex still protects it.  The worker is
+		// stuck inside read() and can never report itself, so this is the only place
+		// that will ever know what it was doing.
+		WiiTraceReport("WII cdstream: channel %d gave up after %ldms still busy"
+		               " (sectors=%d reading=%d offset=%u); reporting a read error"
+		               " so the model is deferred\n",
+		               channel, (long)(kCdStreamWaitTimeoutUs / 1000),
+		               pChannel->nSectorsToRead, pChannel->bReading ? 1 : 0,
+		               pChannel->nSectorOffset);
+		status = STREAM_ERROR;
+	}else
+		status = pChannel->nStatus;
 	LWP_MutexUnlock(gCdStreamMutex);
 	struct timeval waitEnd;
 	gettimeofday(&waitEnd, NULL);

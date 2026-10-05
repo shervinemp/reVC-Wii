@@ -929,16 +929,23 @@ resetPointerSwing(void)
 }
 
 // Whether the pointer should be moving the crosshair this frame: a gun out whose
-// crosshair the HUD shows (the same test as Hud.cpp), in the Standard method, on
-// foot, and the option on.  Everything else keeps the fixed crosshair and the
-// rate camera.
+// crosshair the HUD shows (the same test as Hud.cpp), in the Standard method, and
+// the option on.  Everything else keeps the fixed crosshair and the rate camera.
 bool
 pointerAimWanted(void)
 {
 	if(!WiiPointerAimEnabled || !CCamera::m_bUseMouse3rdPerson)
 		return false;
 	CPlayerPed *player = FindPlayerPed();
-	if(player == nullptr || player->bInVehicle ||
+	// Getting in or out of a car is excluded because the camera is mid-hand-over
+	// there and the crosshair is about to be claimed by the car.  Driving itself
+	// is NOT excluded: that exclusion was what made the pointer dead behind the
+	// wheel, and it was redundant anyway, because Using3rdPersonMouseCam() was
+	// false for every frame of a drive (the camera is MODE_BEHINDCAR, not
+	// MODE_FOLLOWPED) and has now been taught to answer true there.  Keeping the
+	// vehicle case would have meant the function returned false for both reasons
+	// at once, and fixing only one of them would have changed nothing.
+	if(player == nullptr ||
 	   player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK)
 		return false;
 	if(!TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())

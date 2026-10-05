@@ -284,9 +284,13 @@ WiiTraceNote(const char *message)
 void
 WiiTraceHeap(const char *tag)
 {
-#if CREATE_LOG < 2
-	// mallinfo walks every free block to build its answer, so this is not a cheap
-	// call to leave in on a console that has already run short of memory.
+#if CREATE_LOG < 1
+	// The timer that used to call this every fifteen seconds is gone (s_heapSampling,
+	// off by default), so the only caller left is the watchdog's stall report.  That
+	// makes the cost argument that justified the level-2 gate irrelevant: it is
+	// reached only when the game has already stopped turning, where nothing about the
+	// heap walk can cost anything.  At level 1 this used to compile to nothing, which
+	// meant the watchdog reported a freeze with no state attached to it at all.
 	(void)tag;
 #else
 	struct mallinfo info = mallinfo();
