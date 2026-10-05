@@ -35,6 +35,7 @@
 #include "MemoryMgr.h"
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
+#include "wii-port/WiiTrace.h"
 #endif
 #include "MemoryHeap.h"
 #include "Font.h"
@@ -61,6 +62,14 @@ size_t CStreaming::ms_memoryUsed;
 CStreamingChannel CStreaming::ms_channel[2];
 int32 CStreaming::ms_channelError;
 int32 CStreaming::ms_numVehiclesLoaded;
+//
+// How many times a synchronous load-path read may be retried before it is
+// given up on and the model deferred.  Generous on purpose: this only has to
+// catch a read that is never going to finish, not one that is slow.  At roughly
+// 16ms a failed sync attempt this is a little over three seconds of retrying
+// before the load gives up and moves on.
+static const int kLoadReadMaxAttempts = 200;
+
 int32 CStreaming::ms_numPedsLoaded;
 int32 CStreaming::ms_vehiclesLoaded[MAXVEHICLESLOADED];
 int32 CStreaming::ms_lastVehicleDeleted;
@@ -2625,10 +2634,34 @@ CStreaming::LoadAllRequestedModels(bool priority)
 				wiiLog("WII streaming: load-all call=%u read item=%d offset=%u size=%u\n",
 				       wiiLoadAllCall, streamId, posn, size);
 #endif
-			do
-				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
-			while(CdStreamSync(0) || status == STREAM_NONE);
-			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+		// Bounded.  This loop had no attempt counter and no give-up, so a read that
+		// kept failing became an infinite spin on the game thread -- the one failure
+		// mode that produces no log line at all, because everything that would have
+		// logged it sits downstream of the spin.
+		//
+		// The bound is generous on purpose.  A slow card is not a broken one, and the
+		// cost of being wrong here is a model that never arrives, so it sits far above
+		// any read that is merely taking its time and only catches one that is never
+		// going to finish.  Giving up is not a special path either: the
+		// ConvertBufferToObject below already handles a bad buffer by deferring the
+		// model, which is exactly what this produces.
+		int attempts = 0;
+		bool pending;
+		do {
+			status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+			pending = CdStreamSync(0) || status == STREAM_NONE;
+			if(pending)
+				attempts++;
+		} while(pending && attempts < kLoadReadMaxAttempts);
+		if(pending){
+#ifdef NINTENDO_WII
+			WiiTraceReport("WII streaming: giving up on item %d after %d read attempts"
+			               " (offset=%u size=%u); it will be deferred\n",
+			               streamId, attempts, posn, size);
+#endif
+			status = STREAM_NONE;
+		}
+		ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
 			bool converted = ConvertBufferToObject(ms_pStreamingBuffer[0], streamId);
