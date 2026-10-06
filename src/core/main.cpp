@@ -378,8 +378,17 @@ DoRWStuffEndOfFrame(void)
 {
 	CDebug::DisplayScreenStrings();	// custom
 	CDebug::DebugDisplayTextBuffer();
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("e:flush");
+#endif
 	FlushObrsPrintfs();
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("e:camend");
+#endif
 	RwCameraEndUpdate(Scene.camera);
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("e:present");
+#endif
 	RsCameraShowRaster(Scene.camera);
 #ifndef MASTER
 	char s[48];
@@ -1479,7 +1488,17 @@ Render2dStuff(void)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
 
+	// The HUD pass, one marker per draw.  Same reason as the world pass: this is
+	// fifteen separate draws under a single label, and the freeze now lands in this
+	// tail rather than anywhere in the renderer.  Pointer stores, no logging.
+#ifdef NINTENDO_WII
+	#define WII_HUD_STEP(n) WiiTraceSetStep(n)
+#else
+	#define WII_HUD_STEP(n)
+#endif
+	WII_HUD_STEP("h:replay");
 	CReplay::Display();
+	WII_HUD_STEP("h:pickup");
 	CPickups::RenderPickUpText();
 
 	if(TheCamera.m_WideScreenOn
@@ -1520,8 +1539,11 @@ Render2dStuff(void)
 		CSprite2d::DrawRect(CRect(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(210), 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), black);
 	}
 
+	WII_HUD_STEP("h:radio");
 	MusicManager.DisplayRadioStationName();
+	WII_HUD_STEP("h:console");
 	TheConsole.Display();
+	WII_HUD_STEP("h:chud");
 #ifdef GTA_SCENE_EDIT
 	if(CSceneEdit::m_bEditOn)
 		CSceneEdit::Draw();
@@ -1529,14 +1551,22 @@ Render2dStuff(void)
 #endif
 		CHud::Draw();
 
+	WII_HUD_STEP("h:fx2d");
 	CSpecialFX::Render2DFXs();
+	WII_HUD_STEP("h:onscn");
 	CUserDisplay::OnscnTimer.ProcessForDisplay();
+	WII_HUD_STEP("h:msg");
 	CMessages::Display();
+	WII_HUD_STEP("h:darkel");
 	CDarkel::DrawMessages();
+	WII_HUD_STEP("h:garage");
 	CGarages::PrintMessages();
+	WII_HUD_STEP("h:paderr");
 	CPad::PrintErrorMessage();
+	WII_HUD_STEP("h:fonts");
 	CFont::DrawFonts();
 #ifndef MASTER
+	WII_HUD_STEP("h:occl");
 	COcclusion::Render();
 #endif
 
@@ -1544,6 +1574,7 @@ Render2dStuff(void)
 	DebugMenuRender();
 #endif
 	POP_RENDERGROUP();
+#undef WII_HUD_STEP
 }
 
 void
@@ -1826,6 +1857,9 @@ Idle(void *arg)
 			goto popret;
 	}
 
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("draw:menus");
+#endif
 	tbStartTimer(0, "RenderMenus");
 	RenderMenus();
 	tbEndTimer("RenderMenus");
@@ -1835,10 +1869,16 @@ Idle(void *arg)
 		goto popret;
 #endif
 
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("draw:fade");
+#endif
 	tbStartTimer(0, "DoFade");
 	DoFade();
 	tbEndTimer("DoFade");
 
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("draw:2dpost");
+#endif
 	tbStartTimer(0, "Render2dStuff-Fade");
 	Render2dStuffAfterFade();
 	tbEndTimer("Render2dStuff-Fade");
@@ -1850,6 +1890,9 @@ Idle(void *arg)
 	if (gbShowTimebars)
 		tbDisplay();
 
+#ifdef NINTENDO_WII
+	WiiTraceSetStep("draw:endframe");
+#endif
 	DoRWStuffEndOfFrame();
 #ifdef NINTENDO_WII
 	WiiTraceSetStep("render done");
