@@ -452,9 +452,11 @@ CRenderer::RenderOneBuilding(CEntity *ent, float camdist)
 				RpAtomicSetGeometry(atomic, geo, rpATOMICSAMEBOUNDINGSPHERE);
 			WorldRender::AtomicFullyTransparent(atomic, pass, alpha);
 		}
-		// Nothing to fade towards, so nothing to draw it as.  Skipping is what the
-		// other two call sites do when handed nil, and it leaves the entity's own
-		// geometry alone instead of replacing it with a null one.
+		// With no LOD atomic there is nothing to fade towards, so the building is not
+		// drawn through this path and keeps its own geometry rather than having it
+		// replaced with a null one.  That is what the other three call sites do when
+		// handed nil, and it is the difference between a missing draw and a corrupted
+		// atomic.
 	}else
 		WorldRender::AtomicFirstPass(atomic, pass);
 
