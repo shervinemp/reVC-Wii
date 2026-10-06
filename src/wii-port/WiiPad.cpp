@@ -545,7 +545,8 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	setButton(state.Triangle, buttons & PAD_BUTTON_Y); // Y: exit vehicle
 	setButton(state.Start, buttons & PAD_BUTTON_START);
 
-	// L is the brake (RightShoulder1), Z the horn (LeftShoulder1), R the radio.
+	// L is the brake (RightShoulder1), Z the horn (LeftShoulder1), R the radio --
+	// and, on foot, crouch, which reads the same field (CPad::DuckJustDown).
 	setButton(state.RightShoulder1, buttons & PAD_TRIGGER_L);
 	setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_Z);
 	setButton(state.LeftShock, buttons & PAD_TRIGGER_R);
@@ -609,14 +610,16 @@ captureClassic(const WPADData &data, CControllerState &state,
 	// Same v3 field layout as the Wiimote and the GameCube pad, so the Mode 0
 	// rebinds read the same whichever pad is in hand.  Physical A is the gas
 	// (Cross, the "commit" button) and B the fire (Circle, the "shoot" button),
-	// L the brake (RightShoulder1), R the horn (LeftShoulder1), and the D-pad the
-	// vehicle cluster when it has two sticks of its own to walk with.
+	// L the brake (RightShoulder1), R the horn (LeftShoulder1), ZL the radio and,
+	// on foot, crouch (both read LeftShock, as the GameCube pad's R does), and the
+	// D-pad the vehicle cluster when it has two sticks of its own to walk with.
 	setButton(state.Cross, buttons & WPAD_CLASSIC_BUTTON_A);    // A: enter+sprint (foot) / gas (car)
 	setButton(state.Circle, buttons & WPAD_CLASSIC_BUTTON_B);   // B: fire (foot) / fire+drive-by (car)
 	setButton(state.Square, buttons & WPAD_CLASSIC_BUTTON_Y);   // Y: jump
 	setButton(state.Triangle, buttons & WPAD_CLASSIC_BUTTON_X); // X: exit vehicle
 	setButton(state.RightShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_L); // L: brake
 	setButton(state.LeftShoulder1, buttons & WPAD_CLASSIC_BUTTON_FULL_R);  // R: horn
+	setButton(state.LeftShock, buttons & WPAD_CLASSIC_BUTTON_ZL);          // ZL: radio (car) / crouch (foot)
 	setButton(state.Start, buttons & WPAD_CLASSIC_BUTTON_PLUS);
 	setButton(state.Select, buttons & WPAD_CLASSIC_BUTTON_MINUS);
 
@@ -671,10 +674,10 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	//   A  enter vehicle / sprint (foot)   accelerate (car)      <- the "commit" button
 	//   B  fire (foot)                    fire, drive-by, car gun (car)  <- "shoot"
 	//   Z  -- (the pointer aims)         brake and reverse (car)
-	//   1  --                             radio (car)
+	//   1  jump (foot)                    radio (car)
 	//   2  --                             exit vehicle (car)
 	//   C  --                             horn (car)
-	//   D-pad   cycle weapon / look behind (foot)
+	//   D-pad   cycle weapon / look behind / crouch (foot)
 	//           handbrake / look L-R / look behind (car)
 	//   +  pause (always)
 	//   -  camera mode (foot)
@@ -698,12 +701,16 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	const bool jumpByOne = (buttons & WPAD_BUTTON_1) && !inCar;
 	setButton(state.Square, s_flickJumpPulse || jumpByOne);
 
-	// 1 is the radio station in a car, and nothing on foot: jump is the Nunchuk
-	// flick (WiiSpeakerService/WiiPadScan), and sniper scope entry already comes
-	// from the aim button (Z, which feeds RightShoulder1 -- PlayerPed.cpp:1281
-	// reads TargetJustDown), so a second way into the scope would only duplicate
-	// a state Z already owns.
-	setButton(state.LeftShock, buttons & WPAD_BUTTON_1);   // 1: radio (car)
+	// The radio and crouch read the same field, LeftShock (ChangeStationJustDown
+	// and DuckJustDown), so the field follows the context: 1 in a car, where it is
+	// the radio, and D-pad down on foot, where it crouches.  D-pad down is the
+	// handbrake in a car and nothing else on foot -- walking and the scope no
+	// longer read it -- and 1 on foot is jump.  1 used to set this field on foot as
+	// well, so it crouched whenever a jump could not start (a heavy weapon out,
+	// mid-attack), and the Wiimote had no crouch of its own.  Sniper scope entry
+	// already comes from the aim button (Z, which feeds RightShoulder1), so 1 is not
+	// needed for that either.
+	setButton(state.LeftShock, inCar ? (buttons & WPAD_BUTTON_1) != 0 : (dpadIsCluster && dpadDown));
 	// - is the camera mode on foot (the engine only reads it for a pedestrian
 	// camera, so it is simply dead in a car).  Pause is + (the Wii menu button)
 	// and is unconditional; HOME is left alone so the console's own HOME opens
