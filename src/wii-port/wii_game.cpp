@@ -124,6 +124,14 @@ tryInstallDirectory(const char *directory)
 
 	std::snprintf(s_installDirectory, sizeof(s_installDirectory), "%s", directory);
 	bootPrintf("WII game boot: data found at %s\n", directory);
+
+	// Does the per-MEMID allocation attribution actually work?  Asked here, at the
+	// first point the log is open, because the failure mode is silent: if PUSH_MEMID
+	// ever stops expanding to a real push then every allocation is charged to MEMID_FREE
+	// and the breakdown reads as one small category rather than as a fault.  That is
+	// exactly how it failed once already -- the macro was left defined to nothing while
+	// the machinery sat compiled in beside it, and nothing said so.
+	bootPrintf("WII memid attribution: %s\n", wiiMemIdSelfTest() ? "OK" : "BROKEN - PUSH_MEMID is not nesting");
 	return true;
 }
 
@@ -433,8 +441,14 @@ RwBool psSelectDevice() { return TRUE; }
 // is four members in the order malloc, free, realloc, calloc, and the allocating ones
 // take no hint -- the hint was added in RW 3.6 and this typedef predates it.  Getting
 // that wrong is a compile error rather than a silent fault, which is the good kind.
-void wiiMemIdChargeBytes(size_t sz);
-
+//
+// Single-threaded in practice, and worth saying so rather than leaving it implied: the
+// current MEMID is one global, so a charge from another thread would be attributed to
+// whatever that thread last pushed.  Checked rather than assumed -- the CD stream thread
+// only reads into a preallocated buffer and the watchdog thread only walks the heap, so
+// every allocation that reaches here is on the game thread.  A future thread that
+// allocates would need this made per-thread, and the symptom would be a few categories
+// quietly undercounted rather than anything crashing.
 static void *wiiChargedMalloc(size_t sz)
 {
 	// The zero-size guard is librw's own, from malloc_h: it returns nil rather than
@@ -445,7 +459,7 @@ static void *wiiChargedMalloc(size_t sz)
 	// the layer in between.
 	if(sz == 0)
 		return nil;
-	wiiMemIdChargeBytes(sz);
+	wiiMemIdCharge(sz);
 	return malloc(sz);
 }
 
@@ -457,13 +471,13 @@ static void wiiPassFree(void *p)
 static void *wiiChargedRealloc(void *p, size_t sz)
 {
 	if(sz != 0)
-		wiiMemIdChargeBytes(sz);
+		wiiMemIdCharge(sz);
 	return realloc(p, sz);
 }
 
 static void *wiiChargedCalloc(size_t numObj, size_t sizeObj)
 {
-	wiiMemIdChargeBytes(numObj * sizeObj);
+	wiiMemIdCharge(numObj * sizeObj);
 	return calloc(numObj, sizeObj);
 }
 

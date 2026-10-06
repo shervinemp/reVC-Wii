@@ -14,29 +14,6 @@ uint32 g_wiiMemidBytes[WII_MEMID_SLOTS];
 int32  g_wiiMemidCurrent = MEMID_FREE;
 int32  g_wiiMemidStack[16];
 int32  g_wiiMemidDepth;
-
-void
-wiiMemIdPush(int32 id)
-{
-	if(id < 0 || id >= WII_MEMID_SLOTS)
-		id = MEMID_FREE;
-	if(g_wiiMemidDepth < (int32)ARRAY_SIZE(g_wiiMemidStack))
-		g_wiiMemidStack[g_wiiMemidDepth++] = g_wiiMemidCurrent;
-	g_wiiMemidCurrent = id;
-}
-
-void
-wiiMemIdPop(void)
-{
-	g_wiiMemidCurrent = g_wiiMemidDepth > 0 ? g_wiiMemidStack[--g_wiiMemidDepth] : MEMID_FREE;
-}
-
-void
-wiiMemIdChargeBytes(size_t sz)
-{
-	if(g_wiiMemidCurrent >= 0 && g_wiiMemidCurrent < WII_MEMID_SLOTS)
-		g_wiiMemidBytes[g_wiiMemidCurrent] += (uint32)sz;
-}
 #endif
 
 uint8 *pMemoryTop;

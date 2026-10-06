@@ -565,18 +565,13 @@ RwBool RwRenderStateSet(RwRenderState state, void *value)
 static rw::MemoryFunctions gMemfuncs;
 static void *(*real_malloc)(size_t size);
 static void *(*real_realloc)(void *mem, size_t newSize);
-
-// Declared rather than included: rw/MemoryHeap.h needs the game's uint32/int32
-// typedefs, and this file has the librw headers in scope first, which do not define
-// them.  wiiMemIdChargeBytes deliberately takes size_t so that this declaration needs
-// no typedefs, and the definition -- with the bounds check -- lives once, in
-// src/rw/MemoryMgr.cpp.  Charges the allocation to whatever PUSH_MEMID is currently in
-// scope: USE_CUSTOM_ALLOCATOR is off on this platform, so the CMemoryHeap path that
-// would normally do this does not exist.
-void wiiMemIdChargeBytes(size_t sz);
-
-static void *mallocWrap(size_t sz, uint32 hint) { if(sz == 0) return nil; wiiMemIdChargeBytes(sz); return real_malloc(sz); }
-static void *reallocWrap(void *p, size_t sz, uint32 hint) { if(sz != 0) wiiMemIdChargeBytes(sz); return real_realloc(p, sz); }
+// Left uncharged deliberately.  These wrappers are the RwEngineInit(memFuncs) path,
+// which only PS2 and PC take -- the Wii port returns its own table from
+// psGetMemoryFunctions and is accounted there instead.  Charging in both places would
+// double-count on the platforms that do use this path, and would mean the bounds check
+// exists twice.
+static void *mallocWrap(size_t sz, uint32 hint) { if(sz == 0) return nil; return real_malloc(sz); }
+static void *reallocWrap(void *p, size_t sz, uint32 hint) { return real_realloc(p, sz); }
 
 
 // WARNING: unused parameters

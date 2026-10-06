@@ -11,39 +11,35 @@
 #define POP_MEMID() gMainHeap.PopMemId()
 #define REGISTER_MEMPTR(ptr) gMainHeap.RegisterMemPointer(ptr)
 #else
-#define PUSH_MEMID(id)
-#define POP_MEMID()
-#define REGISTER_MEMPTR(ptr)
-
-// These three used to be the empty macros above, and that is the whole reason this
-// codebase cannot say where memory went: with USE_CUSTOM_ALLOCATOR off, every one of
-// the ~90 PUSH_MEMID(MEMID_STREAM_TEXUTRES)-style call sites in src/ did nothing, so
-// streamed models, streamed collision, streamed textures, the render and the world all
-// drew from one arena with nothing recording which was which.
+// These used to be empty macros, and that is the whole reason this codebase cannot say
+// where memory went: with USE_CUSTOM_ALLOCATOR off, every one of the ~90
+// PUSH_MEMID(MEMID_STREAM_TEXUTRES)-style call sites in src/ did nothing, so streamed
+// models, streamed collision, streamed textures, the render and the world all drew from
+// one arena with nothing recording which was which.
 //
 // A texture leak of 18MB was found by reading librw rather than by measuring, and
 // 25MB of the same 43MB drain is still unattributed.  Each wrong guess about that
 // costs a whole play cycle, so the labels that already exist are hooked up here.
 //
-// CUMULATIVE bytes requested, never decremented on free.  That is a weaker number
-// than live bytes and is reported as what it is: a category that allocates and frees
-// the same memory forever also shows up here, so this ranks where allocation activity
-// is, it does not by itself prove a leak.  Read against the arena's own net drain,
-// which WiiTrace already reports, the two together localise it.
-//
-// Deliberately not a live-bytes figure.  That needs a size header on every allocation,
-// which changes the alignment of every allocation in the game, in a renderer that
-// cannot be exercised from a desktop.  Not worth it for a diagnostic.
+// The bodies are at the bottom of this header, below the MEMID enum, because they
+// reference MEMID_FREE.  A macro is expanded where it is used, so only the inline
+// functions care about that ordering -- but the #define has to live HERE, and an
+// earlier version of this file left the empty definition in place while adding the
+// real one further down.  That compiled, linked and ran, and reported every allocation
+// as MEMID_FREE: the push and pop were never called at all, so the linker correctly
+// discarded the nesting stack as unused.  WiiMemIdSelfTest below exists so that class
+// of mistake announces itself instead of looking like a measurement.
+#define PUSH_MEMID(id) wiiMemIdPush(id)
+#define POP_MEMID()    wiiMemIdPop()
+#define REGISTER_MEMPTR(ptr)
+
+// Below the MEMID enum, not above it: the inline functions reference MEMID_FREE.
 enum { WII_MEMID_SLOTS = 32 };
 
-// Below the MEMID enum, not above it: these functions reference MEMID_FREE, and a
-// macro is expanded where it is used rather than where it is defined, so only the
-// inline functions care about the ordering.
 extern uint32 g_wiiMemidBytes[WII_MEMID_SLOTS];
 extern int32  g_wiiMemidCurrent;
 extern int32  g_wiiMemidStack[16];
 extern int32  g_wiiMemidDepth;
-#endif
 
 enum {
 	MEMID_FREE,
@@ -74,16 +70,70 @@ enum {
 // Saturating rather than wrapping: a nest deeper than the stack would otherwise
 // mislabel the rest of the frame's allocations as MEMID_FREE, which is the one label
 // that means "unattributed" and so would hide the very thing being looked for.
-void wiiMemIdPush(int32 id);
-void wiiMemIdPop(void);
+static inline void wiiMemIdPush(int32 id)
+{
+	if(id < 0 || id >= WII_MEMID_SLOTS)
+		id = MEMID_FREE;
+	if(g_wiiMemidDepth < (int32)ARRAY_SIZE(g_wiiMemidStack))
+		g_wiiMemidStack[g_wiiMemidDepth++] = g_wiiMemidCurrent;
+	g_wiiMemidCurrent = id;
+}
 
-// Defined out of line, and taking size_t rather than the game's uint32, because the
-// one caller that matters -- the allocator wrapper in src/fakerw -- has already pulled
-// in the librw headers by the time it could include this one, and those do not define
-// the game's integer typedefs.  Keeping this free of them means that file can declare
-// it without including this header, so the bounds check lives in exactly one place
-// rather than being restated in a second translation unit.
-void wiiMemIdChargeBytes(size_t sz);
+static inline void wiiMemIdPop(void)
+{
+	g_wiiMemidCurrent = g_wiiMemidDepth > 0 ? g_wiiMemidStack[--g_wiiMemidDepth] : MEMID_FREE;
+}
+
+// CUMULATIVE bytes requested, never decremented on free.  That is a weaker number than
+// live bytes and is reported as what it is: a category that allocates and frees the
+// same memory forever also shows up here, so this ranks where allocation activity is,
+// it does not by itself prove a leak.  Read against the arena's own net drain, which
+// WiiTrace already reports, the two together localise it.
+//
+// Deliberately not a live-bytes figure.  That needs a size header on every allocation,
+// which changes the alignment of every allocation in the game, in a renderer that
+// cannot be exercised from a desktop.  Not worth it for a diagnostic.
+//
+// On the allocation path, so inline rather than a call: this runs for every allocation
+// librw makes, and on this console a call plus a bounds check per allocation is real
+// frame time for a diagnostic.
+//
+// The nesting here is not a hypothetical.  main.cpp pushes MEMID_GAME and never pops
+// it -- it is commented "NB: not popped" -- so the stack sits permanently one deep for
+// the whole game, and the pairs at 550/558 and 2096/2113 are alternative exits (one
+// breaks) rather than a double pop.  That is harmless for the inner scopes, because
+// popping restores the enclosing id correctly, but it does mean depth never returns to
+// zero and so the stack can never be used as a sanity check on balance.
+static inline void wiiMemIdCharge(size_t sz)
+{
+	if(g_wiiMemidCurrent >= 0 && g_wiiMemidCurrent < WII_MEMID_SLOTS)
+		g_wiiMemidBytes[g_wiiMemidCurrent] += (uint32)sz;
+}
+
+// Returns 1 if the nesting is working, 0 if it is not.
+//
+// Exists because of the mistake recorded at the PUSH_MEMID macro above: the macros
+// compiled, the build linked, the log looked plausible, and the counters were dead.
+// Nothing about that failure is visible in the output -- it reads as one small category
+// rather than as a fault, which is the worst way for an instrument to fail.  A self-test
+// turns it into a line that says so.
+//
+// Checks the two things that can independently break: that a push changes the current
+// id, and that the matching pop puts it back.
+static inline int wiiMemIdSelfTest(void)
+{
+	int32 before = g_wiiMemidCurrent;
+
+	wiiMemIdPush(MEMID_RENDER);
+	int sawPush = (g_wiiMemidCurrent == MEMID_RENDER);
+	wiiMemIdPop();
+
+	// Depth is deliberately not required to come back to where it started: main.cpp
+	// pushes MEMID_GAME and never pops it, so the stack may already sit one deep.  What
+	// must hold is that the current id is back where it was.
+	return (sawPush && g_wiiMemidCurrent == before) ? 1 : 0;
+}
+#endif
 
 template<typename T, uint32 N>
 class CStack

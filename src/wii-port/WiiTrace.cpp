@@ -73,9 +73,16 @@ volatile int s_texBytes;
 volatile int s_txdEvicted = -1;
 
 // Per-MEMID allocation deltas for the last interval.  Fixed size rather than
-// malloc'd, and only the few largest are printed, because the point is to rank where
+// malloc'd, and only the largest few are printed, because the point is to rank where
 // allocation is happening and the long tail is noise.
-enum { kMemIdSlots = 32, kMemIdPrinted = 5 };
+//
+// Six, not five, and the reason is specific: main.cpp pushes MEMID_GAME and never pops
+// it, so MEMID_GAME is the ambient category for the entire game and every allocation
+// outside an inner scope lands in it.  It will very likely be the largest bucket, and
+// at five printed lines that would leave only four categories visible -- enough to
+// truncate exactly the one being looked for.  Six keeps a full set of streaming
+// categories visible alongside it.
+enum { kMemIdSlots = 32, kMemIdPrinted = 6 };
 static int s_memidGrowth[kMemIdSlots];
 static int s_memidSlotCount;
 
@@ -87,8 +94,8 @@ static int s_memidSlotCount;
 // silent off-by-one is exactly what a counted list of placeholders invites.
 static const char *const kMemIdNames[] = {
 	"free", "game", "world", "anim", "pools", "defmodels", "stream", "strmodels",	// 0-7
-	"strlods", "strtex", "strcol", "?", "?", "?", "?", "gameproc", "script",		// 8-15
-	"cars", "render", "pedattr",														// 16-19
+	"strlods", "strtex", "strcol", "stranim", "textures", "collision", "prealloc",	// 8-15
+	"gameproc", "script", "cars", "render", "pedattr",								// 16-19
 	"?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?",						// 20-31
 };
 static_assert(sizeof(kMemIdNames) / sizeof(kMemIdNames[0]) == kMemIdSlots,
