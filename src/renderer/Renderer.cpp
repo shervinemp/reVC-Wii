@@ -425,17 +425,36 @@ CRenderer::RenderOneBuilding(CEntity *ent, float camdist)
 		fadefactor = (mi->GetLargestLodDistance() - (camdist - FADE_DISTANCE))/FADE_DISTANCE;
 		if(fadefactor > 1.0f)
 			fadefactor = 1.0f;
+		// The lower clamp, which was missing.  Past the largest LOD distance the
+		// numerator goes negative, and a negative fadefactor cast into the unsigned
+		// alpha wraps to something enormous, so the test below could not catch it and
+		// every entity beyond its draw distance took the transparent branch instead.
+		if(fadefactor < 0.0f)
+			fadefactor = 0.0f;
 		alpha = mi->m_alpha * fadefactor;
 
 		if(alpha == 255)
 			WorldRender::AtomicFirstPass(atomic, pass);
-		else{
+		else if(lodatm != nil){
 			// not quite sure what this is about, do we have to do that?
+			//
+			// Guarded because lodatm is nil precisely when the entity is at or beyond
+			// its largest LOD distance, which is exactly where the missing lower clamp
+			// above used to steer.  The other two callers of GetAtomicFromDistance in
+			// this file both check, which is what makes the omission here read as an
+			// oversight rather than a contract: it read through a null atomic, then
+			// handed the result to RpAtomicSetGeometry, leaving the entity holding a
+			// geometry pointer that was never a geometry.  That is a permanent
+			// corruption of the atomic rather than a one-frame glitch, and it puts
+			// vertices on screen that no vertex buffer ever held.
 			RpGeometry *geo = RpAtomicGetGeometry(lodatm);
 			if(geo != RpAtomicGetGeometry(atomic))
 				RpAtomicSetGeometry(atomic, geo, rpATOMICSAMEBOUNDINGSPHERE);
 			WorldRender::AtomicFullyTransparent(atomic, pass, alpha);
 		}
+		// Nothing to fade towards, so nothing to draw it as.  Skipping is what the
+		// other two call sites do when handed nil, and it leaves the entity's own
+		// geometry alone instead of replacing it with a null one.
 	}else
 		WorldRender::AtomicFirstPass(atomic, pass);
 
