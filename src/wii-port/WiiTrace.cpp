@@ -83,7 +83,7 @@ volatile int s_txdEvicted = -1;
 // at five printed lines that would leave only four categories visible -- enough to
 // truncate exactly the one being looked for.  Six keeps a full set of streaming
 // categories visible alongside it.
-enum { kMemIdSlots = 32, kMemIdPrinted = 6 };
+enum { kMemIdSlots = 32, kMemIdPrinted = 6, kMemIdMinReportBytes = 256 * 1024 };
 static int s_memidGrowth[kMemIdSlots];
 static int s_memidSlotCount;
 
@@ -245,7 +245,12 @@ unsigned int stalledSeconds = 0;
 							if(best < 0 || s_memidGrowth[i] > s_memidGrowth[best])
 								best = i;
 						}
-						if(best < 0 || s_memidGrowth[best] <= 0)
+						// Thresholded rather than merely non-zero: a category that allocated
+						// a few kilobytes in five seconds is noise wearing the same clothes
+						// as the answer, and this project asked for minimal logging before
+						// it asked for attribution.  256KB per interval is about 50KB/s in
+						// one category -- well past churn, well short of "this is the 25MB".
+						if(best < 0 || s_memidGrowth[best] < kMemIdMinReportBytes)
 							break;
 						chosen[slot] = best;
 						WiiTraceReport("WII arena: alloc %s %dK\n",
