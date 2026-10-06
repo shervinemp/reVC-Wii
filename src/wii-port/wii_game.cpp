@@ -19,6 +19,10 @@
 #include <wiiuse/wpad.h>
 
 #include "common.h"
+// For g_wiiMemidBytes and WII_MEMID_SLOTS: the per-MEMID allocation counters that
+// PUSH_MEMID maintains.  See the comment on those macros in MemoryHeap.h for why they
+// exist at all.
+#include "rw/MemoryHeap.h"
 #include "crossplatform.h"
 #include "audio_enums.h"
 #include "DMAudio.h"
@@ -405,7 +409,72 @@ psGrabScreen(RwCamera *camera)
 
 void psMouseSetPos(RwV2d *) {}
 RwBool psSelectDevice() { return TRUE; }
-RwMemoryFunctions *psGetMemoryFunctions(void) { return nullptr; }
+
+// Allocator hooks, installed by returning a real table from psGetMemoryFunctions
+// rather than nil.
+//
+// This function used to return nil, and that is why the MEMID accounting added for the
+// texture leak measured nothing: nil means RwEngineInit takes the Engine::init(nil)
+// path, which installs librw's defaultMemfuncs -- plain malloc -- and never reaches the
+// wrappers in src/fakerw.  Those wrappers are the PS2 and PC path.  On this port every
+// allocation went straight to libc and nothing could see it.
+//
+// Returning the table routes it through RwEngineInit's gMemfuncs, which forwards to
+// these.  The mustmalloc and mustrealloc entries are left nil on purpose: Engine::init
+// fills those in with librw's own when they are nil, and substituting our own there
+// would mean reimplementing its out-of-memory behaviour for no diagnostic gain.
+//
+// Only allocation is charged.  free() is passed through untouched because a byte count
+// at free time needs a size header on every allocation, which would change the
+// alignment of every allocation in the game.  So the per-category figures are
+// cumulative allocation, not live bytes, and WiiTrace labels them as such.
+//
+// Signature note: the game-side RwMemoryFunctions is not librw's MemoryFunctions.  It
+// is four members in the order malloc, free, realloc, calloc, and the allocating ones
+// take no hint -- the hint was added in RW 3.6 and this typedef predates it.  Getting
+// that wrong is a compile error rather than a silent fault, which is the good kind.
+void wiiMemIdChargeBytes(size_t sz);
+
+static void *wiiChargedMalloc(size_t sz)
+{
+	// The zero-size guard is librw's own, from malloc_h: it returns nil rather than
+	// letting malloc(0) hand back a unique pointer, and callers here do test the result
+	// for nil.  mallocWrap upstream happens to guard it too, but matching the contract
+	// in the function that replaces malloc_h is the point -- depending on a guard two
+	// layers up is exactly the kind of thing that stops being true when someone edits
+	// the layer in between.
+	if(sz == 0)
+		return nil;
+	wiiMemIdChargeBytes(sz);
+	return malloc(sz);
+}
+
+static void wiiPassFree(void *p)
+{
+	free(p);
+}
+
+static void *wiiChargedRealloc(void *p, size_t sz)
+{
+	if(sz != 0)
+		wiiMemIdChargeBytes(sz);
+	return realloc(p, sz);
+}
+
+static void *wiiChargedCalloc(size_t numObj, size_t sizeObj)
+{
+	wiiMemIdChargeBytes(numObj * sizeObj);
+	return calloc(numObj, sizeObj);
+}
+
+static RwMemoryFunctions s_wiiMemFuncs = {
+	wiiChargedMalloc,
+	wiiPassFree,
+	wiiChargedRealloc,
+	wiiChargedCalloc
+};
+
+RwMemoryFunctions *psGetMemoryFunctions(void) { return &s_wiiMemFuncs; }
 RwBool psInstallFileSystem(void) { return TRUE; }
 RwBool psNativeTextureSupport() { return TRUE; }
 const char *_psGetUserFilesFolder() { return s_userFilesDirectory; }
@@ -1137,6 +1206,32 @@ main(int argc, char **argv)
 		WiiTraceSetResourceCounts(RwTexture::numAllocated, RwRaster::numAllocated,
 		                         CColStore::GetLoadedColBytes(),
 		                         (int)rw::gx::nativeTextureMemory);
+
+		// Per-MEMID allocation, differenced against the previous call.
+		//
+		// Cumulative-to-delta rather than reporting the running total, because the
+		// arena sampler's own question is "what grew in the last five seconds" and a
+		// monotonically rising total answers it badly -- every category looks large and
+		// the largest total is just the oldest one.
+		//
+		// Handed over the same way as the counts above, so this file stays independent
+		// of both the allocator and the trace internals.  The counter is maintained by
+		// PUSH_MEMID, which used to be a no-op on this platform; see MemoryHeap.h.
+		{
+			static int prevMemId[WII_MEMID_SLOTS];
+			static int memIdDelta[WII_MEMID_SLOTS];
+			static bool firstMemIdSample = true;
+			for(int i = 0; i < WII_MEMID_SLOTS; i++){
+				int now = (int)g_wiiMemidBytes[i];
+				// First sample has no previous value to difference against, and
+				// reporting the whole boot as one interval's growth would be a lie
+				// about when the memory went.
+				memIdDelta[i] = firstMemIdSample ? 0 : now - prevMemId[i];
+				prevMemId[i] = now;
+			}
+			firstMemIdSample = false;
+			WiiTraceSetMemIdGrowth(memIdDelta, WII_MEMID_SLOTS);
+		}
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely

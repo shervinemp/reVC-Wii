@@ -72,6 +72,28 @@ volatile int s_colBytes;
 volatile int s_texBytes;
 volatile int s_txdEvicted = -1;
 
+// Per-MEMID allocation deltas for the last interval.  Fixed size rather than
+// malloc'd, and only the few largest are printed, because the point is to rank where
+// allocation is happening and the long tail is noise.
+enum { kMemIdSlots = 32, kMemIdPrinted = 5 };
+static int s_memidGrowth[kMemIdSlots];
+static int s_memidSlotCount;
+
+// Names for the categories that can plausibly own a large share of the arena.  A MEMID
+// with no name here is still counted, it just is not worth a column of log.
+//
+// Indexed by MEMID, and the trailing "?" entries are padding to the slot count.  The
+// static assert is not decoration: this table was written twice with 33 entries and a
+// silent off-by-one is exactly what a counted list of placeholders invites.
+static const char *const kMemIdNames[] = {
+	"free", "game", "world", "anim", "pools", "defmodels", "stream", "strmodels",	// 0-7
+	"strlods", "strtex", "strcol", "?", "?", "?", "?", "gameproc", "script",		// 8-15
+	"cars", "render", "pedattr",														// 16-19
+	"?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?", "?",						// 20-31
+};
+static_assert(sizeof(kMemIdNames) / sizeof(kMemIdNames[0]) == kMemIdSlots,
+              "kMemIdNames must be indexed by MEMID up to kMemIdSlots");
+
 // Whether the watchdog also samples the heap on a timer.  Off, and the reason is
 // that it is the only expensive thing the watchdog does -- walking the heap from a
 // second thread while the game runs -- and it sits OUTSIDE the stall check, so it
@@ -180,6 +202,48 @@ unsigned int stalledSeconds = 0;
 				               (unsigned int)((lastArena2 - arena2) / 1024u),
 				               s_streamPending, s_texBytes / 1024, s_textures,
 				               s_colBytes / 1024, s_txdEvicted);
+
+				// Where the allocation went, by category, for the interval just ended.
+				//
+				// This rides the same line and the same 5-second gate as the numbers
+				// above, so it costs no extra logging: the arena sampler already only
+				// reports while memory is falling, which is exactly when the answer is
+				// wanted.  Printed as a second line rather than packed into the first
+				// because the set of categories varies and a fixed-width column would
+				// either truncate the interesting one or waste the width on the tail.
+				//
+				// Cumulative allocation, not live bytes -- see PUSH_MEMID in
+				// MemoryHeap.h.  Read it beside "down %uK": a category allocating far
+				// more than the arena actually fell is churning, and one tracking it is
+				// a candidate for the growth.
+				{
+					// Repeatedly take the largest entry not already taken.  Five picks
+					// over a handful of candidates, so selection beats sorting and there
+					// is no allocation.
+					//
+					// Chosen by INDEX and not by value: two categories can easily report
+					// the same delta, and comparing values would silently drop one of
+					// them -- which is the sort of error that makes a diagnostic lie.
+					int chosen[kMemIdPrinted];
+					for(int slot = 0; slot < kMemIdPrinted; slot++){
+						chosen[slot] = -1;
+						int best = -1;
+						for(int i = 0; i < s_memidSlotCount; i++){
+							bool taken = false;
+							for(int j = 0; j < slot; j++)
+								if(chosen[j] == i) { taken = true; break; }
+							if(taken)
+								continue;
+							if(best < 0 || s_memidGrowth[i] > s_memidGrowth[best])
+								best = i;
+						}
+						if(best < 0 || s_memidGrowth[best] <= 0)
+							break;
+						chosen[slot] = best;
+						WiiTraceReport("WII arena: alloc %s %dK\n",
+						               kMemIdNames[best], s_memidGrowth[best] / 1024);
+					}
+				}
 			lastArena2 = arena2;
 		}
 
@@ -268,6 +332,16 @@ void
 WiiTraceSetTxdEvictions(int evicted)
 {
 	s_txdEvicted = evicted;
+}
+
+void
+WiiTraceSetMemIdGrowth(const int *bytesById, int numIds)
+{
+	if(numIds > kMemIdSlots)
+		numIds = kMemIdSlots;
+	for(int i = 0; i < numIds; i++)
+		s_memidGrowth[i] = bytesById[i];
+	s_memidSlotCount = numIds;
 }
 
 void

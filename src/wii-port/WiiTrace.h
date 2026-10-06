@@ -103,6 +103,13 @@ void WiiTraceSetResourceCounts(int textures, int rasters, int colBytes, int texB
 // look identical from the texture byte count alone.
 void WiiTraceSetTxdEvictions(int evicted);
 
+// Bytes allocated per MEMID since the previous sample, indexed by MEMID, with
+// numIds entries.  Cumulative-bytes-allocated deltas, not live bytes: see the comment
+// on PUSH_MEMID in MemoryHeap.h for why that is the weaker number and why it is the
+// one worth having.  Reported alongside the arena's own net drain, which is what
+// makes the two readable together.
+void WiiTraceSetMemIdGrowth(const int *bytesById, int numIds);
+
 // One tagged heap line.  Free bytes alone cannot separate the cases that
 // matter, so the split is reported too: a large free total spread over many
 // blocks with a small top chunk is fragmentation, and allocating less will not
