@@ -2365,6 +2365,18 @@ int16 CPad::GetPedWalkUpDown(void)
 	switch (CURMODE)
 	{
 		case 0:
+#ifdef NINTENDO_WII
+		{
+			// Wii v3: the same as GetSteeringUpDown above.  In game the D-pad is the
+			// vehicle cluster and "down" is the handbrake field, so read here as a
+			// direction it walked the player backwards whenever it was pressed on
+			// foot.  The Nunchuk stick does the walking.
+			return NewState.LeftStickY;
+
+			break;
+		}
+#endif
+
 		case 2:
 		{
 			int16 axis = NewState.LeftStickY;
@@ -3432,6 +3444,12 @@ int16 CPad::SniperModeLookUpDown(void)
 	} else {
 		dpad = (NewState.DPadUp - NewState.DPadDown) / 2;
 	}
+#ifdef NINTENDO_WII
+	// Wii v3: likewise.  The handbrake field is not a look direction, and with the
+	// D-pad as the cluster there is no "up" to balance it, so through a scope it
+	// could only ever tip the view one way.
+	dpad = 0;
+#endif
 
 	if ( Abs(axis) > Abs(dpad) ) {
 	    if ( Abs(axis) > 35.0f ) {
