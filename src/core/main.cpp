@@ -1384,22 +1384,44 @@ RenderScene(void)
 	}
 #endif
 	PUSH_RENDERGROUP("RenderScene");
+	// RenderScene is twelve distinct passes, so "draw:world" would still leave twelve
+	// candidates.  Marked individually for the same reason as the outer zone: every
+	// hang has landed in this region and the label has never narrowed it.  A pointer
+	// store each, no logging.
+#ifdef NINTENDO_WII
+	#define WII_WORLD_STEP(name) WiiTraceSetStep(name)
+#else
+	#define WII_WORLD_STEP(name)
+#endif
+	WII_WORLD_STEP("w:clouds");
 	CClouds::Render();
+	WII_WORLD_STEP("w:horizon");
 	DoRWRenderHorizon();
+	WII_WORLD_STEP("w:roads");
 	CRenderer::RenderRoads();
+	WII_WORLD_STEP("w:coronaRefl");
 	CCoronas::RenderReflections();
+	WII_WORLD_STEP("w:barRoads");
 	CRenderer::RenderEverythingBarRoads();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+	WII_WORLD_STEP("w:water");
 	CWaterLevel::RenderWater();
+	WII_WORLD_STEP("w:boats");
 	CRenderer::RenderBoats();
+	WII_WORLD_STEP("w:underwater");
 	CRenderer::RenderFadingInUnderwaterEntities();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+	WII_WORLD_STEP("w:transWater");
 	CWaterLevel::RenderTransparentWater();
+	WII_WORLD_STEP("w:fading");
 	CRenderer::RenderFadingInEntities();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
+	WII_WORLD_STEP("w:rain");
 	CWeather::RenderRainStreaks();
+	WII_WORLD_STEP("w:sunRefl");
 	CCoronas::RenderSunReflection();
 	POP_RENDERGROUP();
+#undef WII_WORLD_STEP
 }
 
 void
