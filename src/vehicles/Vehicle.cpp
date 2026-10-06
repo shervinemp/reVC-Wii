@@ -23,6 +23,9 @@
 #include "Darkel.h"
 #include "Streaming.h"
 #include "Camera.h"
+#ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
+#endif
 #include "Stats.h"
 #include "Garages.h"
 #include "Wanted.h"
@@ -45,6 +48,34 @@ bool CVehicle::bCheat10;
 bool CVehicle::bHoverCheat;
 bool CVehicle::bAllTaxisHaveNitro;
 bool CVehicle::m_bDisableMouseSteering = true;
+
+#ifdef NINTENDO_WII
+// AIM IN CAR.  Vice City only lets the driver shoot out of the side the look-left and
+// look-right buttons have snapped the camera to.  With the pointer turning the car
+// camera there is nothing to snap: the side the view is already turned towards is the
+// side to shoot from, and holding fire is what brings the gun up.  Straight ahead and
+// straight behind pick neither, which is what a car has always done (and a bike then
+// fires forwards, as it always has).
+//
+// How far round the view has to be before it counts as a side: the sine of about
+// twenty degrees off the car's own line.
+static const float kDriveBySideMin = 0.35f;
+
+void
+CVehicle::PickDriveBySideFromView(bool &left, bool &right)
+{
+	if(left || right || !WiiPointerAimInCar() || !CPad::GetPad(0)->GetCarGunFired())
+		return;
+	const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
+	if(cam.Mode != CCam::MODE_CAM_ON_A_STRING && cam.Mode != CCam::MODE_BEHINDBOAT)
+		return;
+	const float side = DotProduct(cam.Front, GetRight());
+	if(side < -kDriveBySideMin)
+		left = true;
+	else if(side > kDriveBySideMin)
+		right = true;
+}
+#endif
 bool CVehicle::bDisableRemoteDetonation;
 bool CVehicle::bDisableRemoteDetonationOnContact;
 #ifndef MASTER

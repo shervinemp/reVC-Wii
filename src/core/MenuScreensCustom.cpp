@@ -801,6 +801,11 @@ CMenuScreenCustom aScreens[] = {
 #ifndef GAMEPAD_MENU
 	   INVERT_PAD_SELECTOR
 #endif
+#ifndef NINTENDO_WII
+		// Not on the Wii: there the pointer is the camera, never the steering wheel
+		// (WiiPadApplyControlDefaults keeps mouse steering off).
+		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
+#endif
 		AIM_ASSIST_TOGGLE
 		POINTER_AIM_TOGGLE
 		POINTER_BOX_SELECT

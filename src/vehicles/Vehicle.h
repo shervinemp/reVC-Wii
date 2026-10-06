@@ -326,6 +326,10 @@ public:
 	bool IsHeli(void) { return m_vehType == VEHICLE_TYPE_HELI; }
 	bool IsPlane(void) { return m_vehType == VEHICLE_TYPE_PLANE; }
 	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE; }
+#ifdef NINTENDO_WII
+	// AIM IN CAR: lets the view pick the side a drive-by goes out of.  See Vehicle.cpp.
+	void PickDriveBySideFromView(bool &left, bool &right);
+#endif
 
 	void FlyingControl(eFlightModel flightModel);
 	bool DoBladeCollision(CVector pos, CMatrix &matrix, int16 rotorType, float radius, float damageMult);

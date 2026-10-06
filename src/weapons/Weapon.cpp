@@ -38,6 +38,11 @@
 #include "SaveBuf.h"
 #ifdef NINTENDO_WII
 #include "WiiSpeaker.h"
+#include "WiiPointerAim.h"
+
+// AIM IN CAR: how far from where the gun already points a drive-by shot may be
+// bent towards the crosshair.  The cosine of seventy degrees.
+static const float kDriveByAimCone = 0.34f;
 #endif
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
@@ -2568,6 +2573,26 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 		else
 			target = source + info->m_fRange * shooter->GetRight();
 	}
+
+#ifdef NINTENDO_WII
+	// AIM IN CAR.  Vice City fires square out of the window, or straight ahead off a
+	// bike.  With the pointer aiming from the car the shot goes to the crosshair
+	// instead -- as long as that is roughly where the gun is already pointing.  A
+	// driver cannot shoot across his own car, so outside that cone it stays as it was.
+	if ( shooter == FindPlayerVehicle() && WiiPointerAimInCar() )
+	{
+		const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
+		if ( cam.Mode == CCam::MODE_CAM_ON_A_STRING || cam.Mode == CCam::MODE_BEHINDBOAT )
+		{
+			CVector stock = target - source;
+			stock.Normalise();
+			CVector aimed = cam.Source + info->m_fRange * CCamera::Find3rdPersonCrosshairRay(cam.Front, cam.Up, cam.FOV) - source;
+			aimed.Normalise();
+			if ( DotProduct(aimed, stock) > kDriveByAimCone )
+				target = source + info->m_fRange * aimed;
+		}
+	}
+#endif
 
 	target += CVector(float(CGeneral::GetRandomNumber()&255)*0.01f-1.28f,
 						float(CGeneral::GetRandomNumber()&255)*0.01f-1.28f,

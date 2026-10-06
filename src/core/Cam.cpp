@@ -30,6 +30,9 @@
 #include "Bike.h"
 #include "AimAssist.h"
 #include "Pickups.h"
+#ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
+#endif
 
 bool PrintDebugCode = false;
 int16 DebugCamMode;
@@ -40,6 +43,22 @@ extern float fCloseNearClipLimit;
 #ifdef FREE_CAM
 bool CCamera::bFreeCam = false;
 int nPreviousMode = -1;
+
+// The Free Cam option asks for it, and so does the Wii pointer aiming from a car:
+// Process_FollowCar_SA is the only vehicle camera that reads the mouse, which is
+// where the pointer's turn rate arrives, and Vice City's own Cam_On_A_String never
+// looks at it.  Everything that has to agree about which car camera is running --
+// the dispatch below, the zoom distances in Camera.cpp, who turns the turrets --
+// asks here rather than testing bFreeCam itself.
+bool
+CCamera::UseFreeCarCam(void)
+{
+#ifdef NINTENDO_WII
+	if(WiiPointerAimInCar())
+		return true;
+#endif
+	return bFreeCam;
+}
 #endif
 
 void
@@ -227,7 +246,7 @@ CCam::Process(void)
 		break;
 	case MODE_CAM_ON_A_STRING:
 #ifdef FREE_CAM
-		if(CCamera::bFreeCam && !CVehicle::bCheat5)
+		if(CCamera::UseFreeCarCam() && !CVehicle::bCheat5)
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
 #endif
@@ -238,7 +257,7 @@ CCam::Process(void)
 //	case MODE_CHRIS:
 	case MODE_BEHINDBOAT:
 #ifdef FREE_CAM
-		if (CCamera::bFreeCam)
+		if (CCamera::UseFreeCarCam())
 			Process_FollowCar_SA(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
 		else
 #endif
@@ -5169,6 +5188,16 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 	if (/*bFreeMouseCam &&*/ CCamera::m_bUseMouse3rdPerson && !pad->ArePlayerControlsDisabled() && nextDirectionIsForward) {
 		float mouseY = pad->GetMouseY() * 2.0f;
 		float mouseX = pad->GetMouseX() * -2.0f;
+
+#ifdef NINTENDO_WII
+		// AIM IN CAR: holding fire keeps the view where the pointer left it.  This
+		// camera swings back behind a moving car a second after the last look
+		// input, which is right for driving and wrong for a drive-by -- the view is
+		// the aim, and it would drift off the target mid-burst.  Topping the hold up
+		// while the button is down also leaves the usual second of grace after it.
+		if (WiiPointerAimInCar() && pad->GetCarGunFired())
+			stepsLeftToChangeBetaByMouse = 1.0f * 50.0f;
+#endif
 
 		// If you want an ability to toggle free cam while steering with mouse, you can add an OR after DisableMouseSteering.
 		// There was a pad->NewState.m_bVehicleMouseLook in SA, which doesn't exists in III.

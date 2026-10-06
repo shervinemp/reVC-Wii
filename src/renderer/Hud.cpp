@@ -26,6 +26,9 @@
 #include "General.h"
 #include "VarConsole.h"
 #include "AimAssist.h"
+#ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
+#endif
 
 #if defined(FIX_BUGS)
 	#define SCREEN_SCALE_X_FIX(a) SCREEN_SCALE_X(a)
@@ -241,21 +244,42 @@ void CHud::Draw()
 		int32 Mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 
 #ifdef NINTENDO_WII
-		// A small dot wherever the Wiimote pointer is, whenever the pointer owns the
-		// crosshair (WiiPad steers it with or without a gun).  This is the "where am
-		// I pointing" mark: without it there is nothing on screen to aim with until a
-		// weapon is drawn.  Drawn before the reticle so the real crosshair sits over
-		// it.  This block does not exist on other platforms.
-		if (playerPed && TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam()
-			&& playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
-			RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
-			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		// The pointer's own mark: a solid dot with a dark rim wherever the Wiimote is
+		// pointing, whenever the pointer owns the crosshair -- on foot with or without
+		// a gun, and in a vehicle with AIM IN CAR.  Without it there is nothing on
+		// screen to aim with until a weapon is drawn.
+		//
+		// Solid and rimmed because it has to read against anything.  It used to be a
+		// four pixel copy of the rifle sight, which is thin lines, and those are gone
+		// at 480i.  (CWeaponEffects' marker, which was enlarged for this first, is the
+		// Classic lock-on reticle on a targeted ped and never shows in free aim.)
+		// Drawn before the reticle so the real crosshair sits round it.  This block
+		// does not exist on other platforms.
+		bool pointerMark = false;
+		if (playerPed && playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
+			if (TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
+				pointerMark = true;
+			else if (playerPed->bInVehicle && WiiPointerAimInCar() &&
+			         (Mode == CCam::MODE_CAM_ON_A_STRING || Mode == CCam::MODE_BEHINDBOAT))
+				pointerMark = true;
+		}
+		if (pointerMark) {
 			float dotX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
 			float dotY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
-			const float r = SCREEN_SCALE_X(2.0f);
-			Sprites[HUD_SITEM16].Draw(CRect(dotX - r, dotY - r, dotX + r, dotY + r),
-				CRGBA(255, 255, 255, 255),
-				0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+			const float r = SCREEN_SCALE_X(3.0f);		// the white dot
+			const float rim = r + SCREEN_SCALE_X(1.5f);	// the dark edge round it
+			const float cut = SCREEN_SCALE_X(1.0f);		// corners taken off, so it reads as round
+			const CRGBA dark(0, 0, 0, 255);
+			const CRGBA light(255, 255, 255, 255);
+			CSprite2d::DrawRect(CRect(dotX - rim, dotY - rim + cut, dotX + rim, dotY + rim - cut), dark);
+			CSprite2d::DrawRect(CRect(dotX - rim + cut, dotY - rim, dotX + rim - cut, dotY + rim), dark);
+			CSprite2d::DrawRect(CRect(dotX - r, dotY - r + cut, dotX + r, dotY + r - cut), light);
+			CSprite2d::DrawRect(CRect(dotX - r + cut, dotY - r, dotX + r - cut, dotY + r), light);
+			// DrawRect leaves depth testing on and, for an opaque colour, vertex alpha
+			// off.  Put back what the rest of the 2D pass was set up with.
+			RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+			RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+			RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 		}
 #endif
 

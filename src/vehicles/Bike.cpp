@@ -2032,6 +2032,9 @@ CBike::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
+#ifdef NINTENDO_WII
+	PickDriveBySideFromView(lookingLeft, lookingRight);
+#endif
 
 	if(lookingLeft || lookingRight || CPad::GetPad(0)->GetCarGunFired()){
 		if(lookingLeft){

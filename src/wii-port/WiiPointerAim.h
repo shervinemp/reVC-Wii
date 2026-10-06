@@ -17,9 +17,17 @@ extern int8_t WiiPointerAimEnabled;
 // 0 small (the default), 1 medium, 2 large.  Persisted to the INI.
 extern int8_t WiiPointerBox;
 
-// Whether the pointer aims while driving.  Off by default because it does not work
-// yet, and shipping a broken behaviour as the default is worse than not having it:
-// this is a switch to try it on and off in one sitting, not a promise that it works.
+// Whether the pointer aims while driving.  With it on, vehicles are followed by the
+// SA-style camera (CCam::Process_FollowCar_SA) instead of Vice City's own, because
+// that is the only car camera that reads the pointer: the view swings when the
+// pointer is pushed past the aim box, the Rhino's turret and the fire truck's hose
+// follow it, and a drive-by goes out of whichever side the view is turned to and at
+// the crosshair.  Off gives the stock car camera back.
 extern int8_t WiiAimInCar;
+
+// True while that is in force: the Standard method with Pointer Aim and Aim In Car all
+// on, and no GameCube pad plugged in (one of those silences the pointer).  The engine
+// asks this in the few places a vehicle has to behave differently for it.
+bool WiiPointerAimInCar(void);
 
 #endif

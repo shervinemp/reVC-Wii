@@ -920,7 +920,7 @@ CCamera::CamControl(void)
 					ReqMode = CCam::MODE_1STPERSON;
 				}
 #ifdef FREE_CAM
-				else if (bFreeCam) {
+				else if (UseFreeCarCam()) {
 					if (CarZoomIndicator == CAM_ZOOM_1)
 						CarZoomValue = LCS_ZOOM_ONE_DISTANCE[vehArrPos];
 					else if (CarZoomIndicator == CAM_ZOOM_2)
@@ -3733,7 +3733,7 @@ CCamera::SetZoomValueCamStringScript(int16 dist)
 		GetArrPosForVehicleType(vehApp, vehArrPos);
 
 #ifdef FREE_CAM
-		if (bFreeCam) {
+		if (UseFreeCarCam()) {
 			switch (dist) {
 			case 0: m_fCarZoomValueScript = LCS_ZOOM_ONE_DISTANCE[vehArrPos]; break;
 			case 1: m_fCarZoomValueScript = LCS_ZOOM_TWO_DISTANCE[vehArrPos]; break;

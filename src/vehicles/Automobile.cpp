@@ -3244,7 +3244,7 @@ CAutomobile::FireTruckControl(void)
 		if(!CPad::GetPad(0)->GetCarGunFired())
 			return;
 #ifdef FREE_CAM
-		if (!CCamera::bFreeCam)
+		if (!CCamera::UseFreeCarCam())
 #endif 
 		{
 			m_fCarGunLR += CPad::GetPad(0)->GetCarGunLeftRight() * 0.00025f * CTimer::GetTimeStep();
@@ -3319,7 +3319,7 @@ CAutomobile::TankControl(void)
 	// Rotate turret
 	float prevAngle = m_fCarGunLR;
 #ifdef FREE_CAM
-	if(!CCamera::bFreeCam)
+	if(!CCamera::UseFreeCarCam())
 #endif
 		m_fCarGunLR -= CPad::GetPad(0)->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
 
@@ -3890,6 +3890,9 @@ CAutomobile::DoDriveByShootings(void)
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
 			lookingRight = true;
 	}
+#ifdef NINTENDO_WII
+	PickDriveBySideFromView(lookingLeft, lookingRight);
+#endif
 
 	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 	AnimationId leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;

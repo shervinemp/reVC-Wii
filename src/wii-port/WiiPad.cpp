@@ -18,7 +18,6 @@
 #include "WiiPad.h"
 #include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
-#include "WiiLog.h"
 #include "WiiTrace.h"
 #include "World.h"
 #include "platform.h"
@@ -163,6 +162,10 @@ constexpr float kPointerRatePerSec = 420.0f;
 // vertical axis topped out short of that, and 0.5 for one build that mistook an
 // off-centre aim box (see kAimBoxes) for a slow pitch.
 constexpr float kPointerPitchScale = 0.26f;
+// The same balance for the car camera.  Process_FollowCar_SA applies one gain to both
+// axes where the on-foot camera pitches about twice as fast as it yaws, so nothing has
+// to be taken back out first: this is simply the ratio the factor above ends up at.
+constexpr float kPointerPitchScaleCar = 0.5f;
 
 // The pointer stops being tracked the moment it leaves the sensor bar's field,
 // which is exactly what happens at the END of a long turn: the remote is still
@@ -280,7 +283,6 @@ float s_heldSeconds;
 float s_aimX;
 float s_aimY;
 bool s_aimActive;
-bool s_reportedVehicle;
 
 // The turn rate the camera is actually using, eased towards whatever the response
 // curve asks for.  Shared by both pointer paths -- the aiming one and the plain
@@ -874,49 +876,16 @@ pointerAimWanted(void)
 		return false;
 	CPlayerPed *player = FindPlayerPed();
 	// Getting in or out of a car is excluded because the camera is mid-hand-over
-	// there.  Driving sits behind its own switch, off by default: it does not work,
-	// and this is a toggle to try it with, not a claim that it works.
-	//
-	// Using3rdPersonMouseCam() is NOT the blocker.  The player camera is MODE_FOLLOWPED
-	// out of a car -- Camera.cpp picks ReqMode that way unconditionally -- and that
-	// function already accepts MODE_FOLLOWPED.  So whatever stops this is elsewhere,
-	// and the switch is here so the question gets settled by playing rather than by
-	// reading more code.
+	// there.  Driving sits behind its own switch, AIM IN CAR: with it on the camera
+	// code gives vehicles the one car camera that reads the pointer (see
+	// WiiPointerAimInCar and CCamera::UseFreeCarCam), and with it off the stock car
+	// camera never looks at the pointer at all.
 	if(player == nullptr ||
 	   player->m_nPedState == PED_ENTER_CAR || player->m_nPedState == PED_CARJACK)
 		return false;
-	if(player->bInVehicle){
-#ifdef NINTENDO_WII
-		// One line, once per entry into a vehicle, naming every input to the decision
-		// above and this one.  Driving aim has now failed three explanations in a row
-		// -- the camera mode, then a missing mouse write, then a default that was off
-		// -- and each of those was wrong.  This does not guess: it reports the camera
-		// mode, the active cam, the ped state, the control method and both switches on
-		// the first frame of the refusal, which settles it whatever the answer is.
-		//
-		// Re-armed on leaving the vehicle, so it fires once per entry rather than once
-		// per session.  Rare enough to be free.
-		if(!s_reportedVehicle){
-			s_reportedVehicle = true;
-			wiiLog("WII aim: in vehicle -- camMode=%d activeCam=%d pedState=%d"
-			       " controlMethod=%d mouseCam=%d aimOn=%d inCar=%d box=%d\n",
-			       (int)TheCamera.Cams[TheCamera.ActiveCam].Mode,
-			       (int)TheCamera.ActiveCam,
-			       (int)player->m_nPedState,
-			       (int)FrontEndMenuManager.m_ControlMethod,
-			       (int)CCamera::m_bUseMouse3rdPerson,
-			       (int)WiiPointerAimEnabled,
-			       (int)WiiAimInCar,
-			       (int)WiiPointerBox);
-		}
-#endif
-		if(!WiiAimInCar)
-			return false;
-	}else{
-#ifdef NINTENDO_WII
-		s_reportedVehicle = false;
-#endif
-	}	// No weapon required.  The crosshair follows the pointer whether or not a gun
+	if(player->bInVehicle && !WiiAimInCar)
+		return false;
+	// No weapon required.  The crosshair follows the pointer whether or not a gun
 	// is out, so the pointer position is always visible (the HUD draws a small dot
 	// when unarmed) and the shot ray keeps tracing through the same point.  The
 	// weapon used to gate this, which is why there was nothing to aim with until
@@ -974,7 +943,7 @@ steerCrosshair(float targetX, float targetY)
 // still), which is what leaves the camera steady while the player aims.
 bool
 irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
-	float &outX, float &outY)
+	float &outX, float &outY, float pitchScale)
 {
 	const float width = (float)RsGlobal.maximumWidth;
 	const float height = (float)RsGlobal.maximumHeight;
@@ -1011,7 +980,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 		return false;
 
 	outX = (overX/magnitude)*applied;
-	outY = (overY/magnitude)*applied*kPointerPitchScale;
+	outY = (overY/magnitude)*applied*pitchScale;
 	return true;
 }
 
@@ -1044,6 +1013,16 @@ bool
 WiiPadReturnToMenuRequested(void)
 {
 	return s_returnToMenu;
+}
+
+// The switches pointerAimWanted reads for a vehicle, plus the one thing that stops
+// WiiPadCaptureMouse feeding the camera at all.  Settings and a connection mask, so
+// it cannot flicker from frame to frame and swap the car camera under the player.
+bool
+WiiPointerAimInCar(void)
+{
+	return WiiPointerAimEnabled && WiiAimInCar && CCamera::m_bUseMouse3rdPerson &&
+		s_connectedGameCubePads == 0;
 }
 
 void
@@ -1081,6 +1060,11 @@ WiiPadApplyControlDefaults(void)
 	ControlsManager.m_lStickDeadzone = 0.12f;
 	ControlsManager.m_lStickSensX = 1.15f;
 	ControlsManager.m_lStickSensY = 1.15f;
+	// Mouse steering stays off on this port, whatever a settings file says.  The row
+	// that toggles it is not on the Wii's controls page, so a stored "on" could never
+	// be turned back off -- and with it on the pointer steers the car (Automobile.cpp)
+	// and the car camera refuses the pointer outright (Cam.cpp's FollowCar_SA).
+	CVehicle::m_bDisableMouseSteering = true;
 }
 
 void
@@ -1312,7 +1296,8 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		bool turning;
 		if(aimWithPointer){
 			float crosshairX, crosshairY;
-			turning = irAimRate(*data, crosshairX, crosshairY, rateX, rateY);
+			turning = irAimRate(*data, crosshairX, crosshairY, rateX, rateY,
+				playerInVehicle() ? kPointerPitchScaleCar : kPointerPitchScale);
 			// How fast the reticle was actually travelling, so that losing the bar
 			// halfway through a sweep can carry on the same way instead of stopping
 			// dead.  Divided by the frame time so it is per second and does not

@@ -539,6 +539,8 @@ public:
 	static bool m_bUseMouse3rdPerson;
 #ifdef FREE_CAM
 	static bool bFreeCam;
+	// Whether vehicles get the SA-style follow camera (CCam::Process_FollowCar_SA).
+	static bool UseFreeCarCam(void);
 #endif
 
 	// High level and misc
