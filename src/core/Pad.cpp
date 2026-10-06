@@ -18,6 +18,7 @@
 #include "Camera.h"
 #include "Game.h"
 #include "CutsceneMgr.h"
+#include "Coop.h"
 #include "Font.h"
 #include "Hud.h"
 #include "Text.h"
@@ -120,8 +121,13 @@ FrontEndPad(void)
 	// presses a button the menu follows their pad instead.  Stateless on purpose:
 	// there is nothing to reset when they unplug, and player 1's pad is the answer
 	// again the moment they stop.
+	//
+	// Only while the partner is actually a player.  A second controller that is
+	// connected but idle -- the launch remote while its owner plays on a GameCube
+	// pad, which is exactly the case the join button exists to ignore -- would
+	// otherwise nudge the menu every time it was set down on a button.
 #ifdef NINTENDO_WII
-	if(PadJustPressed(CPad::GetPad(PAD_COOP)))
+	if(CCoop::GetPartner() != nil && PadJustPressed(CPad::GetPad(PAD_COOP)))
 		return CPad::GetPad(PAD_COOP);
 #endif
 	return CPad::GetPad(0);

@@ -979,7 +979,7 @@ CMenuScreenCustom aScreens[] = {
 	// exactly that -- so no new menu action and no new option class was needed.
 	//
 	// Grouped rather than listed flat because a page holds NUM_MENUROWS (18) rows and
-	// there are 28 cheats, and because "All Cars Heli" next to "Kangaroo" helps nobody.
+	// there are 29 cheats, and because "All Cars Heli" next to "Kangaroo" helps nobody.
 	#define WII_CHEAT_ROW(label, fn) \
 		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_CENTER,
 

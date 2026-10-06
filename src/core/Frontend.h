@@ -250,7 +250,7 @@ enum eMenuScreen
 	// needed and none of the original mapping assumptions apply.
 	//
 	// Split across pages rather than listed flat because a page holds NUM_MENUROWS
-	// (18) entries and there are 28 cheats.
+	// (18) entries and there are 29 cheats.
 	//
 	// Appended, never inserted: aScreens[] is positional and indexed by these values,
 	// so adding one in the middle would silently shift every page after it.  OUTRO has
