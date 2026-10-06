@@ -11,35 +11,10 @@
 #define POP_MEMID() gMainHeap.PopMemId()
 #define REGISTER_MEMPTR(ptr) gMainHeap.RegisterMemPointer(ptr)
 #else
-// These used to be empty macros, and that is the whole reason this codebase cannot say
-// where memory went: with USE_CUSTOM_ALLOCATOR off, every one of the ~90
-// PUSH_MEMID(MEMID_STREAM_TEXUTRES)-style call sites in src/ did nothing, so streamed
-// models, streamed collision, streamed textures, the render and the world all drew from
-// one arena with nothing recording which was which.
-//
-// A texture leak of 18MB was found by reading librw rather than by measuring, and
-// 25MB of the same 43MB drain is still unattributed.  Each wrong guess about that
-// costs a whole play cycle, so the labels that already exist are hooked up here.
-//
-// The bodies are at the bottom of this header, below the MEMID enum, because they
-// reference MEMID_FREE.  A macro is expanded where it is used, so only the inline
-// functions care about that ordering -- but the #define has to live HERE, and an
-// earlier version of this file left the empty definition in place while adding the
-// real one further down.  That compiled, linked and ran, and reported every allocation
-// as MEMID_FREE: the push and pop were never called at all, so the linker correctly
-// discarded the nesting stack as unused.  WiiMemIdSelfTest below exists so that class
-// of mistake announces itself instead of looking like a measurement.
-#define PUSH_MEMID(id) wiiMemIdPush(id)
-#define POP_MEMID()    wiiMemIdPop()
+#define PUSH_MEMID(id)
+#define POP_MEMID()
 #define REGISTER_MEMPTR(ptr)
-
-// Below the MEMID enum, not above it: the inline functions reference MEMID_FREE.
-enum { WII_MEMID_SLOTS = 32 };
-
-extern uint32 g_wiiMemidBytes[WII_MEMID_SLOTS];
-extern int32  g_wiiMemidCurrent;
-extern int32  g_wiiMemidStack[16];
-extern int32  g_wiiMemidDepth;
+#endif
 
 enum {
 	MEMID_FREE,
@@ -66,6 +41,42 @@ enum {
 
 	NUM_FIXED_MEMBLOCKS = 6
 };
+
+// Per-MEMID allocation attribution for the Wii port.  A diagnostic, compiled in only at
+// CREATE_LOG 2; a normal build keeps the empty PUSH_MEMID and POP_MEMID above, on the
+// Wii as everywhere else.
+//
+// With USE_CUSTOM_ALLOCATOR off, every one of the ~90 PUSH_MEMID(MEMID_STREAM_TEXUTRES)-
+// style call sites in src/ does nothing, so streamed models, streamed collision,
+// streamed textures, the render and the world all draw from one arena with nothing
+// recording which was which.  Switched on, the labels that already exist are hooked up:
+// the push and pop below keep a current id, and the allocator hooks in wii_game.cpp
+// charge each allocation to it.
+//
+// Redefined here, below the MEMID enum, because the inline functions reference
+// MEMID_FREE.  wiiMemIdSelfTest exists because an earlier version of this left the empty
+// definitions in force while the machinery sat compiled in beside them: it built, ran and
+// reported every allocation as MEMID_FREE, which reads as one small category rather than
+// as a fault.
+#if defined NINTENDO_WII && !defined USE_CUSTOM_ALLOCATOR
+#include "wii-port/WiiTrace.h"	// CREATE_LOG
+#if CREATE_LOG >= 2
+#define WII_MEMID_ATTRIBUTION
+#endif
+#endif
+
+#ifdef WII_MEMID_ATTRIBUTION
+#undef PUSH_MEMID
+#undef POP_MEMID
+#define PUSH_MEMID(id) wiiMemIdPush(id)
+#define POP_MEMID()    wiiMemIdPop()
+
+enum { WII_MEMID_SLOTS = 32 };
+
+extern uint32 g_wiiMemidBytes[WII_MEMID_SLOTS];
+extern int32  g_wiiMemidCurrent;
+extern int32  g_wiiMemidStack[16];
+extern int32  g_wiiMemidDepth;
 
 // Saturating rather than wrapping: a nest deeper than the stack would otherwise
 // mislabel the rest of the frame's allocations as MEMID_FREE, which is the one label
@@ -112,7 +123,7 @@ static inline void wiiMemIdCharge(size_t sz)
 
 // Returns 1 if the nesting is working, 0 if it is not.
 //
-// Exists because of the mistake recorded at the PUSH_MEMID macro above: the macros
+// Exists because of the mistake recorded where PUSH_MEMID is redefined above: the macros
 // compiled, the build linked, the log looked plausible, and the counters were dead.
 // Nothing about that failure is visible in the output -- it reads as one small category
 // rather than as a fault, which is the worst way for an instrument to fail.  A self-test

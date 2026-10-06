@@ -24,7 +24,7 @@ void WiiSpeakerPlayRing(void);
 // to the ear.  The game's streamed-audio code drives these.
 //
 // How the TV treats the line while it is on the remote: 0 off (the TV plays it as
-// always), 1 remote only (the TV is muted), 2 both (the TV drops to a quiet level, so
+// always), 1 remote only (the TV is muted), 2 both (the TV stays at full volume, so
 // nothing is lost if the remote cannot be heard).  The "Phone Calls" row on the sound
 // page; persisted to the INI.
 extern int8_t WiiPhoneRemoteMode;

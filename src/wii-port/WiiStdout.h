@@ -16,4 +16,8 @@
 // the television at boot, where there is nothing to scroll yet.
 void WiiStdoutHookInstall(void);
 
+// Puts the console's own writer back.  For a boot that halts after the hook went
+// in: the reason has to reach the television, and nothing else will carry it.
+void WiiStdoutHookRemove(void);
+
 #endif // NINTENDO_WII

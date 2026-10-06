@@ -378,15 +378,11 @@ DoRWStuffEndOfFrame(void)
 {
 	CDebug::DisplayScreenStrings();	// custom
 	CDebug::DebugDisplayTextBuffer();
-#ifdef NINTENDO_WII
-	WiiTraceSetStep("e:flush");
-#endif
 	FlushObrsPrintfs();
-#ifdef NINTENDO_WII
-	WiiTraceSetStep("e:camend");
-#endif
 	RwCameraEndUpdate(Scene.camera);
 #ifdef NINTENDO_WII
+	// The call the libogc 3.0.4 freeze sat in (WII-LIBOGC-FREEZE.md), so it keeps a
+	// zone of its own: a stall line naming it again is the same fault again.
 	WiiTraceSetStep("e:present");
 #endif
 	RsCameraShowRaster(Scene.camera);
@@ -1393,44 +1389,22 @@ RenderScene(void)
 	}
 #endif
 	PUSH_RENDERGROUP("RenderScene");
-	// RenderScene is twelve distinct passes, so "draw:world" would still leave twelve
-	// candidates.  Marked individually for the same reason as the outer zone: every
-	// hang has landed in this region and the label has never narrowed it.  A pointer
-	// store each, no logging.
-#ifdef NINTENDO_WII
-	#define WII_WORLD_STEP(name) WiiTraceSetStep(name)
-#else
-	#define WII_WORLD_STEP(name)
-#endif
-	WII_WORLD_STEP("w:clouds");
 	CClouds::Render();
-	WII_WORLD_STEP("w:horizon");
 	DoRWRenderHorizon();
-	WII_WORLD_STEP("w:roads");
 	CRenderer::RenderRoads();
-	WII_WORLD_STEP("w:coronaRefl");
 	CCoronas::RenderReflections();
-	WII_WORLD_STEP("w:barRoads");
 	CRenderer::RenderEverythingBarRoads();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
-	WII_WORLD_STEP("w:water");
 	CWaterLevel::RenderWater();
-	WII_WORLD_STEP("w:boats");
 	CRenderer::RenderBoats();
-	WII_WORLD_STEP("w:underwater");
 	CRenderer::RenderFadingInUnderwaterEntities();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
-	WII_WORLD_STEP("w:transWater");
 	CWaterLevel::RenderTransparentWater();
-	WII_WORLD_STEP("w:fading");
 	CRenderer::RenderFadingInEntities();
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
-	WII_WORLD_STEP("w:rain");
 	CWeather::RenderRainStreaks();
-	WII_WORLD_STEP("w:sunRefl");
 	CCoronas::RenderSunReflection();
 	POP_RENDERGROUP();
-#undef WII_WORLD_STEP
 }
 
 void
@@ -1488,17 +1462,7 @@ Render2dStuff(void)
 	RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
 	RwRenderStateSet(rwRENDERSTATECULLMODE, (void*)rwCULLMODECULLNONE);
 
-	// The HUD pass, one marker per draw.  Same reason as the world pass: this is
-	// fifteen separate draws under a single label, and the freeze now lands in this
-	// tail rather than anywhere in the renderer.  Pointer stores, no logging.
-#ifdef NINTENDO_WII
-	#define WII_HUD_STEP(n) WiiTraceSetStep(n)
-#else
-	#define WII_HUD_STEP(n)
-#endif
-	WII_HUD_STEP("h:replay");
 	CReplay::Display();
-	WII_HUD_STEP("h:pickup");
 	CPickups::RenderPickUpText();
 
 	if(TheCamera.m_WideScreenOn
@@ -1539,11 +1503,8 @@ Render2dStuff(void)
 		CSprite2d::DrawRect(CRect(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(210), 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT), black);
 	}
 
-	WII_HUD_STEP("h:radio");
 	MusicManager.DisplayRadioStationName();
-	WII_HUD_STEP("h:console");
 	TheConsole.Display();
-	WII_HUD_STEP("h:chud");
 #ifdef GTA_SCENE_EDIT
 	if(CSceneEdit::m_bEditOn)
 		CSceneEdit::Draw();
@@ -1551,22 +1512,14 @@ Render2dStuff(void)
 #endif
 		CHud::Draw();
 
-	WII_HUD_STEP("h:fx2d");
 	CSpecialFX::Render2DFXs();
-	WII_HUD_STEP("h:onscn");
 	CUserDisplay::OnscnTimer.ProcessForDisplay();
-	WII_HUD_STEP("h:msg");
 	CMessages::Display();
-	WII_HUD_STEP("h:darkel");
 	CDarkel::DrawMessages();
-	WII_HUD_STEP("h:garage");
 	CGarages::PrintMessages();
-	WII_HUD_STEP("h:paderr");
 	CPad::PrintErrorMessage();
-	WII_HUD_STEP("h:fonts");
 	CFont::DrawFonts();
 #ifndef MASTER
-	WII_HUD_STEP("h:occl");
 	COcclusion::Render();
 #endif
 
@@ -1574,7 +1527,6 @@ Render2dStuff(void)
 	DebugMenuRender();
 #endif
 	POP_RENDERGROUP();
-#undef WII_HUD_STEP
 }
 
 void
@@ -1630,17 +1582,10 @@ Idle(void *arg)
 	CGame::Process();
 	tbEndTimer("CGame::Process");
 #ifdef NINTENDO_WII
-	// Bracketing the tail of a frame, which had no zones in it at all.
-	//
-	// Every zone so far lives INSIDE CGame::Process, so a freeze reporting the last
-	// one only proved the spin was at or after it -- not inside it.  "car removal"
-	// was reported for sixty-five seconds and read as the culprit, when in fact
-	// everything from here to the end of the frame was unnamed: the audio service,
-	// the light setup, and the entire render with its GX calls.  A zone is a lower
-	// bound and was treated as an upper one.
-	//
-	// So the tail is bracketed explicitly.  Between these the freeze names which of
-	// the three it is in.
+	// Coarse zones for the watchdog (WiiTrace): when a frame never finishes, the
+	// stall line names the last one passed.  Each is a pointer store and nothing
+	// is logged.  A zone is a lower bound -- the frame got at least this far -- so
+	// these bracket the phases of a frame rather than every call in it.
 	WiiTraceSetStep("game process done");
 #endif
 	POP_MEMID();
@@ -1664,13 +1609,6 @@ Idle(void *arg)
 	}
 	
 	SetLightsWithTimeOfDayColour(Scene.world);
-#ifdef NINTENDO_WII
-	// The freeze narrowed to [audio done], which covers the light setup, the whole
-	// render, and DoRWStuffEndOfFrame.  This splits the first of those off, so what
-	// remains is unambiguously the render plus the end-of-frame RW calls -- and a GPU
-	// wait is the thing that fits a frame which stops without allocating anything.
-	WiiTraceSetStep("lights done");
-#endif
 
 	if(arg == nil)
 		return;
@@ -1685,13 +1623,6 @@ Idle(void *arg)
 	PUSH_MEMID(MEMID_RENDER);
 
 #ifdef NINTENDO_WII
-	// The freeze reported "stuck in [lights done]" for twelve consecutive samples
-	// across forty-five seconds, which brackets it to this function between the light
-	// setup and the end-of-frame RW calls.  This splits those two apart, so the next
-	// occurrence names the render or DoRWStuffEndOfFrame specifically rather than the
-	// pair.  A GPU wait fits everything observed -- a frame that stops without
-	// allocating anything, which is what a byte-identical heap across every sample
-	// has said from the start.
 	WiiTraceSetStep("render start");
 #endif
 
@@ -1709,9 +1640,6 @@ Idle(void *arg)
 		RsMouseSetPos(&pos);
 #endif
 
-		#ifdef NINTENDO_WII
-		WiiTraceSetStep("render list");
-#endif
 		tbStartTimer(0, "CnstrRenderList");
 #ifdef PC_WATER
 		CWaterLevel::PreCalcWaterGeometry();
@@ -1730,9 +1658,6 @@ Idle(void *arg)
 		tbEndTimer("CnstrRenderList");
 
 		tbStartTimer(0, "PreRender");
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("prerender");
-#endif
 		CRenderer::PreRender();
 #ifdef NINTENDO_WII
 		if(wiiIdleFrame <= 8)
@@ -1740,9 +1665,6 @@ Idle(void *arg)
 #endif
 		tbEndTimer("PreRender");
 #ifdef NINTENDO_WII
-		// Everything left in this block is the actual draw, so this is the last name
-		// before "render done".  A freeze reporting this one is inside the draw itself,
-		// which is where a GPU wait belongs.
 		WiiTraceSetStep("scene draw");
 #endif
 
@@ -1787,13 +1709,6 @@ Idle(void *arg)
 #endif
 
 		tbStartTimer(0, "RenderScene");
-#ifdef NINTENDO_WII
-		// Sub-zones inside "scene draw".  One marker cannot localise a hang across
-		// RenderScene, the env map, the effects, the droplets, motion blur and the 2D
-		// pass -- and "scene draw" is where every hang so far has landed, so it is the
-		// one label that has told us nothing.  A pointer store each, no logging.
-		WiiTraceSetStep("draw:world");
-#endif
 		RenderScene();
 #ifdef NINTENDO_WII
 		if(wiiIdleFrame <= 8)
@@ -1802,15 +1717,9 @@ Idle(void *arg)
 		tbEndTimer("RenderScene");
 
 #ifdef EXTENDED_PIPELINES
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("draw:envmap");
-#endif
 		CustomPipes::EnvMapRender();
 #endif
 
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("draw:effects");
-#endif
 		RenderDebugShit();
 		RenderEffects();
 
@@ -1819,25 +1728,16 @@ Idle(void *arg)
 		        TheCamera.SetMotionBlurAlpha(150);
 
 #ifdef SCREEN_DROPLETS
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("draw:droplets");
-#endif
 		CPostFX::GetBackBuffer(Scene.camera);
 		ScreenDroplets::Process();
 		ScreenDroplets::Render();
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("draw:blur");
-#endif
 		TheCamera.RenderMotionBlur();
 		tbEndTimer("RenderMotionBlur");
 
 		tbStartTimer(0, "Render2dStuff");
-#ifdef NINTENDO_WII
-		WiiTraceSetStep("draw:hud");
-#endif
 		Render2dStuff();
 		tbEndTimer("Render2dStuff");
 	}else{
@@ -1869,16 +1769,10 @@ Idle(void *arg)
 		goto popret;
 #endif
 
-#ifdef NINTENDO_WII
-	WiiTraceSetStep("draw:fade");
-#endif
 	tbStartTimer(0, "DoFade");
 	DoFade();
 	tbEndTimer("DoFade");
 
-#ifdef NINTENDO_WII
-	WiiTraceSetStep("draw:2dpost");
-#endif
 	tbStartTimer(0, "Render2dStuff-Fade");
 	Render2dStuffAfterFade();
 	tbEndTimer("Render2dStuff-Fade");

@@ -156,10 +156,10 @@ watchdogMain(void*)
 	// walk this is two register reads -- SYS_GetArena1Size and SYS_GetArena2Size are
 	// not mallinfo and do not walk anything.
 #if CREATE_LOG >= 2
-constexpr unsigned int kArenaSampleSeconds = 5;
+	constexpr unsigned int kArenaSampleSeconds = 5;
 #endif
 
-unsigned int stalledSeconds = 0;
+	unsigned int stalledSeconds = 0;
 	unsigned int secondsSinceHeap = 0;
 	// For the livelock check, which is on the frame-turning path and so is
 	// independent of the no-frame one above.
@@ -201,7 +201,7 @@ unsigned int stalledSeconds = 0;
 			secondsSinceArena = 0;
 			const unsigned int arena1 = (unsigned int)SYS_GetArena1Size();
 			const unsigned int arena2 = (unsigned int)SYS_GetArena2Size();
-			if(lastArena2 != 0xFFFFFFFFu && arena2 < lastArena2)
+			if(lastArena2 != 0xFFFFFFFFu && arena2 < lastArena2){
 				// The pending request count rides along because the arena drain and the
 				// request list may or may not be the same curve, and that difference is
 				// the whole question.  If both fall together, something is queued that
@@ -293,6 +293,7 @@ unsigned int stalledSeconds = 0;
 						               kMemIdNames[best], s_memidGrowth[best] / 1024);
 					}
 				}
+			}
 			lastArena2 = arena2;
 		}
 #endif
@@ -399,7 +400,6 @@ WiiTraceSetMemIdTotals(const int *cumulativeById, int numIds)
 	for(int i = 0; i < numIds; i++)
 		s_memidTotals[i] = cumulativeById[i];
 	s_memidSlotCount = numIds;
-	s_memidHaveTotals = true;
 }
 
 void
@@ -455,19 +455,6 @@ WiiTraceTick(void)
 {
 #if CREATE_LOG
 	s_stepSerial++;
-#endif
-}
-
-int
-WiiTraceLogFd(void)
-{
-#if CREATE_LOG
-	// Deliberately takes no mutex.  The one caller is a signal handler, where
-	// taking the log mutex could deadlock against the thread that faulted while
-	// holding it -- which is the most likely way to have faulted at all.
-	return s_logFile != nullptr ? fileno(s_logFile) : -1;
-#else
-	return -1;
 #endif
 }
 

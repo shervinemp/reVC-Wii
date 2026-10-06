@@ -58,10 +58,14 @@ void WiiPadUpdateRumble(void);
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);
 
-// True while a Nunchuk is plugged into the Wiimote on channel 0.  The port
-// requires one (the stick does all movement), so the boot screen uses this to
-// block until one is attached.  It never selects the Wiimote as the primary
-// pad; a Nunchuk is required in addition to, not instead of, whatever is held.
-bool WiiPadNunchukConnected(void);
+// True once something that can actually play is connected: a GameCube pad, a
+// Classic Controller, or a Wiimote with a Nunchuk.  A bare Wiimote is not enough
+// (nothing on it walks or steers), so the boot screen blocks on this.
+bool WiiPadCanPlay(void);
+
+// True once HOME has asked to go back to the Wii menu.  The request quits the
+// game the ordinary way; main() checks this after the log is closed and makes
+// the SYS_ResetSystem call there.
+bool WiiPadReturnToMenuRequested(void);
 
 #endif

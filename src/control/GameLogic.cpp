@@ -33,9 +33,13 @@
 #include "SaveBuf.h"
 
 #ifdef NINTENDO_WII
-#include <sys/time.h>
 #include "wii-port/WiiTrace.h"
+#endif
+#if defined NINTENDO_WII && CREATE_LOG >= 2
+#include <sys/time.h>
 // One line per step of a load: how long it took, and what it left the heap doing.
+// Full diagnostics only: it is eight lines and eight heap walks on every respawn and
+// every load, which is not what the event log at CREATE_LOG 1 is for.
 //
 // This is the only place the twenty second post-load stall can be attributed to
 // something.  The watchdog can say the frame loop stopped turning and the heap
@@ -142,17 +146,12 @@ CGameLogic::SortOutStreamingAndMemory(const CVector &pos)
 	WII_LOAD_STEP("load scene", CStreaming::LoadScene(pos));
 	WII_LOAD_STEP("dress", CWorld::Players[CWorld::PlayerInFocus].m_pPed->Dress());
 	CTimer::Update();
-#ifdef NINTENDO_WII
 #undef WII_LOAD_STEP
-#endif
 }
 
 void
 CGameLogic::Update()
 {
-#ifdef NINTENDO_WII
-	WiiTraceSetStep("game logic");
-#endif
 	CVector vecRestartPos;
 	float fRestartFloat;
 

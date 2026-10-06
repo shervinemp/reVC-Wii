@@ -14,7 +14,7 @@
 extern int8_t WiiPointerAimEnabled;
 
 // How far from the middle the crosshair can roam before the camera turns instead:
-// 0 small, 1 medium (the default), 2 large.  Persisted to the INI.
+// 0 small (the default), 1 medium, 2 large.  Persisted to the INI.
 extern int8_t WiiPointerBox;
 
 // Whether the pointer aims while driving.  Off by default because it does not work

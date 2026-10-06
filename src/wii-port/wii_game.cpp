@@ -7,7 +7,6 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
-#include <signal.h>
 
 #include <fat.h>
 #include <gccore.h>
@@ -19,9 +18,9 @@
 #include <wiiuse/wpad.h>
 
 #include "common.h"
-// For g_wiiMemidBytes and WII_MEMID_SLOTS: the per-MEMID allocation counters that
-// PUSH_MEMID maintains.  See the comment on those macros in MemoryHeap.h for why they
-// exist at all.
+// For WII_MEMID_ATTRIBUTION and, when that is on, g_wiiMemidBytes and WII_MEMID_SLOTS:
+// the per-MEMID allocation counters that PUSH_MEMID maintains at CREATE_LOG 2.  See the
+// comment on those macros in MemoryHeap.h for why they exist at all.
 #include "rw/MemoryHeap.h"
 #include "crossplatform.h"
 #include "audio_enums.h"
@@ -35,7 +34,9 @@
 #include "Pad.h"
 #include "PCSave.h"
 #include "platform.h"
+#include "RwHelper.h"
 #include "skeleton.h"
+#include "Sprite2d.h"
 #include "Streaming.h"
 #include "CdStream.h"
 #include "WiiLog.h"
@@ -125,6 +126,7 @@ tryInstallDirectory(const char *directory)
 	std::snprintf(s_installDirectory, sizeof(s_installDirectory), "%s", directory);
 	bootPrintf("WII game boot: data found at %s\n", directory);
 
+#ifdef WII_MEMID_ATTRIBUTION
 	// Does the per-MEMID allocation attribution actually work?  Asked here, at the
 	// first point the log is open, because the failure mode is silent: if PUSH_MEMID
 	// ever stops expanding to a real push then every allocation is charged to MEMID_FREE
@@ -132,6 +134,7 @@ tryInstallDirectory(const char *directory)
 	// exactly how it failed once already -- the macro was left defined to nothing while
 	// the machinery sat compiled in beside it, and nothing said so.
 	bootPrintf("WII memid attribution: %s\n", wiiMemIdSelfTest() ? "OK" : "BROKEN - PUSH_MEMID is not nesting");
+#endif
 	return true;
 }
 
@@ -306,7 +309,11 @@ haltBoot(const char *stage)
 	// the log may not have been started yet at this point in the boot, so the
 	// reason for the halt is written out here or not at all.  The console is
 	// the output the player can actually watch while the box sits black below.
+	// The console was silenced once the banners were up, and this is the one line
+	// that still has to reach the television.
+	WiiStdoutHookRemove();
 	std::printf("[boot] HALTED at %s\n", stage);
+	std::fflush(stdout);
 	WiiTraceCloseLog();
 	while(true)
 		VIDEO_WaitVSync();
@@ -418,8 +425,10 @@ psGrabScreen(RwCamera *camera)
 void psMouseSetPos(RwV2d *) {}
 RwBool psSelectDevice() { return TRUE; }
 
+#ifdef WII_MEMID_ATTRIBUTION
 // Allocator hooks, installed by returning a real table from psGetMemoryFunctions
-// rather than nil.
+// rather than nil.  Only at CREATE_LOG 2: a normal build returns nil below, and librw
+// allocates with plain malloc the way it always has.
 //
 // This function used to return nil, and that is why the MEMID accounting added for the
 // texture leak measured nothing: nil means RwEngineInit takes the Engine::init(nil)
@@ -489,6 +498,9 @@ static RwMemoryFunctions s_wiiMemFuncs = {
 };
 
 RwMemoryFunctions *psGetMemoryFunctions(void) { return &s_wiiMemFuncs; }
+#else
+RwMemoryFunctions *psGetMemoryFunctions(void) { return nullptr; }
+#endif
 RwBool psInstallFileSystem(void) { return TRUE; }
 RwBool psNativeTextureSupport() { return TRUE; }
 const char *_psGetUserFilesFolder() { return s_userFilesDirectory; }
@@ -712,6 +724,8 @@ namespace {
 
 devoptab_t *s_stdoutWrapper;
 const devoptab_t *s_consoleDevoptab;	// libogc's own, which stdout's cookie points at
+// What that devoptab wrote with before it was silenced, for WiiStdoutHookRemove.
+ssize_t (*s_consoleWrite)(struct _reent *r, void *fd, const char *ptr, size_t len);
 
 ssize_t
 stdoutSwallow(struct _reent *r, void *fd, const char *ptr, size_t len)
@@ -727,86 +741,6 @@ stdoutSwallow(struct _reent *r, void *fd, const char *ptr, size_t len)
 }
 
 } // namespace
-
-#ifdef NINTENDO_WII
-// --- a crash has to be caught at the moment it happens ------------------------
-// A line-oriented log cannot tell you where a hard fault was.  Everything it
-// holds was written by frames that already finished; the faulting frame writes
-// nothing at all, because the process is gone before it gets to.  That is
-// exactly what a real log showed: no stall line before the end, and a tail of
-// unrelated streaming chatter that correlated with nothing.
-//
-// So the fault gets its own writer.  Three rules make it safe inside a signal
-// handler: no printf and no snprintf (both allocate), no mutex (the log mutex
-// may well be the thing that was held when it faulted), and the message is
-// assembled with a hand-rolled hex writer into a stack buffer.  write() is
-// async-signal-safe, so one call to it is all it takes to put the faulting
-// address on the card.
-//
-// After writing it hands the signal back to the default disposition and
-// re-raises, so the console still does whatever it would normally have done
-// rather than this swallowing the crash.
-static int s_crashFd = -1;
-
-static char *
-putHex(char *p, u32 v)
-{
-	static const char digits[] = "0123456789ABCDEF";
-	for(int shift = 28; shift >= 0; shift -= 4)
-		*p++ = digits[(v >> shift) & 0xF];
-	return p;
-}
-
-static void
-crashHandler(int sig)
-{
-	char line[64];
-	char *p = line;
-
-	const char *tag = "WII CRASH sig=";
-	while(*tag)
-		*p++ = *tag++;
-	p = putHex(p, (u32)sig);
-	*p++ = ' ';
-	tag = "t=";
-	while(*tag)
-		*p++ = *tag++;
-	p = putHex(p, (u32)ticks_to_millisecs(gettime()));
-	*p++ = '\n';
-
-	if(s_crashFd >= 0){
-		// The one async-signal-safe call here, and the whole point of the handler.
-		ssize_t written = write(s_crashFd, line, (size_t)(p - line));
-		(void)written;
-	}
-
-	// Back to the default disposition and re-raise, so the crash still happens
-	// rather than being swallowed -- and so libogc's own handler, if it installs
-	// one, gets its turn afterwards.
-	signal(sig, SIG_DFL);
-	raise(sig);
-}
-
-// Installed once the log has a file to write to, since the handler needs its
-// descriptor.
-//
-// Deliberately signal() and not sigaction(): devkitPro's bare-metal newlib has
-// no SA_SIGINFO, no si_addr and no sa_sigaction, so the POSIX route does not
-// exist here and the faulting context is not available through the standard
-// handler.  The consequence is that this records THAT and WHEN a fault happened
-// but not the faulting PC -- that needs libogc's own exception API, which is a
-// separate piece of work.
-static void
-installCrashHandler(void)
-{
-	const int signals[] = { SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE };
-	for(unsigned i = 0; i < sizeof(signals)/sizeof(signals[0]); i++){
-		if(signal(signals[i], crashHandler) == SIG_ERR)
-			WiiTraceReport("WII crash: cannot handle signal %d\n", signals[i]);
-	}
-	WiiTraceReport("WII crash: handler installed\n");
-}
-#endif
 
 void
 WiiStdoutHookInstall(void)
@@ -827,6 +761,8 @@ WiiStdoutHookInstall(void)
 	// write_r does reach the FILE, and that is what silences the ~250 printf
 	// calls the engine makes.
 	devoptab_t *patched = (devoptab_t*)original;
+	s_consoleDevoptab = original;
+	s_consoleWrite = patched->write_r;
 	patched->write_r = stdoutSwallow;
 
 	// Still installed in the table as well, and still worth it: it covers
@@ -839,81 +775,83 @@ WiiStdoutHookInstall(void)
 	wrapper->name = "consoleQuiet";
 	wrapper->write_r = stdoutSwallow;
 	s_stdoutWrapper = wrapper;
-	s_consoleDevoptab = original;
 	devoptab_list[1] = wrapper;
 }
 
-// The port requires a Nunchuk: the stick does all walking and steering, so
-// without one there is nothing to move with.  Rather than drop the player into a
-// game they cannot control, block here with a centered notice -- the same idea
-// as a Wii game that needs an accessory -- and re-check every frame, so plugging
-// a Nunchuk in walks straight past it with no keypress.  Returns true once one is
-// present.  The screen is drawn with the game's own font on the dark background,
-// matching how a console title shows such a notice.
-static bool
-waitForNunchuk(void)
+// Gives the console its own writer back.  For haltBoot, whose message is for the
+// player in front of the television and would otherwise be swallowed with the rest.
+void
+WiiStdoutHookRemove(void)
 {
-	static bool logged;
-	if(!logged){
-		logged = true;
-		WiiTraceReport("WII pad: waiting for a Nunchuk controller\n");
-	}
+	if(s_consoleDevoptab != nullptr && s_consoleWrite != nullptr)
+		((devoptab_t*)s_consoleDevoptab)->write_r = s_consoleWrite;
+}
 
+// A bare Wiimote cannot play this: nothing on it walks or steers.  Rather than
+// drop the player into a game they cannot control, block here on a notice -- the
+// same idea as a Wii game that needs an accessory -- and re-check every frame, so
+// plugging in a Nunchuk walks straight past it with no keypress.  A Classic
+// Controller or a GameCube pad passes as well: both bring sticks of their own,
+// and WiiPad has a full layout for each.  Returns when one is present, or when
+// RsGlobal.quit is raised (power, reset, HOME), which the main loop then sees for
+// itself.
+static void
+waitForController(void)
+{
 	// The frontend textures carry the font, and this runs before the menu would
 	// have loaded them, so pull them in first.
 	FrontEndMenuManager.LoadAllTextures();
 
-	static wchar title[64];
+	// So a pad that is already there is seen before the first frame of the notice
+	// rather than after it.
+	WiiPadScan();
+	const bool waiting = !RsGlobal.quit && !WiiPadCanPlay();
+	if(waiting)
+		WiiTraceReport("WII pad: waiting for a controller that can play\n");
+
+	static wchar title[32];
 	static wchar body[128];
-	static bool stringsBuilt = false;
-	if(!stringsBuilt){
-		const char *a = "This game requires a Nii Remote(TM) Nunchuk Controller";
-		const char *b = "Please connect a Nunchuk to your Wii Remote, then continue.";
-		for(int i = 0; a[i] && i < 63; i++) title[i] = (wchar)a[i];
-		title[63] = 0;
-		for(int i = 0; b[i] && i < 127; i++) body[i] = (wchar)b[i];
-		body[127] = 0;
-		stringsBuilt = true;
-	}
+	AsciiToUnicode("Controller required", title);
+	AsciiToUnicode("Connect a Nunchuk to your Wii Remote, or use a Classic Controller"
+	               " or a GameCube Controller.", body);
 
-	while(!RsGlobal.quit && !WiiPadNunchukConnected()){
-		DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255);
+	while(!RsGlobal.quit && !WiiPadCanPlay()){
+		if(DoRWStuffStartOfFrame(0, 0, 0, 0, 0, 0, 255)){
+			// The frontend's own message layout (CMenuManager::SmallMessageScreen):
+			// centred on the middle of the screen and wrapped inside it, with the
+			// font's drop shadow doing the outlining.
+			CSprite2d::SetRecipNearClip();
+			CSprite2d::InitPerFrame();
+			CFont::InitPerFrame();
+			DefinedState();
 
-		CFont::SetBackgroundOff();
-		CFont::SetScale(SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(1.35f));
-		CFont::SetJustifyOn();
-		CFont::SetFontStyle(FONT_HEADING);
-		CFont::SetColor(CRGBA(255, 255, 255, 255));
-		CFont::SetDropShadowPosition(2);
-		CFont::PrintString(SCREEN_WIDTH / 2 - SCREEN_SCALE_X(1.0f),
-		                   SCREEN_SCALE_Y(32.0f) + SCREEN_SCALE_Y(2.0f), title);
-		CFont::SetColor(CRGBA(0, 0, 0, 255));
-		CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(1.0f),
-		                   SCREEN_SCALE_Y(32.0f) + SCREEN_SCALE_Y(2.0f), title);
+			CFont::SetBackgroundOff();
+			CFont::SetPropOn();
+			CFont::SetCentreOn();
+			CFont::SetCentreSize(SCREEN_SCALE_X(430.0f));
+			CFont::SetFontStyle(FONT_STANDARD);
+			CFont::SetColor(CRGBA(255, 255, 255, 255));
+			CFont::SetDropShadowPosition(2);
+			CFont::SetDropColor(CRGBA(0, 0, 0, 255));
 
-		CFont::SetScale(SCREEN_SCALE_X(0.8f), SCREEN_SCALE_Y(1.35f));
-		CFont::SetFontStyle(FONT_STANDARD);
-		CFont::SetColor(CRGBA(0, 0, 0, 255));
-		CFont::PrintString(SCREEN_WIDTH / 2 - SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(22.0f), body);
-		CFont::SetColor(CRGBA(255, 255, 255, 255));
-		CFont::PrintString(SCREEN_WIDTH / 2 + SCREEN_SCALE_X(1.0f), SCREEN_SCALE_Y(22.0f), body);
+			CFont::SetScale(SCREEN_SCALE_X(0.6f), SCREEN_SCALE_Y(1.2f));
+			CFont::PrintString(SCREEN_WIDTH / 2.0f, SCREEN_SCALE_Y(150.0f), title);
+			CFont::SetScale(SCREEN_SCALE_X(SMALLTEXT_X_SCALE), SCREEN_SCALE_Y(SMALLTEXT_Y_SCALE));
+			CFont::PrintString(SCREEN_WIDTH / 2.0f, SCREEN_SCALE_Y(195.0f), body);
 
-		CFont::DrawFonts();
-		DoRWStuffEndOfFrame();
+			CFont::DrawFonts();
+			DoRWStuffEndOfFrame();
+		}
 		VIDEO_WaitVSync();
 
-		// Keep the input stack ticking so the Nunchuk is seen the instant it is
-		// plugged in, and so HOME/quit still work while we wait.
+		// Keeps the input stack ticking so a controller is seen the instant it is
+		// plugged in, and so HOME and the console's own buttons still work while we
+		// wait.  The scan services the speaker and the log itself.
 		WiiPadScan();
-		WiiSpeakerService();
-		WiiTraceService();
 	}
 
-	if(!RsGlobal.quit){
-		WiiTraceReport("WII pad: Nunchuk connected, continuing\n");
-		return true;
-	}
-	return false;
+	if(waiting && !RsGlobal.quit)
+		WiiTraceReport("WII pad: controller connected, continuing\n");
 }
 
 // A frame that takes this long is not a frame, it is a freeze.  Far above
@@ -946,6 +884,12 @@ startSavedGame(bool teardownFirst)
 		// CPools::Initialise(), which creates the object pools, and re-running that
 		// over a live world rebuilds them underneath everything still holding a
 		// pointer into the old ones.
+		//
+		// The cheats go first, as they do on the desktop skeletons: with a cheat
+		// menu on this port a restart would otherwise carry the last game's
+		// weather, time scale and traffic toggles into the next one.
+		CPad::ResetCheats();
+		CPad::StopPadsShaking();
 		WiiTraceReport("WII load: shutdown (live world)\n");
 		CGame::ShutDownForRestart();
 		WiiTraceReport("WII load: InitialiseWhenRestarting\n");
@@ -991,11 +935,23 @@ startFreshGame(bool teardownFirst)
 	WiiTraceReport("WII game: starting new game\n");
 	WiiTraceHeap("pre-load");
 	if(teardownFirst){
+		// In-game restart, on the same pair startSavedGame uses and for the same
+		// reason: the world is already built, so it is cleared and re-initialised
+		// in place.  This used to clear it and then run InitialiseGame, which is
+		// CGame::Initialise -- the pools, the texture slots and the streaming setup
+		// all built a second time on top of the first.  With m_bWantToLoad clear,
+		// InitialiseWhenRestarting restarts the story rather than reading a slot,
+		// which is how the PS2 build starts a new game from a running one.
+		CPad::ResetCheats();
+		CPad::StopPadsShaking();
 		WiiTraceReport("WII new: shutdown (live world)\n");
 		CGame::ShutDownForRestart();
+		WiiTraceReport("WII new: InitialiseWhenRestarting\n");
+		CGame::InitialiseWhenRestarting();
+	}else{
+		WiiTraceReport("WII new: InitialiseGame\n");
+		InitialiseGame();
 	}
-	WiiTraceReport("WII new: InitialiseGame\n");
-	InitialiseGame();
 
 	FrontEndMenuManager.m_bGameNotLoaded = false;
 	FrontEndMenuManager.m_bWantToLoad = false;
@@ -1060,11 +1016,6 @@ main(int argc, char **argv)
 	selectUserFilesDirectory();
 	WiiTraceOpenLog(s_userFilesDirectory);
 	bootPrintf("WII game boot: user files dir=%s\n", s_userFilesDirectory);
-
-	// Now that there is a log to write to, catch a hard fault where it happens.
-	// Placed here rather than earlier because the handler needs the descriptor.
-	s_crashFd = WiiTraceLogFd();
-	installCrashHandler();
 
 	// Now that the boot banners are on the screen, stop the console device from
 	// taking any more of it.  Installed here rather than before the banners for
@@ -1134,10 +1085,11 @@ main(int argc, char **argv)
 	gGameState = GS_FRONTEND;
 	WiiTraceReport("WII game boot: entering frontend\n");
 
-	// No Nunchuk, no game.  This blocks on a centered notice and returns as soon
-	// as one is plugged in; RsGlobal.quit (power/reset/HOME-to-exit) still breaks.
-	if(!waitForNunchuk())
-		return 0;
+	// Nothing to play with, no game.  This blocks on a notice and returns as soon as
+	// a usable controller is there.  It also returns on RsGlobal.quit (power, reset,
+	// HOME), and then the loop below does not run and the exit underneath it does --
+	// so that way out closes the log like every other one.
+	waitForController();
 
 	u64 lastStallReport = 0;
 
@@ -1290,5 +1242,10 @@ main(int argc, char **argv)
 
 	WiiTraceReport("WII game boot: exiting\n");
 	WiiTraceCloseLog();
+	// HOME asked for the Wii menu rather than the loader (see WiiPadScan).  Made
+	// here, with the frame finished and the log on the card.  If the IOS refuses
+	// the call it returns, and falling out of main goes back to the loader instead.
+	if(WiiPadReturnToMenuRequested())
+		SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
 	return 0;
 }

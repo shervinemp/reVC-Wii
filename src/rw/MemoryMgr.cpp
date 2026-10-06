@@ -2,11 +2,11 @@
 #include "MemoryHeap.h"
 #include "MemoryMgr.h"
 
-#ifndef USE_CUSTOM_ALLOCATOR
-// Storage for the MEMID accounting that PUSH_MEMID/POP_MEMID maintain.  See the
-// comment on those macros in MemoryHeap.h: with the custom allocator off they used to
-// compile to nothing, which is why streamed models, collision, textures, the render
-// and the world were indistinguishable in the arena.
+#ifdef WII_MEMID_ATTRIBUTION
+// Storage for the MEMID accounting that PUSH_MEMID/POP_MEMID maintain at CREATE_LOG 2.
+// See the comment in MemoryHeap.h: with the custom allocator off those macros compile
+// to nothing, which is why streamed models, collision, textures, the render and the
+// world are indistinguishable in the arena.
 //
 // Lives here rather than in a header because it is the one translation unit that is
 // about memory management and is compiled regardless of the allocator setting.

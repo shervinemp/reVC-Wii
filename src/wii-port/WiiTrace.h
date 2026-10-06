@@ -64,12 +64,6 @@ void WiiTraceService(void);
 // sample, which is gated to CREATE_LOG 2.
 void WiiTraceStartWatchdog(void);
 
-// The open log's file descriptor, or -1 if there is no log.  Exists so a crash
-// handler can write() straight to the card: inside a signal handler that is the
-// only call available, since the log's own path takes a mutex that may be the
-// very thing that was held when the fault happened.
-int WiiTraceLogFd(void);
-
 // One increment per frame, from the game loop.  The watchdog judges "is the game
 // still turning" by this serial, and it used to move only when something was
 // logged -- which was an accident of how much the engine used to print, and is
