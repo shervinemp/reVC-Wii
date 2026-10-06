@@ -118,7 +118,11 @@
 	// with no new menu action to keep in step.  Works with one player present --
 	// the shared camera simply has one ped to frame -- which is the point: the
 	// mode is meant to be judged before a second remote exists.
-	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	//
+	// Centred, unlike the toggles above it: this row is on the pause page, whose
+	// rows are all centred, so the left alignment it inherited from the Mouse/IR
+	// toggles left it sitting out on its own.
+	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
