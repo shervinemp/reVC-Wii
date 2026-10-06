@@ -91,9 +91,19 @@ find_library(WII_MPG123_LIBRARY NAMES mpg123
             COMMAND ${CMAKE_COMMAND} -DSTAMP_H=${WII_BUILD_STAMP_HEADER}
                     -P "${PROJECT_SOURCE_DIR}/scripts/write-build-stamp.cmake"
         )
-        set_source_files_properties(${WII_GAME_SOURCES} PROPERTIES
+        # wii_game.cpp only: it is the one file that includes the stamp.  This used
+        # to be set on every game source, and since the stamp changes every second
+        # every build recompiled all ~250 of them -- and, being set after the SHA
+        # file's own OBJECT_DEPENDS above, it replaced that one as well.
+        set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/wii-port/wii_game.cpp" PROPERTIES
             OBJECT_DEPENDS "${WII_BUILD_STAMP_HEADER}"
         )
+        # Both halves of the banner are rewritten by targets that always run, but
+        # nothing ordered them before the compile: Ninja was free to build
+        # wii_game.o and GitSHA1.o first and have the rewrite land after them, so a
+        # build could carry the previous build's stamp and SHA.  An order-only edge,
+        # so it costs no extra recompiles.
+        add_dependencies(${EXECUTABLE} reVC_wii_build_stamp reVC_wii_git_sha)
         # wiiuse and bte carry WPAD, and both resolve against libogc, so they
         # have to precede it in the link order the toolchain appends.
         target_link_libraries(${EXECUTABLE} PRIVATE
