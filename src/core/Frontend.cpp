@@ -1177,7 +1177,7 @@ CMenuManager::DrawStandardMenus(bool activeScreen)
 						rightText = TheText.Get("FEM_OFF");
 					break;
 				case MENUACTION_CTRLCONFIG:
-					switch (CPad::GetPad(0)->Mode) {
+					switch (FrontEndPad()->Mode) {
 					case 0:
 						rightText = TheText.Get("FEC_CF1");
 						break;
@@ -3593,12 +3593,12 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 			// FIX: All those macros were hardcoded values originally.
 
 #ifndef MAP_ENHANCEMENTS
-			if (CPad::GetPad(0)->GetMouseWheelUpJustDown() || CPad::GetPad(0)->GetMouseWheelUpJustUp() || CPad::GetPad(0)->GetPageUp() || CPad::GetPad(0)->GetRightShoulder1()) {
+			if (FrontEndPad()->GetMouseWheelUpJustDown() || FrontEndPad()->GetMouseWheelUpJustUp() || FrontEndPad()->GetPageUp() || FrontEndPad()->GetRightShoulder1()) {
 				if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 					m_fMapSize = Min(MENU_Y(1000.0f), m_fMapSize + MENU_Y(15.f));
 				}
 			}
-			if (CPad::GetPad(0)->GetMouseWheelDownJustDown() || CPad::GetPad(0)->GetMouseWheelDownJustUp() || CPad::GetPad(0)->GetPageDown() || CPad::GetPad(0)->GetRightShoulder2()) {
+			if (FrontEndPad()->GetMouseWheelDownJustDown() || FrontEndPad()->GetMouseWheelDownJustUp() || FrontEndPad()->GetPageDown() || FrontEndPad()->GetRightShoulder2()) {
 				if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 					if (m_fMapSize > MENU_Y(MAP_MIN_SIZE)) {
 						if (m_fMapCenterY > SCREEN_HEIGHT/2)
@@ -3624,7 +3624,7 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 #else
 			// Adding marker
 			if (m_nMenuFadeAlpha == 255) {
-				if (CPad::GetPad(0)->GetRightMouseJustDown() || CPad::GetPad(0)->GetCrossJustDown()) {
+				if (FrontEndPad()->GetRightMouseJustDown() || FrontEndPad()->GetCrossJustDown()) {
 					if (mapCrosshair.y > m_fMapCenterY - m_fMapSize && mapCrosshair.y < m_fMapCenterY + m_fMapSize &&
 						mapCrosshair.x > m_fMapCenterX - m_fMapSize && mapCrosshair.x < m_fMapCenterX + m_fMapSize) {
 
@@ -3638,21 +3638,21 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 				}
 			}
 
-			if (CPad::GetPad(0)->GetMouseWheelDown() || CPad::GetPad(0)->GetPageDown() || CPad::GetPad(0)->GetRightShoulder2()) {
-				if (CPad::GetPad(0)->GetMouseWheelDown() && m_fMapSize > MENU_X(MAP_SIZE_TO_ALLOW_X_MOVE))
+			if (FrontEndPad()->GetMouseWheelDown() || FrontEndPad()->GetPageDown() || FrontEndPad()->GetRightShoulder2()) {
+				if (FrontEndPad()->GetMouseWheelDown() && m_fMapSize > MENU_X(MAP_SIZE_TO_ALLOW_X_MOVE))
 					ZOOM(mapCrosshair.x, mapCrosshair.y, false);
 				else
 					ZOOM(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, false);
 
-			} else if (CPad::GetPad(0)->GetMouseWheelUp() || CPad::GetPad(0)->GetPageUp() || CPad::GetPad(0)->GetRightShoulder1()) {
-				if (CPad::GetPad(0)->GetMouseWheelUp())
+			} else if (FrontEndPad()->GetMouseWheelUp() || FrontEndPad()->GetPageUp() || FrontEndPad()->GetRightShoulder1()) {
+				if (FrontEndPad()->GetMouseWheelUp())
 					ZOOM(mapCrosshair.x, mapCrosshair.y, true);
 				else
 					ZOOM(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, true);
 			}
 			
 			static bool justResetPointer = false;
-			if (CPad::GetPad(0)->GetLeftMouse()) {
+			if (FrontEndPad()->GetLeftMouse()) {
 				if (!justResetPointer) {
 					m_fMapCenterX += m_nMousePosX - m_nMouseOldPosX;
 					m_fMapCenterY += m_nMousePosY - m_nMouseOldPosY;
@@ -3668,8 +3668,8 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 			{
 				// This is else block of GetLeftMouse() if MAP_ENHANCEMENTS defined, so all of GetLeftMouse() conditions below being rendered useless. 
 
-				if (CPad::GetPad(0)->GetLeftMouse() && m_nMousePosY < m_nMouseOldPosY || CPad::GetPad(0)->GetUp() ||
-					CPad::GetPad(0)->GetDPadUp() || CPad::GetPad(0)->GetAnalogueUpDown() < 0) {
+				if (FrontEndPad()->GetLeftMouse() && m_nMousePosY < m_nMouseOldPosY || FrontEndPad()->GetUp() ||
+					FrontEndPad()->GetDPadUp() || FrontEndPad()->GetAnalogueUpDown() < 0) {
 					if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 						if ((m_fMapSize - MENU_Y(MAP_MIN_SIZE)) + SCREEN_HEIGHT/2 > m_fMapCenterY)
 							m_fMapCenterY += MENU_Y(15.f);
@@ -3677,8 +3677,8 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					}				
 				}
 
-				if (CPad::GetPad(0)->GetLeftMouse() && m_nMousePosY > m_nMouseOldPosY || CPad::GetPad(0)->GetDown() ||
-					CPad::GetPad(0)->GetDPadDown() || CPad::GetPad(0)->GetAnalogueUpDown() > 0) {
+				if (FrontEndPad()->GetLeftMouse() && m_nMousePosY > m_nMouseOldPosY || FrontEndPad()->GetDown() ||
+					FrontEndPad()->GetDPadDown() || FrontEndPad()->GetAnalogueUpDown() > 0) {
 					if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 						if (SCREEN_HEIGHT/2 - (m_fMapSize - MENU_Y(MAP_MIN_SIZE)) < m_fMapCenterY)
 							m_fMapCenterY -= MENU_Y(15.f);
@@ -3686,8 +3686,8 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					}				
 				}
 
-				if (CPad::GetPad(0)->GetLeftMouse() && m_nMousePosX < m_nMouseOldPosX || CPad::GetPad(0)->GetLeft() ||
-					CPad::GetPad(0)->GetDPadLeft() || CPad::GetPad(0)->GetAnalogueLeftRight() < 0) {
+				if (FrontEndPad()->GetLeftMouse() && m_nMousePosX < m_nMouseOldPosX || FrontEndPad()->GetLeft() ||
+					FrontEndPad()->GetDPadLeft() || FrontEndPad()->GetAnalogueLeftRight() < 0) {
 					if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 						if (m_fMapSize > MENU_X(MAP_SIZE_TO_ALLOW_X_MOVE) && m_fMapSize - MENU_X(MAP_MIN_SIZE) + SCREEN_WIDTH/2 > m_fMapCenterX)
 							m_fMapCenterX += MENU_X(15.f);
@@ -3695,7 +3695,7 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					}				
 				}
 
-				if (CPad::GetPad(0)->GetLeftMouseJustUp()) {
+				if (FrontEndPad()->GetLeftMouseJustUp()) {
 					// The coordinates in aScreens->MENUPAGE_MAP.
 					if (m_nMousePosX > MENU_X_LEFT_ALIGNED(60.0f) && m_nMousePosX < MENU_X_LEFT_ALIGNED(140.0f)) {
 						if (m_nMousePosY > MENU_Y(375.0f) && m_nMousePosY < MENU_Y(400.0f)) {
@@ -3705,8 +3705,8 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					}
 				}
 
-				if (CPad::GetPad(0)->GetLeftMouse() && m_nMousePosX > m_nMouseOldPosX || CPad::GetPad(0)->GetRight() ||
-					CPad::GetPad(0)->GetDPadRight() || CPad::GetPad(0)->GetAnalogueLeftRight() > 0) {
+				if (FrontEndPad()->GetLeftMouse() && m_nMousePosX > m_nMouseOldPosX || FrontEndPad()->GetRight() ||
+					FrontEndPad()->GetDPadRight() || FrontEndPad()->GetAnalogueLeftRight() > 0) {
 					if (CTimer::GetTimeInMillisecondsPauseMode() - lastMapTick > 10) {
 						if (m_fMapSize > MENU_X(MAP_SIZE_TO_ALLOW_X_MOVE) && SCREEN_WIDTH/2 - (m_fMapSize - MENU_X(MAP_MIN_SIZE)) < m_fMapCenterX)
 							m_fMapCenterX -= MENU_X(15.f);
@@ -3720,11 +3720,11 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 				lastMapTick = CTimer::GetTimeInMillisecondsPauseMode();
 
 #ifndef MAP_ENHANCEMENTS
-			if (CPad::GetPad(0)->GetLeftMouseJustUp())
+			if (FrontEndPad()->GetLeftMouseJustUp())
 				CentreMousePointer();
 #endif
 
-			if (CPad::GetPad(0)->GetLeftMouse()) {
+			if (FrontEndPad()->GetLeftMouse()) {
 				if (m_nMousePosX < SCREEN_STRETCH_X(20.0f) || m_nMousePosX > SCREEN_STRETCH_X(620.0f) || m_nMousePosY < SCREEN_STRETCH_Y(20.0f) || m_nMousePosY > SCREEN_STRETCH_Y(428.0f)) {
 #ifdef MAP_ENHANCEMENTS
 					justResetPointer = true;
@@ -3732,18 +3732,18 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 					CentreMousePointer();
 				}
 			}
-			if (!CPad::GetPad(0)->GetLeftMouse() && !m_bShowMouse && (m_nMouseOldPosX != m_nMousePosX || m_nMouseOldPosY != m_nMousePosY)) {
+			if (!FrontEndPad()->GetLeftMouse() && !m_bShowMouse && (m_nMouseOldPosX != m_nMousePosX || m_nMouseOldPosY != m_nMousePosY)) {
 				m_bShowMouse = true;
 			}
 
 			static bool pressedL = false;
 
-			if (!CPad::GetPad(0)->GetChar('L') && !CPad::GetPad(0)->GetChar('l')) {
+			if (!FrontEndPad()->GetChar('L') && !FrontEndPad()->GetChar('l')) {
 				pressedL = false;
 			}
 
 			if (!pressedL) {
-				if (CPad::GetPad(0)->GetChar('L') || CPad::GetPad(0)->GetChar('l')) {
+				if (FrontEndPad()->GetChar('L') || FrontEndPad()->GetChar('l')) {
 					m_PrefsShowLegends = !m_PrefsShowLegends;
 					pressedL = true;
 				}
@@ -3761,31 +3761,31 @@ CMenuManager::AdditionalOptionInput(bool &goBack)
 			break;
 		case MENUPAGE_STATS:
 		{
-			if (CPad::GetPad(0)->GetMouseWheelUpJustDown() || CPad::GetPad(0)->GetMouseWheelUpJustUp() || CPad::GetPad(0)->GetUp() ||
-				CPad::GetPad(0)->GetDPadUp() || CPad::GetPad(0)->GetAnalogueUpDown() < 0) {
+			if (FrontEndPad()->GetMouseWheelUpJustDown() || FrontEndPad()->GetMouseWheelUpJustUp() || FrontEndPad()->GetUp() ||
+				FrontEndPad()->GetDPadUp() || FrontEndPad()->GetAnalogueUpDown() < 0) {
 
 				m_StatsScrollSpeed = 20.0f;
 				m_StatsScrollDirection = 0;
 
-			} else if (CPad::GetPad(0)->GetMouseWheelDownJustDown() || CPad::GetPad(0)->GetMouseWheelDownJustUp() || CPad::GetPad(0)->GetDown() ||
-				CPad::GetPad(0)->GetDPadDown() || CPad::GetPad(0)->GetAnalogueUpDown() > 0) {
+			} else if (FrontEndPad()->GetMouseWheelDownJustDown() || FrontEndPad()->GetMouseWheelDownJustUp() || FrontEndPad()->GetDown() ||
+				FrontEndPad()->GetDPadDown() || FrontEndPad()->GetAnalogueUpDown() > 0) {
 				
 				m_StatsScrollSpeed = 20.0f;
 				m_StatsScrollDirection = 1;
 
-			} else if (CPad::GetPad(0)->GetChar(' ')) {
+			} else if (FrontEndPad()->GetChar(' ')) {
 				m_StatsScrollSpeed = 0.0f;
 			} else
 				m_StatsScrollSpeed = 150.0f;
 
 			static bool pressedS = false;
 
-			if (!CPad::GetPad(0)->GetChar('S') && !CPad::GetPad(0)->GetChar('s')) {
+			if (!FrontEndPad()->GetChar('S') && !FrontEndPad()->GetChar('s')) {
 				pressedS = false;
 			}
 
 			if (!pressedS) {
-				if (CPad::GetPad(0)->GetChar('S') || CPad::GetPad(0)->GetChar('s')) {
+				if (FrontEndPad()->GetChar('S') || FrontEndPad()->GetChar('s')) {
 					ExportStats();
 					m_nHelperTextMsgId = 4;
 					m_nHelperTextAlpha = 300;
@@ -4110,11 +4110,11 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 
 	// On the map Cross places the waypoint (AdditionalOptionInput) and must not
 	// also select the screen's only option, Back.
-	if (CPad::GetPad(0)->GetEnterJustDown() || (CPad::GetPad(0)->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
+	if (FrontEndPad()->GetEnterJustDown() || (FrontEndPad()->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
 		m_bShowMouse = 0;
 		optionSelected = true;
 	}
-	if (CPad::GetPad(0)->GetBackspaceJustDown() && m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS && !field_159) {
+	if (FrontEndPad()->GetBackspaceJustDown() && m_nCurrScreen == MENUPAGE_KEYBOARD_CONTROLS && !field_159) {
 		if (m_nCurrExLayer == HOVEROPTION_LIST) {
 			m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 			m_bWaitingForNewKeyBind = true;
@@ -4137,7 +4137,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		lastTimeClickedScrollButton = CTimer::GetTimeInMillisecondsPauseMode();
 	}
 
-	if (CPad::GetPad(0)->GetTabJustDown()) {
+	if (FrontEndPad()->GetTabJustDown()) {
 		DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
 		m_bShowMouse = false;
 		switch (m_nCurrExLayer) {
@@ -4160,10 +4160,10 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 	}
 
 	bool pressed = false;
-	if (CPad::GetPad(0)->GetUp() || CPad::GetPad(0)->GetAnaloguePadUp() || CPad::GetPad(0)->GetDPadUpJustDown()) {
+	if (FrontEndPad()->GetUp() || FrontEndPad()->GetAnaloguePadUp() || FrontEndPad()->GetDPadUpJustDown()) {
 		m_bShowMouse = false;
 		pressed = true;
-	} else if (CPad::GetPad(0)->GetMouseWheelUpJustUp()) {
+	} else if (FrontEndPad()->GetMouseWheelUpJustUp()) {
 		m_bShowMouse = true;
 		pressed = true;
 	}
@@ -4182,10 +4182,10 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 	}
 
 	pressed = false;
-	if (CPad::GetPad(0)->GetDown() || CPad::GetPad(0)->GetAnaloguePadDown() || CPad::GetPad(0)->GetDPadDownJustDown()) {
+	if (FrontEndPad()->GetDown() || FrontEndPad()->GetAnaloguePadDown() || FrontEndPad()->GetDPadDownJustDown()) {
 		m_bShowMouse = false;
 		pressed = true;
-	} else if (CPad::GetPad(0)->GetMouseWheelDownJustDown()) {
+	} else if (FrontEndPad()->GetMouseWheelDownJustDown()) {
 		m_bShowMouse = true;
 		pressed = true;
 	}
@@ -4204,7 +4204,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 	}
 
 	if (m_nCurrScreen != MENUPAGE_KEYBOARD_CONTROLS) {
-		if (!CPad::GetPad(0)->GetPageUp()) {
+		if (!FrontEndPad()->GetPageUp()) {
 			m_bPressedPgUpOnList = false;
 		} else {
 			m_nCurrExLayer = HOVEROPTION_LIST;
@@ -4216,7 +4216,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 				PageUpList(false);
 			}
 		}
-		if (!CPad::GetPad(0)->GetPageDown()) {
+		if (!FrontEndPad()->GetPageDown()) {
 			m_bPressedPgDnOnList = false;
 		} else {
 			m_nCurrExLayer = HOVEROPTION_LIST;
@@ -4228,7 +4228,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 				PageDownList(false);
 			}
 		}
-		if (CPad::GetPad(0)->GetHome()) {
+		if (FrontEndPad()->GetHome()) {
 			m_nCurrExLayer = HOVEROPTION_LIST;
 			m_bShowMouse = false;
 			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
@@ -4238,7 +4238,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 			m_nSelectedListRow = 0;
 			m_nScrollbarTopMargin = (SCROLLBAR_MAX_HEIGHT / m_nTotalListRow) * m_nFirstVisibleRowOnList;
 		}
-		if (CPad::GetPad(0)->GetEnd()) {
+		if (FrontEndPad()->GetEnd()) {
 			m_nCurrExLayer = HOVEROPTION_LIST;
 			m_bShowMouse = false;
 			DMAudio.PlayFrontEndSound(SOUND_FRONTEND_HIGHLIGHT_OPTION, 0);
@@ -4250,12 +4250,12 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		}
 	}
 
-	if (CPad::GetPad(0)->GetEscapeJustDown() || CPad::GetPad(0)->GetBackJustDown()) {
+	if (FrontEndPad()->GetEscapeJustDown() || FrontEndPad()->GetBackJustDown()) {
 		m_bShowMouse = false;
 		goBack = true;
 	}
 
-	if (CPad::GetPad(0)->GetLeftMouseJustDown()) {
+	if (FrontEndPad()->GetLeftMouseJustDown()) {
 		switch (m_nHoverOption) {
 		case HOVEROPTION_BACK:
 			goBack = true;
@@ -4276,7 +4276,7 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		}
 	}
 
-	if (CPad::GetPad(0)->GetLeftMouseJustDown()) {
+	if (FrontEndPad()->GetLeftMouseJustDown()) {
 		switch (m_nHoverOption) {
 		case HOVEROPTION_OVER_SCROLL_UP:
 			m_nHoverOption = HOVEROPTION_CLICKED_SCROLL_UP;
@@ -4287,12 +4287,12 @@ CMenuManager::ProcessList(bool &optionSelected, bool &goBack)
 		case HOVEROPTION_LIST:
 			m_nHoverOption = HOVEROPTION_SKIN;
 		}
-	} else if ((CPad::GetPad(0)->GetLeftMouseJustUp())
+	} else if ((FrontEndPad()->GetLeftMouseJustUp())
 		&& ((m_nHoverOption == HOVEROPTION_CLICKED_SCROLL_UP || (m_nHoverOption == HOVEROPTION_CLICKED_SCROLL_DOWN)))) {
 		m_nHoverOption = HOVEROPTION_NOT_HOVERING;
 	}
 
-	if (!CPad::GetPad(0)->GetLeftMouse()) {
+	if (!FrontEndPad()->GetLeftMouse()) {
 		holdingScrollBar = false;
 	} else {
 		if ((m_nHoverOption == HOVEROPTION_HOLDING_SCROLLBAR) || holdingScrollBar) {
@@ -4410,31 +4410,31 @@ CMenuManager::UserInput(void)
 		AdditionalOptionInput(goBack);
 
 		if (m_AllowNavigation &&
-			(CPad::GetPad(0)->GetDownJustDown() || CPad::GetPad(0)->GetAnaloguePadDown() || CPad::GetPad(0)->GetDPadDownJustDown())) {
+			(FrontEndPad()->GetDownJustDown() || FrontEndPad()->GetAnaloguePadDown() || FrontEndPad()->GetDPadDownJustDown())) {
 			m_bShowMouse = false;
 			goDown = true;
 			m_nOptionHighlightTransitionBlend = 0;
 
 		} else if (m_AllowNavigation &&
-			(CPad::GetPad(0)->GetUpJustDown() || CPad::GetPad(0)->GetAnaloguePadUp() || CPad::GetPad(0)->GetDPadUpJustDown())) {
+			(FrontEndPad()->GetUpJustDown() || FrontEndPad()->GetAnaloguePadUp() || FrontEndPad()->GetDPadUpJustDown())) {
 			m_bShowMouse = false;
 			goUp = true;
 			m_nOptionHighlightTransitionBlend = 0;
 		}
 
 		if ((m_nCurrOption == 0) && (m_nCurrScreen == MENUPAGE_PAUSE_MENU)) {
-			if (CPad::GetPad(0)->GetEnterJustUp() || CPad::GetPad(0)->GetCrossJustUp()) {
+			if (FrontEndPad()->GetEnterJustUp() || FrontEndPad()->GetCrossJustUp()) {
 				m_bShowMouse = false;
 				optionSelected = true;
 			}
 		} else {
-			if (CPad::GetPad(0)->GetEnterJustDown() || (CPad::GetPad(0)->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
+			if (FrontEndPad()->GetEnterJustDown() || (FrontEndPad()->GetCrossJustDown() && m_nCurrScreen != MENUPAGE_MAP)) {
 				m_bShowMouse = false;
 				optionSelected = true;
 			}
 		}
 
-		if (CPad::GetPad(0)->GetLeftMouseJustUp() && m_nCurrScreen != MENUPAGE_MAP) {
+		if (FrontEndPad()->GetLeftMouseJustUp() && m_nCurrScreen != MENUPAGE_MAP) {
 			if (m_nHoverOption == HOVEROPTION_RANDOM_ITEM)
 				optionSelected = true;
 			else if (m_nHoverOption == HOVEROPTION_NEXT_RADIO)
@@ -4443,7 +4443,7 @@ CMenuManager::UserInput(void)
 				ChangeRadioStation(-1);
 		}
 
-		if (CPad::GetPad(0)->GetLeftMouse()) {
+		if (FrontEndPad()->GetLeftMouse()) {
 			switch (m_nHoverOption) {
 			case HOVEROPTION_INCREASE_BRIGHTNESS:
 			case HOVEROPTION_INCREASE_MP3BOOST:
@@ -4489,12 +4489,12 @@ CMenuManager::UserInput(void)
 		}
 		
 		// Prevent sound on scroll. Mouse wheel is now belongs to us!
-		if (!(m_nTotalListRow > MAX_VISIBLE_OPTION && (CPad::GetPad(0)->GetMouseWheelUpJustDown() || CPad::GetPad(0)->GetMouseWheelDownJustDown())))
+		if (!(m_nTotalListRow > MAX_VISIBLE_OPTION && (FrontEndPad()->GetMouseWheelUpJustDown() || FrontEndPad()->GetMouseWheelDownJustDown())))
 #endif
-		if (CPad::GetPad(0)->GetLeftMouseJustUp() || CPad::GetPad(0)->GetLeftJustUp() || CPad::GetPad(0)->GetRightJustUp()
-			|| CPad::GetPad(0)->GetDPadLeftJustUp() || CPad::GetPad(0)->GetDPadRightJustUp()
-			|| CPad::GetPad(0)->GetAnaloguePadLeftJustUp() || CPad::GetPad(0)->GetAnaloguePadRightJustUp()
-			|| CPad::GetPad(0)->GetMouseWheelUpJustDown() || CPad::GetPad(0)->GetMouseWheelDownJustDown()) {
+		if (FrontEndPad()->GetLeftMouseJustUp() || FrontEndPad()->GetLeftJustUp() || FrontEndPad()->GetRightJustUp()
+			|| FrontEndPad()->GetDPadLeftJustUp() || FrontEndPad()->GetDPadRightJustUp()
+			|| FrontEndPad()->GetAnaloguePadLeftJustUp() || FrontEndPad()->GetAnaloguePadRightJustUp()
+			|| FrontEndPad()->GetMouseWheelUpJustDown() || FrontEndPad()->GetMouseWheelDownJustDown()) {
 			int option = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action;
 			if (option == MENUACTION_BRIGHTNESS
 #ifdef CUSTOM_FRONTEND_OPTIONS
@@ -4508,7 +4508,7 @@ CMenuManager::UserInput(void)
 				DMAudio.PlayFrontEndSound(SOUND_FRONTEND_ENTER_OR_ADJUST, 0);
 
 		}
-		if (CPad::GetPad(0)->GetBackJustDown() || CPad::GetPad(0)->GetEscapeJustDown()) {
+		if (FrontEndPad()->GetBackJustDown() || FrontEndPad()->GetEscapeJustDown()) {
 			if (m_nCurrScreen != MENUPAGE_START_MENU && m_nCurrScreen != MENUPAGE_PAUSE_MENU && m_nCurrScreen != MENUPAGE_CHOOSE_SAVE_SLOT
 				&& m_nCurrScreen != MENUPAGE_SAVE_CHEAT_WARNING && m_nCurrScreen != MENUPAGE_SAVING_IN_PROGRESS
 				&& m_nCurrScreen != MENUPAGE_DELETING_IN_PROGRESS && m_nCurrScreen != MENUPAGE_OUTRO
@@ -4529,7 +4529,7 @@ CMenuManager::UserInput(void)
 	}
 
 	int curAction = aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action;
-	if (CPad::GetPad(0)->GetLeft() || CPad::GetPad(0)->GetPedWalkLeftRight() < 0 || CPad::GetPad(0)->GetDPadLeft()) {
+	if (FrontEndPad()->GetLeft() || FrontEndPad()->GetPedWalkLeftRight() < 0 || FrontEndPad()->GetDPadLeft()) {
 		static uint32 lastSliderDecrease = 0;
 		if (CTimer::GetTimeInMillisecondsPauseMode() - lastSliderDecrease > 150) {
 			if (curAction == MENUACTION_BRIGHTNESS || curAction == MENUACTION_MUSICVOLUME ||
@@ -4544,7 +4544,7 @@ CMenuManager::UserInput(void)
 
 			lastSliderDecrease = CTimer::GetTimeInMillisecondsPauseMode();
 		}
-	} else if (CPad::GetPad(0)->GetRight() || CPad::GetPad(0)->GetPedWalkLeftRight() > 0 || CPad::GetPad(0)->GetDPadRight()) {
+	} else if (FrontEndPad()->GetRight() || FrontEndPad()->GetPedWalkLeftRight() > 0 || FrontEndPad()->GetDPadRight()) {
 		static uint32 lastSliderIncrease = 0;
 		if (CTimer::GetTimeInMillisecondsPauseMode() - lastSliderIncrease > 150) {
 			if (curAction == MENUACTION_BRIGHTNESS || curAction == MENUACTION_MUSICVOLUME ||
@@ -4564,22 +4564,22 @@ CMenuManager::UserInput(void)
 	if (!SCREEN_HAS_AUTO_SCROLLBAR)
 #endif
 	{
-		if (CPad::GetPad(0)->GetMouseWheelUpJustDown()) {
+		if (FrontEndPad()->GetMouseWheelUpJustDown()) {
 			changeValueBy = 1;
-		} else if (CPad::GetPad(0)->GetMouseWheelDownJustDown()) {
+		} else if (FrontEndPad()->GetMouseWheelDownJustDown()) {
 			changeValueBy = -1;
 		}
 	}
 	
 	if (m_AllowNavigation) {
-		if (CPad::GetPad(0)->GetRightJustDown() || CPad::GetPad(0)->GetAnaloguePadRight() || CPad::GetPad(0)->GetDPadRightJustDown()) {
+		if (FrontEndPad()->GetRightJustDown() || FrontEndPad()->GetAnaloguePadRight() || FrontEndPad()->GetDPadRightJustDown()) {
 			m_bShowMouse = false;
 			changeValueBy = 1;
 		}
 	}
 
 	if (m_AllowNavigation) {
-		if (CPad::GetPad(0)->GetLeftJustDown() || CPad::GetPad(0)->GetAnaloguePadLeft() || CPad::GetPad(0)->GetDPadLeftJustDown()) {
+		if (FrontEndPad()->GetLeftJustDown() || FrontEndPad()->GetAnaloguePadLeft() || FrontEndPad()->GetDPadLeftJustDown()) {
 			m_bShowMouse = false;
 			changeValueBy = -1;
 		}
@@ -4639,19 +4639,19 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 			JoyButtonJustClicked = false;
 			MouseButtonJustClicked = false;
 
-			if (CPad::GetPad(0)->GetLeftMouseJustDown())
+			if (FrontEndPad()->GetLeftMouseJustDown())
 				MouseButtonJustClicked = rsMOUSELEFTBUTTON;
-			else if (CPad::GetPad(0)->GetRightMouseJustUp())
+			else if (FrontEndPad()->GetRightMouseJustUp())
 				MouseButtonJustClicked = rsMOUSERIGHTBUTTON;
-			else if (CPad::GetPad(0)->GetMiddleMouseJustUp())
+			else if (FrontEndPad()->GetMiddleMouseJustUp())
 				MouseButtonJustClicked = rsMOUSMIDDLEBUTTON;
-			else if (CPad::GetPad(0)->GetMouseWheelUpJustUp())
+			else if (FrontEndPad()->GetMouseWheelUpJustUp())
 				MouseButtonJustClicked = rsMOUSEWHEELUPBUTTON;
-			else if (CPad::GetPad(0)->GetMouseWheelDownJustUp())
+			else if (FrontEndPad()->GetMouseWheelDownJustUp())
 				MouseButtonJustClicked = rsMOUSEWHEELDOWNBUTTON;
-			else if (CPad::GetPad(0)->GetMouseX1JustUp())
+			else if (FrontEndPad()->GetMouseX1JustUp())
 				MouseButtonJustClicked = rsMOUSEX1BUTTON;
-			else if (CPad::GetPad(0)->GetMouseX2JustUp())
+			else if (FrontEndPad()->GetMouseX2JustUp())
 				MouseButtonJustClicked = rsMOUSEX2BUTTON;
 
 			JoyButtonJustClicked = ControlsManager.GetJoyButtonJustDown();
@@ -4688,7 +4688,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 
 #ifdef USE_DEBUG_SCRIPT_LOADER
 	if (m_nCurrScreen == MENUPAGE_START_MENU || m_nCurrScreen == MENUPAGE_NEW_GAME || m_nCurrScreen == MENUPAGE_NEW_GAME_RELOAD) {
-		if (CPad::GetPad(0)->GetChar('R')) {
+		if (FrontEndPad()->GetChar('R')) {
 			CTheScripts::ScriptToLoad = 1;
 			DoSettingsBeforeStartingAGame();
 			return;
@@ -5114,11 +5114,11 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 		switch (aScreens[m_nCurrScreen].m_aEntries[m_nCurrOption].m_Action) {
 #ifdef GAMEPAD_MENU
 			case MENUACTION_CTRLCONFIG:
-				CPad::GetPad(0)->Mode += changeAmount;
-				if (CPad::GetPad(0)->Mode > 3)
-					CPad::GetPad(0)->Mode = 0;
-				else if (CPad::GetPad(0)->Mode < 0)
-					CPad::GetPad(0)->Mode = 3;
+				FrontEndPad()->Mode += changeAmount;
+				if (FrontEndPad()->Mode > 3)
+					FrontEndPad()->Mode = 0;
+				else if (FrontEndPad()->Mode < 0)
+					FrontEndPad()->Mode = 3;
 				SaveSettings();
 				break;
 #endif
@@ -5266,7 +5266,7 @@ CMenuManager::ProcessOnOffMenuOptions()
 	case MENUACTION_CTRLVIBRATION:
 		m_PrefsUseVibration = !m_PrefsUseVibration;
 		if (m_PrefsUseVibration) {
-			CPad::GetPad(0)->StartShake(350, 150);
+			FrontEndPad()->StartShake(350, 150);
 			TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 		}
 		SaveSettings();
@@ -5674,11 +5674,11 @@ CMenuManager::SwitchMenuOnAndOff()
 	if (!TheCamera.m_WideScreenOn) {
 
 		// Reminder: You need REGISTER_START_BUTTON defined to make it work.
-		if ((CPad::GetPad(0)->GetStartJustDown() || CPad::GetPad(0)->GetEscapeJustDown())
+		if ((FrontEndPad()->GetStartJustDown() || FrontEndPad()->GetEscapeJustDown())
 			&& (!m_bMenuActive || m_nCurrScreen == MENUPAGE_PAUSE_MENU || m_nCurrScreen == MENUPAGE_CHOOSE_SAVE_SLOT || m_nCurrScreen == MENUPAGE_SAVE_CHEAT_WARNING)
 			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested
 #ifdef REGISTER_START_BUTTON
-			|| CPad::GetPad(0)->GetStartJustDown() && !m_bGameNotLoaded
+			|| FrontEndPad()->GetStartJustDown() && !m_bGameNotLoaded
 #endif
 			) {
 
@@ -5744,16 +5744,16 @@ CMenuManager::SwitchMenuOnAndOff()
 				m_bWaitingForNewKeyBind = false;
 
 #ifdef REGISTER_START_BUTTON
-				int16 start1 = CPad::GetPad(0)->PCTempJoyState.Start, start2 = CPad::GetPad(0)->PCTempKeyState.Start,
-					start3 = CPad::GetPad(0)->OldState.Start, start4 = CPad::GetPad(0)->NewState.Start;
+				int16 start1 = FrontEndPad()->PCTempJoyState.Start, start2 = FrontEndPad()->PCTempKeyState.Start,
+					start3 = FrontEndPad()->OldState.Start, start4 = FrontEndPad()->NewState.Start;
 #endif
-				CPad::GetPad(0)->Clear(false);
+				FrontEndPad()->Clear(false);
 				CPad::GetPad(1)->Clear(false);
 #ifdef REGISTER_START_BUTTON
-				CPad::GetPad(0)->PCTempJoyState.Start = start1;
-				CPad::GetPad(0)->PCTempKeyState.Start = start2;
-				CPad::GetPad(0)->OldState.Start = start3;
-				CPad::GetPad(0)->NewState.Start = start4;
+				FrontEndPad()->PCTempJoyState.Start = start1;
+				FrontEndPad()->PCTempKeyState.Start = start2;
+				FrontEndPad()->OldState.Start = start3;
+				FrontEndPad()->NewState.Start = start4;
 #endif
 				UnloadTextures();
 				CTimer::EndUserPause();
@@ -5872,7 +5872,7 @@ CMenuManager::WaitForUserCD()
 	CPad::UpdatePads();
 	MessageScreen("NO_PCCD", true);
 
-	if (CPad::GetPad(0)->GetEscapeJustDown()) {
+	if (FrontEndPad()->GetEscapeJustDown()) {
 		m_bQuitGameNoCD = true;
 		RsEventHandler(rsQUITAPP, nil);
 	}
@@ -6229,7 +6229,7 @@ CMenuManager::PrintController(void)
 	};
 
 	if (m_DisplayControllerOnFoot) {
-		switch (CPad::GetPad(0)->Mode) {
+		switch (FrontEndPad()->Mode) {
 		case 0:
 			CFont::SetRightJustifyOn();
 			switch (m_PrefsLanguage)
@@ -6482,7 +6482,7 @@ CMenuManager::PrintController(void)
 		}
 		CFont::PrintString(MENU_X_LEFT_ALIGNED(X(0.0f)), MENU_Y(Y(TEXT_L2R2_Y)), TheText.Get("FEC_LB"));
 		CFont::SetScale(MENU_X(SMALLESTTEXT_X_SCALE * 2 * scale * 0.9f), MENU_Y(SMALLESTTEXT_Y_SCALE* scale * 0.9f));
-		switch (CPad::GetPad(0)->Mode) {
+		switch (FrontEndPad()->Mode) {
 		case 0:
 			CFont::SetRightJustifyOn();
 			CFont::PrintString(MENU_X_LEFT_ALIGNED(X(TEXT_L2_X)), MENU_Y(Y(TEXT_L2_Y)), TheText.Get("FEC_LL"));

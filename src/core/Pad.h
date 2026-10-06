@@ -156,6 +156,12 @@ enum
 	MAX_PADS
 };
 
+class CPad;
+
+// Which pad the pause menu should follow: player 1's, or couch co-op's partner on the
+// frame they press something.  Defined in Pad.cpp.
+CPad *FrontEndPad(void);
+
 class CPad
 {
 public:

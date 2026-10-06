@@ -96,6 +96,37 @@ extern bool gbFastTime;
 extern bool gGravityCheat;
 #endif
 
+#ifdef NINTENDO_WII
+// True on the frame a pad has had any menu button pressed.  Used only to pick which
+// pad the pause menu follows, so it lists the buttons the menu itself uses.
+static bool
+PadJustPressed(CPad *pad)
+{
+	return pad->GetStartJustDown() || pad->GetSelectJustDown() ||
+	       pad->GetCircleJustDown() || pad->GetCrossJustDown() ||
+	       pad->GetSquareJustDown() || pad->GetTriangleJustDown() ||
+	       pad->GetDPadUpJustDown() || pad->GetDPadDownJustDown() ||
+	       pad->GetDPadLeftJustDown() || pad->GetDPadRightJustDown() ||
+	       pad->GetLeftShoulder1JustDown() || pad->GetLeftShoulder2JustDown() ||
+	       pad->GetRightShoulder1JustDown() || pad->GetRightShoulder2JustDown();
+}
+#endif
+
+CPad *
+FrontEndPad(void)
+{
+	// The pause menu is player 1's pad by default.  Couch co-op's partner has a pad
+	// of their own and may open and drive the menu too, so on the frame the partner
+	// presses a button the menu follows their pad instead.  Stateless on purpose:
+	// there is nothing to reset when they unplug, and player 1's pad is the answer
+	// again the moment they stop.
+#ifdef NINTENDO_WII
+	if(PadJustPressed(CPad::GetPad(PAD_COOP)))
+		return CPad::GetPad(PAD_COOP);
+#endif
+	return CPad::GetPad(0);
+}
+
 void SpecialCarCheats()
 {
 	if ( !CVehicle::bCheat9 )
