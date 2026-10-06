@@ -960,59 +960,59 @@ CMenuScreenCustom aScreens[] = {
 	//
 	// Grouped rather than listed flat because a page holds NUM_MENUROWS (18) rows and
 	// there are 28 cheats, and because "All Cars Heli" next to "Kangaroo" helps nobody.
-	#define WII_CHEAT_ROW(label, y, fn) \
-		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, y, MENUALIGN_CENTER,
+	#define WII_CHEAT_ROW(label, fn) \
+		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_CENTER,
 
 	// MENUPAGE_CHEATS
 
 	{ "WII_CHT", MENUPAGE_NONE, nil, nil,
-		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 150, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 175, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 200, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 225, MENUALIGN_CENTER,
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 250, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_PLAYER
 
 	{ "WII_CPL", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_HLT", 130, WiiCheat_Health)
-		WII_CHEAT_ROW("WII_ARO", 150, WiiCheat_Armour)
-		WII_CHEAT_ROW("WII_MON", 170, WiiCheat_Money)
-		WII_CHEAT_ROW("WII_WPN", 190, WiiCheat_WeaponCheat1)
-		WII_CHEAT_ROW("WII_AWP", 210, WiiCheat_WeaponsForAll)
-		WII_CHEAT_ROW("WII_WUU", 230, WiiCheat_WantedLevelUp)
-		WII_CHEAT_ROW("WII_WDN", 250, WiiCheat_WantedLevelDown)
-		WII_CHEAT_ROW("WII_CHP", 270, WiiCheat_ChangePlayer)
-		WII_CHEAT_ROW("WII_GRP", 290, WiiCheat_StrongGrip)
-		WII_CHEAT_ROW("WII_KAN", 310, WiiCheat_Kangaroo)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 330, MENUALIGN_CENTER,
+		WII_CHEAT_ROW("WII_HLT", WiiCheat_Health)
+		WII_CHEAT_ROW("WII_ARO", WiiCheat_Armour)
+		WII_CHEAT_ROW("WII_MON", WiiCheat_Money)
+		WII_CHEAT_ROW("WII_WPN", WiiCheat_WeaponCheat1)
+		WII_CHEAT_ROW("WII_AWP", WiiCheat_WeaponsForAll)
+		WII_CHEAT_ROW("WII_WUU", WiiCheat_WantedLevelUp)
+		WII_CHEAT_ROW("WII_WDN", WiiCheat_WantedLevelDown)
+		WII_CHEAT_ROW("WII_CHP", WiiCheat_ChangePlayer)
+		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
+		WII_CHEAT_ROW("WII_KAN", WiiCheat_Kangaroo)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_WORLD
 
 	{ "WII_CWH", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_SUN", 130, WiiCheat_Sunny)
-		WII_CHEAT_ROW("WII_CLD", 150, WiiCheat_Cloudy)
-		WII_CHEAT_ROW("WII_RAI", 170, WiiCheat_Rainy)
-		WII_CHEAT_ROW("WII_FOG", 190, WiiCheat_Foggy)
-		WII_CHEAT_ROW("WII_FWX", 210, WiiCheat_FastWeather)
-		WII_CHEAT_ROW("WII_MAY", 230, WiiCheat_Mayhem)
-		WII_CHEAT_ROW("WII_ATK", 250, WiiCheat_EverybodyAttacksPlayer)
-		WII_CHEAT_ROW("WII_BUP", 270, WiiCheat_BlowUpCars)
-		WII_CHEAT_ROW("WII_WCL", 290, WiiCheat_WallClimbing)
-		WII_CHEAT_ROW("WII_NSB", 310, WiiCheat_NoSeaBed)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 330, MENUALIGN_CENTER,
+		WII_CHEAT_ROW("WII_SUN", WiiCheat_Sunny)
+		WII_CHEAT_ROW("WII_CLD", WiiCheat_Cloudy)
+		WII_CHEAT_ROW("WII_RAI", WiiCheat_Rainy)
+		WII_CHEAT_ROW("WII_FOG", WiiCheat_Foggy)
+		WII_CHEAT_ROW("WII_FWX", WiiCheat_FastWeather)
+		WII_CHEAT_ROW("WII_MAY", WiiCheat_Mayhem)
+		WII_CHEAT_ROW("WII_ATK", WiiCheat_EverybodyAttacksPlayer)
+		WII_CHEAT_ROW("WII_BUP", WiiCheat_BlowUpCars)
+		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
+		WII_CHEAT_ROW("WII_NSB", WiiCheat_NoSeaBed)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_VEHICLES
 
 	{ "WII_CVH", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_HEL", 150, WiiCheat_AllCarsHeli)
-		WII_CHEAT_ROW("WII_RHI", 170, WiiCheat_Rhino)
-		WII_CHEAT_ROW("WII_BLD", 190, WiiCheat_Bloodra)
-		WII_CHEAT_ROW("WII_CCB", 210, WiiCheat_ChittyChittyBangBang)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 240, MENUALIGN_CENTER,
+		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
+		WII_CHEAT_ROW("WII_RHI", WiiCheat_Rhino)
+		WII_CHEAT_ROW("WII_BLD", WiiCheat_Bloodra)
+		WII_CHEAT_ROW("WII_CCB", WiiCheat_ChittyChittyBangBang)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_DEBUG
@@ -1022,12 +1022,12 @@ CMenuScreenCustom aScreens[] = {
 	// are the only way to reach anything like a debug view at all.
 
 	{ "WII_CDB", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_FTM", 150, WiiCheat_FastTime)
-		WII_CHEAT_ROW("WII_STM", 170, WiiCheat_SlowTime)
-		WII_CHEAT_ROW("WII_WHL", 190, WiiCheat_OnlyRenderWheels)
-		WII_CHEAT_ROW("WII_WLY", 210, WiiCheat_RenderWaterLayers)
-		WII_CHEAT_ROW("WII_DBG", 230, WiiCheat_SwitchDebugDisplay)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 260, MENUALIGN_CENTER,
+		WII_CHEAT_ROW("WII_FTM", WiiCheat_FastTime)
+		WII_CHEAT_ROW("WII_STM", WiiCheat_SlowTime)
+		WII_CHEAT_ROW("WII_WHL", WiiCheat_OnlyRenderWheels)
+		WII_CHEAT_ROW("WII_WLY", WiiCheat_RenderWaterLayers)
+		WII_CHEAT_ROW("WII_DBG", WiiCheat_SwitchDebugDisplay)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	#undef WII_CHEAT_ROW
