@@ -261,6 +261,9 @@ enum eMenuScreen
 	MENUPAGE_CHEATS_WORLD,
 	MENUPAGE_CHEATS_VEHICLES,
 	MENUPAGE_CHEATS_DEBUG,
+	// The port's own options, gathered off the pause menu.  Appended here like the
+	// cheats pages above, for the same reason.
+	MENUPAGE_ENHANCEMENTS,
 #endif
 
 	MENUPAGE_OUTRO, // Originally 34, but CFO needs last screen to be empty to count number of menu pages

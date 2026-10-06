@@ -158,6 +158,7 @@ WiiFallbackText(const char *key)
 		{ "WII_RMT", "REMOTE" },
 		{ "WII_BTH", "BOTH" },
 		{ "WII_BOX", "POINTER BOX" },
+		{ "WII_ENH", "ENHANCEMENTS" },
 		{ "WII_CC", "COUCH CO-OP" },
 		{ "WII_P2J", "Player 2: press any button to join." },
 		{ "WII_P2I", "Player 2 has joined." },

@@ -819,11 +819,9 @@ CMenuScreenCustom aScreens[] = {
 		// (WiiPadApplyControlDefaults keeps mouse steering off).
 		MENUACTION_MOUSESTEER,	"FET_MST",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 #endif
-		AIM_ASSIST_TOGGLE
-		POINTER_AIM_TOGGLE
-		POINTER_BOX_SELECT
-		POINTER_CAR_TOGGLE
-		DRIVEBY_WEAPONS_TOGGLE
+		// The port's own toggles used to sit here.  They are on the Enhancements page
+		// now, which is where a player looking for them would go; this page is the
+		// mouse/IR settings it says it is.
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
 		//MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 260, MENUALIGN_CENTER, // original y
    },
@@ -837,16 +835,14 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHANGEMENU,	"FEH_BRI",	{nil, SAVESLOT_NONE, MENUPAGE_BRIEFS}, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"FET_OPT",	{nil, SAVESLOT_NONE, MENUPAGE_OPTIONS}, 0, 0, MENUALIGN_CENTER,
 #ifdef NINTENDO_WII
-		// Reachable from the pause menu because that is the only menu the player can
-		// open mid-game on this port.  The cheats used to be a PS2 button sequence,
-		// which cannot be typed on a Wii remote.
-		MENUACTION_CHANGEMENU,	"WII_CHE",	{nil, SAVESLOT_NONE, MENUPAGE_CHEATS}, 0, 0, MENUALIGN_CENTER,
+		// Everything this port added lives behind this one row, so the pause menu stays
+		// the set the game shipped with and the cheats, co-op and the rest are not
+		// scattered over pages that were never meant to hold them.  Reachable from the
+		// pause menu because that is the only menu the player can open mid-game on this
+		// port: the cheats used to be a PS2 button sequence, which cannot be typed on a
+		// Wii remote.
+		MENUACTION_CHANGEMENU,	"WII_ENH",	{nil, SAVESLOT_NONE, MENUPAGE_ENHANCEMENTS}, 0, 0, MENUALIGN_CENTER,
 #endif
-		// Between Options and Quit because it is a mode rather than a destination,
-		// and because the pause page has room for it where the nine-row Mouse/IR page
-		// does not.  Works with one controller present; the shared camera simply has
-		// one ped to frame, which is how it is meant to be judged first.
-		COUCH_COOP_TOGGLE
 		MENUACTION_CHANGEMENU,	"FEP_QUI",	{nil, SAVESLOT_NONE, MENUPAGE_EXIT}, 0, 0, MENUALIGN_CENTER,
    },
 
@@ -1060,6 +1056,24 @@ CMenuScreenCustom aScreens[] = {
 	},
 
 	#undef WII_CHEAT_ROW
+
+	// MENUPAGE_ENHANCEMENTS
+	//
+	// Everything this port added, in one place off the pause menu: the cheats menu,
+	// couch co-op, and the options that used to be scattered over the Mouse/IR page
+	// and the pause page.  Co-op is here rather than on the pause page itself because
+	// it is a mode, not a destination, and because it is one of these.
+
+	{ "WII_ENH", MENUPAGE_NONE, nil, nil,
+		MENUACTION_CHANGEMENU,	"WII_CHE",	{ nil, SAVESLOT_NONE, MENUPAGE_CHEATS }, 0, 0, MENUALIGN_CENTER,
+		COUCH_COOP_TOGGLE
+		DRIVEBY_WEAPONS_TOGGLE
+		AIM_ASSIST_TOGGLE
+		POINTER_AIM_TOGGLE
+		POINTER_BOX_SELECT
+		POINTER_CAR_TOGGLE
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+	},
 #endif
 
 	// MENUPAGE_OUTRO = 34
