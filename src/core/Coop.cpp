@@ -641,9 +641,10 @@ SessionBlocker(void)
 // control code looks the rider up as the player in focus, and a boat is
 // handled as a different problem entirely; neither is worth the risk here.
 // Never one a player is driving -- that would be a carjack of player 1 -- and
-// not a wreck or one in the water, which nobody can enter.
+// not one player 1 is already walking to, a wreck or one in the water, which
+// nobody can enter.
 CVehicle *
-FindCarToSteal(CPlayerPed *partner)
+FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 {
 	CVehicle *best = nil;
 	float bestDist = SQR(kStealRange);
@@ -655,6 +656,11 @@ FindCarToSteal(CPlayerPed *partner)
 		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
 			continue;
 		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
+			continue;
+		// The one player 1 is entering has no driver yet, and two players
+		// finishing the same car's enter as its driver would leave one of them
+		// in the seat with the other's ped as the car's driver.
+		if(vehicle == lead->m_carInObjective)
 			continue;
 		const float dist = (vehicle->GetPosition() - pos).MagnitudeSqr();
 		if(dist < bestDist){
@@ -754,7 +760,7 @@ UpdatePartnerVehicle(CPlayerPed *lead, CPlayerPed *partner, CPad *pad)
 	}
 
 	// No seat with player 1.  Take a car of their own instead.
-	CVehicle *steal = FindCarToSteal(partner);
+	CVehicle *steal = FindCarToSteal(lead, partner);
 	if(steal != nil)
 		partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, steal);
 	return false;
