@@ -9,6 +9,7 @@
 #include <wiiuse/wpad.h>
 
 #include "WiiSpeaker.h"
+#include "WiiTrace.h"
 
 int8_t WiiRemoteSpeakerEnabled = 1;
 int8_t WiiPhoneRemoteMode = 2;
@@ -364,6 +365,13 @@ WiiSpeakerWake(void)
 bool
 WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 {
+	// One line per call attempt, and a call is rare.  This is the single place that
+	// decides whether a mission phone line goes to the remote, so a call that is
+	// silent on hardware names the gate that stopped it rather than needing another
+	// build to find out.
+	WiiTraceReport("WII speaker: call try rate=%u mode=%d spk=%d state=%d active=%d clip=%d\n",
+	               (unsigned)sampleRate, (int)WiiPhoneRemoteMode, (int)WiiRemoteSpeakerEnabled,
+	               (int)s_state, (int)s_call.active, (int)(gettime() < s_clipEnd));
 	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate)
 		return false;
 	releaseCallBuffer();
@@ -394,6 +402,7 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	s_call.encoderFresh = true;
 	s_call.active = true;
 	s_pending = CLIP_NONE;
+	WiiTraceReport("WII speaker: call started %ums\n", (unsigned)lengthMs);
 	return true;
 }
 
