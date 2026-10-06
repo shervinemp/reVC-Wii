@@ -13,18 +13,26 @@
 #endif
 
 enum Config {
-	// Left at 1 even with the couch co-op work in progress.  It doubles as the
-	// size of CWorld::Players[], and raising it is NOT free: Script.cpp's
-	// COMMAND_CREATE_PLAYER guards its index with script_assert(index <
-	// NUMPLAYERS), and that opcode is fully implemented -- it calls
-	// SetupPlayerPed(index) and places the ped.  At 1 the only legal index was 0,
-	// so no script could ever bring a second player ped into existence.  At 2 a
-	// script asking for player 1 gets one, in a game whose camera, HUD and
-	// PlayerInFocus all assume a single player, with nothing prepared for it.
+	// Two slots: the player the game has always had, and couch co-op's partner
+	// (CCoop, Coop.cpp).  It doubles as the size of CWorld::Players[].
 	//
-	// So Gate 2 has to decide deliberately what CREATE_PLAYER 1 means before this
-	// goes up, rather than it happening as a side effect of wanting a second slot.
-	NUMPLAYERS = 1,
+	// Raising it was not free, and what it cost is worth keeping written down:
+	//
+	//   Slot 1 belongs to CCoop and to nobody else.  COMMAND_CREATE_PLAYER used to
+	//   guard its index against this number, which at 2 would have let a script
+	//   conjure a second player into a game with nothing prepared for one; it now
+	//   accepts slot 0 only.
+	//
+	//   Slot 1 is empty most of the time.  Anything that walks the array has to
+	//   expect m_pPed to be nil there -- CReplay did not.
+	//
+	//   Nothing is saved from it.  SavePedPool picks peds by PEDTYPE_PLAYER1, and
+	//   the partner is PEDTYPE_PLAYER2 precisely so it is never written and every
+	//   existing save stays byte-identical.
+	//
+	// CWorld::PlayerInFocus stays 0 throughout, so FindPlayerPed() still means
+	// what every script, the HUD and the camera take it to mean.
+	NUMPLAYERS = 2,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
 	MAX_CDIMAGES = 8, // additional cdimages

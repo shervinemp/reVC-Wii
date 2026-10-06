@@ -102,6 +102,7 @@
 #include "custompipes.h"
 #include "screendroplets.h"
 #include "VarConsole.h"
+#include "Coop.h"
 #ifdef USE_TEXTURE_POOL
 #include "TexturePools.h"
 #endif
@@ -535,6 +536,7 @@ bool CGame::Initialise(const char* datFile)
 	ThePaths.PreparePathData();
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
+	CCoop::Init();
 	CWorld::Players[0].LoadPlayerSkin();
 	TestModelIndices();
 
@@ -830,6 +832,7 @@ void CGame::ReInitGameObjectVariables(void)
 	
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
+	CCoop::Init();
 	
 	CWorld::PlayerInFocus = 0;
 	CAntennas::Init();
@@ -892,6 +895,7 @@ void CGame::ShutDownForRestart(void)
 	
 	for (int i = 0; i < NUMPLAYERS; i++)
 		CWorld::Players[i].Clear();
+	CCoop::Init();
 
 	CGarages::SetAllDoorsBackToOriginalHeight();
 	CTheScripts::UndoBuildingSwaps();
@@ -1089,6 +1093,11 @@ void CGame::Process(void)
 		CWaterCannons::Update();
 		CUserDisplay::Process();
 		CReplay::Update();
+
+		// After the scripts, so a mission that started this frame has already
+		// said so; before the world, so every ped is processed against this
+		// frame's aim.
+		CCoop::Update();
 
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Process();

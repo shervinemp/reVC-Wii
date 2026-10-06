@@ -39,15 +39,21 @@ void WiiPadApplyControlDefaults(void);
 // whatever the first had not been read yet.
 void WiiPadScan(void);
 
-// Merges every controller bound to this pad index into a single state, so the
-// game never has to know which one the player picked up.  A connected GameCube
-// pad on this channel takes exclusive ownership and silences Wiimote/Classic.
+// Reads one player's controller into a pad state, so the game never has to know
+// which kind they picked up.
+//
+// padID 0 is player 1: a GameCube pad in port 1 if there is one, which then
+// owns the slot and silences the first Wii Remote, and otherwise that remote.
+// padID PAD_COOP is couch co-op's second player: whichever controller is
+// present besides player 1's.  Capturing it is also what tells CCoop a second
+// controller exists, so it is done every frame.  Any other padID reads nothing.
 void WiiPadCapture(int padID, CControllerState &state);
 
 // The Wiimote pointer, as the mouse the engine already knows how to use.  In
 // game it reports a turn rate as relative motion; in a menu it drives the
 // cursor's absolute position, which it writes straight to the frontend.
-// Ignored while a GameCube pad is active on channel 0.
+// Ignored while player 1 is on a GameCube pad.  Player 1's only: the second
+// player's pointer is a reticle and nothing else, and WiiPadCapture reads it.
 void WiiPadCaptureMouse(CMouseControllerState &state);
 
 // Drives the rumble motors from the shake the game asked for, and spends down
@@ -67,5 +73,9 @@ bool WiiPadCanPlay(void);
 // game the ordinary way; main() checks this after the log is closed and makes
 // the SYS_ResetSystem call there.
 bool WiiPadReturnToMenuRequested(void);
+
+// True while the Wiimote on channel 0 is in the hands of couch co-op's second
+// player.  The remote speaker is that remote's, and its sounds are player 1's.
+bool WiiPadRemoteIsPartners(void);
 
 #endif

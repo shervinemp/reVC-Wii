@@ -30,6 +30,7 @@
 #include "SceneEdit.h"
 #include "Pad.h"
 #include "PlayerPed.h"
+#include "Coop.h"
 #include "Radar.h"
 #include "debugmenu.h"
 #include "Frontend.h"
@@ -528,6 +529,11 @@ bool LoadINISettings()
 	ReadIniIfExists("Controller", "InvertMouseVertically", &MousePointerStateHelper.bInvertVertically);
 	ReadIniIfExists("Controller", "DisableMouseSteering", &CVehicle::m_bDisableMouseSteering);
 	ReadIniIfExists("Controller", "Vibration", &FrontEndMenuManager.m_PrefsUseVibration);
+	// Which of the shared camera's framings couch co-op uses.  It has no menu
+	// row: player 1's camera button steps through them in game.
+	if (ReadIniIfExists("Controller", "CoopFraming", &CCoop::ms_nFraming) &&
+	    (CCoop::ms_nFraming < 0 || CCoop::ms_nFraming >= CCoop::NUM_FRAMINGS))
+		CCoop::ms_nFraming = 1;
 	ReadIniIfExists("Audio", "SfxVolume", &FrontEndMenuManager.m_PrefsSfxVolume);
 	ReadIniIfExists("Audio", "MusicVolume", &FrontEndMenuManager.m_PrefsMusicVolume);
 	ReadIniIfExists("Audio", "MP3BoostVolume", &FrontEndMenuManager.m_PrefsMP3BoostVolume);
@@ -655,6 +661,7 @@ void SaveINISettings()
 	StoreIni("Controller", "InvertMouseVertically", MousePointerStateHelper.bInvertVertically);
 	StoreIni("Controller", "DisableMouseSteering", CVehicle::m_bDisableMouseSteering);
 	StoreIni("Controller", "Vibration", FrontEndMenuManager.m_PrefsUseVibration);
+	StoreIni("Controller", "CoopFraming", CCoop::ms_nFraming);
 	StoreIni("Audio", "SfxVolume", FrontEndMenuManager.m_PrefsSfxVolume);
 	StoreIni("Audio", "MusicVolume", FrontEndMenuManager.m_PrefsMusicVolume);
 	StoreIni("Audio", "MP3BoostVolume", FrontEndMenuManager.m_PrefsMP3BoostVolume);

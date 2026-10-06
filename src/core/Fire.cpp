@@ -73,7 +73,7 @@ CFire::ProcessFire(void)
 			if (ped->bInVehicle && ped->m_pMyVehicle) {
 				if (ped->m_pMyVehicle->IsCar())
 					ped->m_pMyVehicle->m_fHealth = 75.0f;
-			} else if (m_pEntity == (CPed *)FindPlayerPed()) {
+			} else if (IsAnyPlayerPed(m_pEntity)) {
 				fDamagePlayer = 1.2f * CTimer::GetTimeStep();
 
 				((CPlayerPed *)m_pEntity)->InflictDamage(
@@ -244,7 +244,8 @@ CFireManager::StartFire(CEntity *entityOnFire, CEntity *fleeFrom, float strength
 	if (fire) {
 		if (entityOnFire->IsPed()) {
 			ped->m_pFire = fire;
-			if (ped != FindPlayerPed()) {
+			// A player on fire stays in the player's hands, whichever player.
+			if (!IsAnyPlayerPed(ped)) {
 				if (fleeFrom) {
 					ped->SetFlee(fleeFrom, 10000);
 				} else {

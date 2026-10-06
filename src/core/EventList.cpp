@@ -117,7 +117,14 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 			gaEvent[i].state = EVENT_STATE_0;
 	}
 
-	if(criminal == FindPlayerPed())
+	// Either player.  There is one wanted level, player 1's, and what couch
+	// co-op's partner does counts toward it: the heat is shared, as it would be
+	// for any two people seen committing a crime together.
+	//
+	// What the two of them do to EACH OTHER is not a crime, though.  They can
+	// shoot and punch one another, and a stray round into your partner in the
+	// middle of a firefight should not be what brings the helicopters.
+	if(IsAnyPlayerPed(criminal) && !(ent != criminal && IsAnyPlayerPed(ent)))
 		ReportCrimeForEvent(type, (intptr)ent, copsDontCare);
 }
 

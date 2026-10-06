@@ -628,7 +628,15 @@ void CCarAI::TellOccupantsToFleeCar(CVehicle* pVehicle)
 	for (int i = 0; i < pVehicle->m_nNumMaxPassengers; i++) {
 		if (pVehicle->pPassengers[i]) {
 			pVehicle->pPassengers[i]->m_leaveCarTimer = timer;
-			pVehicle->pPassengers[i]->SetObjective(OBJECTIVE_FLEE_ON_FOOT_TILL_SAFE);
+			// The driver above is spared this if they are a player.  Couch
+			// co-op's partner rides as a passenger, and gets out of the burning
+			// car -- they cannot open the door of a moving one themselves --
+			// but where they run to afterwards is up to them.  Player 1 in a
+			// passenger seat (a taxi ride) is left to the stock order.
+			if (pVehicle->pPassengers[i]->IsPlayer() && pVehicle->pPassengers[i] != FindPlayerPed())
+				pVehicle->pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, pVehicle);
+			else
+				pVehicle->pPassengers[i]->SetObjective(OBJECTIVE_FLEE_ON_FOOT_TILL_SAFE);
 			timer += CGeneral::GetRandomNumberInRange(200, 400);
 		}
 	}

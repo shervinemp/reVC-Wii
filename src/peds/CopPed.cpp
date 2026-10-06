@@ -122,7 +122,12 @@ CCopPed::SetArrestPlayer(CPed *player)
 		player->bGonnaKillTheCarJacker = true;
 
 		// Genius
-		FindPlayerPed()->m_bCanBeDamaged = false;
+		// (The player being arrested, not the one in focus: with couch co-op's
+		// partner in the world they need not be the same, and this left player 1
+		// unable to be hurt for the rest of the session whenever a cop caught
+		// player 2.  The same goes for the copy of this line below.)
+		if (IsAnyPlayerPed(player))
+			((CPlayerPed*)player)->m_bCanBeDamaged = false;
 		((CPlayerPed*)player)->m_pArrestingCop = this;
 		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->m_pArrestingCop);
 
@@ -130,7 +135,8 @@ CCopPed::SetArrestPlayer(CPed *player)
 		player->m_nLastPedState = player->m_nPedState;
 		player->SetPedState(PED_ARRESTED);
 
-		FindPlayerPed()->m_bCanBeDamaged = false;
+		if (IsAnyPlayerPed(player))
+			((CPlayerPed*)player)->m_bCanBeDamaged = false;
 		((CPlayerPed*)player)->m_pArrestingCop = this;
 		this->RegisterReference((CEntity**) &((CPlayerPed*)player)->m_pArrestingCop);
 	}

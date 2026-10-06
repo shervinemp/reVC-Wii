@@ -234,6 +234,24 @@ CShadows::AddPermanentShadow(uint8 ShadowType, RwTexture *pTexture, CVector *pPo
 	}
 }
 
+// Where shadows are measured from.  Every shadow in here is only drawn within
+// a few metres of the camera -- thirteen for a pedestrian's, eighteen for a
+// car's -- on the understanding that the camera is standing right behind the
+// player, so that is where the shadows worth drawing are.  Couch co-op's shared
+// camera stands fifteen to thirty metres back from the players it is looking
+// at, which by that rule puts every shadow on screen out of range: nobody in
+// the picture would have one.  So for that camera the same distances are
+// measured from the point it is looking AT.  Same number of shadows as ever,
+// in the place they are wanted.
+static CVector
+ShadowViewPoint(void)
+{
+	const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
+	if ( cam.Mode == CCam::MODE_WII_COOP )
+		return cam.m_cvecTargetCoorsForFudgeInter;
+	return TheCamera.GetPosition();
+}
+
 bool
 CShadows::StoreStaticShadow(uint32 nID, uint8 ShadowType, RwTexture *pTexture, Const CVector *pPosn,
 							float fFrontX, float fFrontY, float fSideX, float fSideY,
@@ -242,7 +260,7 @@ CShadows::StoreStaticShadow(uint32 nID, uint8 ShadowType, RwTexture *pTexture, C
 {
 	ASSERT(pPosn != nil);
 
-	float fDistToCamSqr = (*pPosn - TheCamera.GetPosition()).MagnitudeSqr2D();
+	float fDistToCamSqr = (*pPosn - ShadowViewPoint()).MagnitudeSqr2D();
 
 	if ( SQR(fDrawDistance) > fDistToCamSqr || fDrawDistance == 0.0f )
 	{
@@ -493,7 +511,7 @@ CShadows::StoreShadowForVehicle(CVehicle *pCar, VEH_SHD_TYPE type)
 	if ( CTimeCycle::GetShadowStrength() != 0 )
 	{
 		CVector CarPos = pCar->GetPosition();
-		float fDistToCamSqr = (CarPos - TheCamera.GetPosition()).MagnitudeSqr2D();
+		float fDistToCamSqr = (CarPos - ShadowViewPoint()).MagnitudeSqr2D();
 
 		if ( CCutsceneMgr::IsRunning() )
 			fDistToCamSqr /= SQR(TheCamera.LODDistMultiplier) * 4.0f;
@@ -725,17 +743,19 @@ CShadows::StoreCarLightShadow(CVehicle *pCar, int32 nID, RwTexture *pTexture, CV
 	ASSERT(pCar != nil);
 	ASSERT(pPosn != nil);
 
-	float fDistToCamSqr = (*pPosn - TheCamera.GetPosition()).MagnitudeSqr2D();
+	float fDistToCamSqr = (*pPosn - ShadowViewPoint()).MagnitudeSqr2D();
 
 	bool bSpecialCam =     TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN
 						|| TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED
 						|| CCutsceneMgr::IsRunning();
+	// Seen from overhead there is no "behind the camera" to leave out.
+	bool bOverhead = TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP;
 
 	float fDrawDistance = 27.0f;
 
 	if ( fDistToCamSqr < SQR(fDrawDistance) || bSpecialCam )
 	{
-		if ( bSpecialCam || DotProduct2D(CVector2D(TheCamera.CamFrontXNorm, TheCamera.CamFrontYNorm),
+		if ( bSpecialCam || bOverhead || DotProduct2D(CVector2D(TheCamera.CamFrontXNorm, TheCamera.CamFrontYNorm),
 											*pPosn - TheCamera.GetPosition() ) > -fMaxViewAngle )
 		{
 			float fDistToCam = Sqrt(fDistToCamSqr);
@@ -888,7 +908,7 @@ CShadows::StoreShadowForPedObject(CEntity *pPedObject, float fDisplacementX, flo
 
 	CVector PedPos = pPedObject->GetPosition();
 
-	float fDistToCamSqr = (PedPos - TheCamera.GetPosition()).MagnitudeSqr2D();
+	float fDistToCamSqr = (PedPos - ShadowViewPoint()).MagnitudeSqr2D();
 
 	float fDrawDistance = 26.0f;
 

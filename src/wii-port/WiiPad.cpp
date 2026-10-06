@@ -8,6 +8,7 @@
 
 #include "common.h"
 #include "Camera.h"
+#include "Coop.h"
 #include "ControllerConfig.h"
 #include "Frontend.h"
 #include "ModelIndices.h"
@@ -186,8 +187,22 @@ constexpr float kPointerHoldSeconds = 2.0f;
 constexpr float kMinPointerDt = 1.0f/240.0f;
 constexpr float kMaxPointerDt = 1.0f/15.0f;
 
+// --- which controller is which player ----------------------------------------
+// Worked out once per scan.  Player 1's rule is the one this backend has always
+// had: a GameCube pad in port 1 owns the slot, and otherwise it is the first
+// Wii Remote.  Player 2 -- couch co-op's partner, CPad's PAD_COOP -- is whichever
+// controller is there besides: see resolveDevices.
+struct PadDevice
+{
+	enum Kind { NONE, GAMECUBE, WIIMOTE };
+	Kind kind;
+	int channel;
+};
+enum { PLAYER_ONE = 0, PLAYER_TWO = 1 };
+PadDevice s_devices[2];
+
 // --- Nunchuk flick-down jump -------------------------------------------------
-// WiiPadScan measures the gesture and raises s_flickJumpPulse for exactly one
+// WiiPadScan measures the gesture and raises the player's pulse for exactly one
 // frame; captureWiimote folds that into Square, the field JumpJustDown reads.
 // A flick is a jolt in the Nunchuk's acceleration measured against the gravity
 // it is already carrying, as a fraction of g.  Measuring the vector magnitude
@@ -199,7 +214,19 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // axis, and measured against that offset no flick can reach the threshold.  The
 // settle window turns the rebound into "not armed yet" instead of a second,
 // phantom jump.
-static bool s_flickJumpPulse = false;
+//
+// One detector per player, because each one is following the gravity its own
+// Nunchuk is carrying: two remotes fed through one would read every sample as
+// a jolt against the other hand's baseline.
+struct FlickDetector
+{
+	bool  pulse;          // the one-frame result
+	float gravity;        // slow |accel| at rest, about one g
+	float gx, gy, gz;     // slow gravity vector: which way is down
+	bool  settling;       // deaf while a flick rings down
+	float settleT;
+};
+static FlickDetector s_flick[2];
 static const float kFlickGravityFollow = 0.04f;  // slow baseline follow, per scan
 static const float kFlickFraction = 0.65f;       // a jolt must exceed ~65% of g: a decisive flick only
 static const float kFlickRearmFraction = 0.35f;  // "settled" below ~35% of g
@@ -296,6 +323,9 @@ float s_heldSeconds;
 float s_aimX;
 float s_aimY;
 bool s_aimActive;
+// Whether player 1 aims with the pointer at all.  Not on a Classic Controller:
+// that hangs off a remote lying on the sofa, and its player aims with a stick.
+bool s_leadPointerAims = true;
 
 // The turn rate the camera is actually using, eased towards whatever the response
 // curve asks for.  Shared by both pointer paths -- the aiming one and the plain
@@ -526,6 +556,13 @@ playerInVehicle(void)
 	return ped != nil && ped->bInVehicle;
 }
 
+// The ped a pad drives, which is not always the one in focus any more.
+CPlayerPed *
+padPlayer(int padID)
+{
+	return padID == PAD_COOP ? CCoop::GetPartner() : FindPlayerPed();
+}
+
 bool
 captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	StickAccumulator &sticks, const StickSettings &settings)
@@ -658,12 +695,16 @@ captureClassic(const WPADData &data, CControllerState &state,
 // D-pad would be rotated a quarter turn and the pointer unusable, which is a
 // different mapping rather than the same one with a caveat.
 void
-captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
+captureWiimote(int padID, const WPADData &data, u32 expansion, CControllerState &state,
 	StickAccumulator &sticks, const StickSettings &settings)
 {
 	const u32 buttons = data.btns_h;
 	const bool hasNunchuk = expansion == WPAD_EXP_NUNCHUK;
-	const bool inCar = playerInVehicle();
+	// This pad's own player: 1 is jump on foot and the radio in a car, and with
+	// two players one of them can be in a car while the other is not.
+	CPlayerPed *player = padPlayer(padID);
+	const bool inCar = player != nil && player->bInVehicle;
+	const bool flickPulse = s_flick[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE].pulse;
 
 	const bool dpadLeft = (buttons & WPAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & WPAD_BUTTON_RIGHT) != 0;
@@ -699,7 +740,7 @@ captureWiimote(const WPADData &data, u32 expansion, CControllerState &state,
 	// the radio and deliberately does not jump.  Both feed the one Square pulse
 	// JumpJustDown reads, so a jump is a jump whichever you use.
 	const bool jumpByOne = (buttons & WPAD_BUTTON_1) && !inCar;
-	setButton(state.Square, s_flickJumpPulse || jumpByOne);
+	setButton(state.Square, flickPulse || jumpByOne);
 
 	// The radio and crouch read the same field, LeftShock (ChangeStationJustDown
 	// and DuckJustDown), so the field follows the context: 1 in a car, where it is
@@ -933,27 +974,215 @@ releaseCrosshair(void)
 	CCamera::m_f3rdPersonCHairMultY = kAimDefaultY;
 }
 
-// Moves the crosshair toward a target position through the jitter filter.  It
+// Moves a reticle toward a target position through the jitter filter.  It
 // starts on the target when the pointer first takes it over, rather than gliding
-// there from the resting position.
+// there from wherever it was left.
 void
-steerCrosshair(float targetX, float targetY)
+smoothReticle(float &aimX, float &aimY, bool &active, float targetX, float targetY)
 {
-	if(!s_aimActive){
-		s_aimX = targetX;
-		s_aimY = targetY;
-		s_aimActive = true;
+	if(!active){
+		aimX = targetX;
+		aimY = targetY;
+		active = true;
 	}else{
-		const float errorX = targetX - s_aimX;
-		const float errorY = targetY - s_aimY;
+		const float errorX = targetX - aimX;
+		const float errorY = targetY - aimY;
 		const float error = std::sqrt(errorX*errorX + errorY*errorY);
 		const float tau = kAimSmoothTau/(1.0f + kAimSmoothGain*error);
 		const float follow = 1.0f - std::exp(-s_pointerDt/tau);
-		s_aimX += errorX*follow;
-		s_aimY += errorY*follow;
+		aimX += errorX*follow;
+		aimY += errorY*follow;
 	}
+}
+
+// Player 1's reticle is the camera's crosshair: the HUD draws at it and, out of
+// couch co-op, the shot is traced through it.
+void
+steerCrosshair(float targetX, float targetY)
+{
+	smoothReticle(s_aimX, s_aimY, s_aimActive, targetX, targetY);
 	CCamera::m_f3rdPersonCHairMultX = s_aimX;
 	CCamera::m_f3rdPersonCHairMultY = s_aimY;
+	// In couch co-op each player aims at their own reticle rather than along
+	// the camera, and this is how CCoop learns where player 1's is.  Reported
+	// only from here, so a pointer nobody is aiming with goes quiet and CCoop
+	// lets that player's aim lapse.  Nor from the remote behind a Classic
+	// Controller: a glimpse of the sensor bar from the sofa cushions would
+	// outrank the stick its player is aiming with.
+	if(s_leadPointerAims)
+		CCoop::ReportPointer(PLAYER_ONE, s_aimX, s_aimY);
+}
+
+// Player 2's reticle.  There is no camera for it to turn and no crosshair of
+// the engine's for it to be, so it is only ever this: where their remote is
+// pointing, smoothed, handed to CCoop.
+float s_partnerAimX;
+float s_partnerAimY;
+bool s_partnerAimActive;
+float s_partnerAimLost;
+
+void
+capturePartnerPointer(const WPADData &data, u32 expansion)
+{
+	const float width = (float)RsGlobal.maximumWidth;
+	const float height = (float)RsGlobal.maximumHeight;
+	// A Classic Controller hangs off a remote that is lying on the sofa; its
+	// player aims with the right stick, which CCoop reads off the pad itself.
+	if(!WiiPointerAimEnabled || !CCoop::IsRunning() || FrontEndMenuManager.m_bMenuActive ||
+	   expansion == WPAD_EXP_CLASSIC || width <= 0.0f || height <= 0.0f){
+		s_partnerAimActive = false;
+		return;
+	}
+	if(!data.ir.valid){
+		// Off the sensor bar.  Say nothing, and after a moment forget where it
+		// was, so that coming back is a jump to the new place and not a glide
+		// across the screen from the old one.
+		s_partnerAimLost += s_pointerDt;
+		if(s_partnerAimLost > 0.25f)
+			s_partnerAimActive = false;
+		return;
+	}
+	s_partnerAimLost = 0.0f;
+	float x = data.ir.x/width;
+	float y = data.ir.y/height;
+	x = x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x);
+	y = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
+	smoothReticle(s_partnerAimX, s_partnerAimY, s_partnerAimActive, x, y);
+	CCoop::ReportPointer(PLAYER_TWO, s_partnerAimX, s_partnerAimY);
+}
+
+// A Wii Remote that is connected and reporting.
+bool
+wiimoteReady(int channel, u32 &expansion)
+{
+	WPADData *data = WPAD_Data(channel);
+	if(data == nullptr || data->err != WPAD_ERR_NONE)
+		return false;
+	expansion = probeExpansion(channel, *data);
+	return true;
+}
+
+void
+resolveDevices(void)
+{
+	if(s_connectedGameCubePads & 1){
+		s_devices[PLAYER_ONE].kind = PadDevice::GAMECUBE;
+		s_devices[PLAYER_ONE].channel = 0;
+	}else{
+		s_devices[PLAYER_ONE].kind = PadDevice::WIIMOTE;
+		s_devices[PLAYER_ONE].channel = WPAD_CHAN_0;
+	}
+
+	// Player 2 is the first controller present that is not player 1's: any
+	// further GameCube pad, then any Wii Remote player 1 is not holding.  A
+	// remote only counts with something to walk with plugged into it -- the same
+	// rule the boot screen holds player 1 to -- which also means a second remote
+	// left on the table does not put a second player in the game.
+	s_devices[PLAYER_TWO].kind = PadDevice::NONE;
+	s_devices[PLAYER_TWO].channel = 0;
+	for(int port = 1; port < 4; port++){
+		if(s_connectedGameCubePads & (1 << port)){
+			s_devices[PLAYER_TWO].kind = PadDevice::GAMECUBE;
+			s_devices[PLAYER_TWO].channel = port;
+			return;
+		}
+	}
+	const int first = s_devices[PLAYER_ONE].kind == PadDevice::GAMECUBE ? 0 : 1;
+	for(int channel = first; channel < WPAD_MAX_WIIMOTES; channel++){
+		u32 expansion = WPAD_EXP_NONE;
+		if(wiimoteReady(channel, expansion) &&
+		   (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)){
+			s_devices[PLAYER_TWO].kind = PadDevice::WIIMOTE;
+			s_devices[PLAYER_TWO].channel = channel;
+			return;
+		}
+	}
+}
+
+// One player's flick, measured once per scan.  It fires on a jolt in the
+// acceleration vector measured against the gravity the Nunchuk is already
+// carrying -- see the constants above.  Three things keep it honest:
+//   - it is a transient jolt above a live gravity baseline, not a tilt angle,
+//     so holding the remote still never reads as a flick;
+//   - the threshold is a fraction of g, so it does not care how the pad's raw
+//     accel happens to be scaled or how the remote is held;
+//   - a settle window makes the rebound at the end of a flick re-arm the
+//     detector rather than fire a second, phantom jump.
+// It is on foot only and idle while the stick is deflected, because steering
+// and running shake the Nunchuk constantly.
+void
+updateFlick(FlickDetector &flick, const WPADData *wd, CPlayerPed *ped)
+{
+	flick.pulse = false;
+
+	const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
+		wd->exp.type == WPAD_EXP_NUNCHUK;
+	const bool onFoot = ped != nullptr && !ped->bInVehicle;
+	// Menus run with the player ped still alive on foot, so without this the
+	// flick would pulse Square behind an open menu.  Gameplay input is paused
+	// in menus anyway, so the pulse would go nowhere -- this just keeps the
+	// gesture honest.
+	const bool inMenu = FrontEndMenuManager.m_bMenuActive;
+
+	// Calibrated g-forces, not the raw counts in nunchuk.accel: see the note on
+	// the constants above.  A Nunchuk whose calibration never arrived reports
+	// nonsense here instead (the conversion divides by it), so a reading no real
+	// hand could produce is treated as no reading at all; the comparison is
+	// written so that a NaN fails it too.
+	float ax = 0.0f, ay = 0.0f, az = 0.0f, mag = 0.0f;
+	bool readable = false;
+	if(nunchukReady && onFoot && !inMenu){
+		ax = wd->exp.nunchuk.gforce.x;
+		ay = wd->exp.nunchuk.gforce.y;
+		az = wd->exp.nunchuk.gforce.z;
+		mag = std::sqrt(ax*ax + ay*ay + az*az);
+		readable = mag < kFlickMaxSaneG;
+	}
+	if(!readable){
+		flick.settling = false;
+		flick.settleT = 0.0f;
+		return;
+	}
+
+	if(flick.gravity <= 0.0f){
+		flick.gravity = mag;                    // first sample seeds the baseline
+		flick.gx = ax; flick.gy = ay; flick.gz = az;
+	}else{
+		flick.gravity += (mag - flick.gravity)*kFlickGravityFollow;
+		flick.gx += (ax - flick.gx)*kFlickGravityFollow;
+		flick.gy += (ay - flick.gy)*kFlickGravityFollow;
+		flick.gz += (az - flick.gz)*kFlickGravityFollow;
+	}
+	// How far the current acceleration sits above the gravity baseline, as a
+	// fraction of that baseline.  A deliberate flick spikes this; holding,
+	// walking, or steering do not.
+	const float dev = (mag - flick.gravity)/(flick.gravity > 0.1f ? flick.gravity : 1.0f);
+	// Which way is "down" right now, from the slowly-followed gravity
+	// vector (not the raw sample, which is what the jolt perturbs).  At rest
+	// the accelerometer already reads the gravity vector, so this alignment
+	// is about 1 however the remote is held.  A down-flick pushes further
+	// along gravity and keeps it near 1; an up-flick opposes gravity and
+	// drops it, so requiring real alignment rejects up-flicks.  A cosine over
+	// all three axes, so it is the angle that is tested and not the size of
+	// the jolt.
+	const float glen = std::sqrt(flick.gx*flick.gx + flick.gy*flick.gy + flick.gz*flick.gz);
+	const float align = (glen > 0.1f && mag > 0.1f) ?
+		(ax*flick.gx + ay*flick.gy + az*flick.gz)/(glen*mag) : 1.0f;
+	const bool wentDown = align > kFlickDownAlign;
+	if(flick.settling){
+		// Wait for the jolt and its rebound to fall away before arming again,
+		// so one flick is exactly one pulse.
+		if(dev > kFlickRearmFraction)
+			flick.settleT = 0.0f;
+		else
+			flick.settleT += s_pointerDt;
+		if(flick.settleT >= kFlickSettleSec)
+			flick.settling = false;
+	}else if(dev > kFlickFraction && wentDown){
+		flick.pulse = true;
+		flick.settling = true;
+		flick.settleT = 0.0f;
+	}
 }
 
 // The pointer's two jobs while it owns the crosshair.  The crosshair tracks the
@@ -994,13 +1223,13 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	};
 
 	// Couch co-op: the crosshair is a reticle and nothing else.  The camera is
-	// shared and fixed (CCam::Process_WiiCoop), so turning it here would fight
-	// the other player for the one view -- and with a fixed downward angle there
-	// is nothing for a turn to accomplish anyway.  The reticle still moves across
-	// the whole screen and the shot still goes through it, because
-	// Find3rdPersonCrosshairRay is screen-space and stays correct at any camera
-	// angle.  outCrosshair* is set below either way; only the turn is dropped.
-	const bool reticleOnly = CCamera::bWiiCoopCamera;
+	// shared and takes no input from aiming (CCam::Process_WiiCoop), so there is
+	// nothing for a turn to accomplish.  outCrosshair* is set below either way;
+	// only the turn is dropped.
+	//
+	// CCoop::IsRunning(), not the menu toggle: the toggle stays on through a
+	// mission, where the camera is the ordinary one again and has to turn.
+	const bool reticleOnly = CCoop::IsRunning();
 
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
@@ -1045,6 +1274,13 @@ int8_t WiiDriveByAnyWeapon = 0;
 // Set by HOME, read by main() once the game has unwound.  See WiiPadScan.
 static bool s_returnToMenu;
 
+bool
+WiiPadRemoteIsPartners(void)
+{
+	return CCoop::GetPartner() != nullptr && s_devices[PLAYER_TWO].kind == PadDevice::WIIMOTE &&
+		s_devices[PLAYER_TWO].channel == WPAD_CHAN_0;
+}
+
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls these.
 bool
 WiiPadCanPlay(void)
@@ -1068,13 +1304,15 @@ WiiPadReturnToMenuRequested(void)
 }
 
 // The switches pointerAimWanted reads for a vehicle, plus the one thing that stops
-// WiiPadCaptureMouse feeding the camera at all.  Settings and a connection mask, so
-// it cannot flicker from frame to frame and swap the car camera under the player.
+// WiiPadCaptureMouse feeding the camera at all: player 1 on a GameCube pad.  (A pad
+// in another port is couch co-op's partner and leaves player 1's pointer alone.)
+// Settings and a connection mask, so it cannot flicker from frame to frame and swap
+// the car camera under the player.
 bool
 WiiPointerAimInCar(void)
 {
 	return WiiPointerAimEnabled && WiiAimInCar && CCamera::m_bUseMouse3rdPerson &&
-		s_connectedGameCubePads == 0;
+		(s_connectedGameCubePads & (1 << PAD_CHAN0)) == 0;
 }
 
 void
@@ -1154,100 +1392,20 @@ WiiPadScan(void)
 		}
 	}
 
+	// Who is holding what, for everything else this frame.
+	resolveDevices();
+
 	// Nunchuk flick-down = jump (one of two triggers; 1 on foot is the other).
 	// The gesture is read here, once per scan, and published as a one-frame Square
 	// pulse that captureWiimote folds into the pad state (JumpJustDown reads
-	// Square).  It fires on a jolt in the acceleration vector measured against the
-	// gravity the Nunchuk is already carrying -- see the constants above.  Three
-	// things keep it honest:
-	//   - it is a transient jolt above a live gravity baseline, not a tilt angle,
-	//     so holding the remote still never reads as a flick;
-	//   - the threshold is a fraction of g, so it does not care how the pad's raw
-	//     accel happens to be scaled or how the remote is held;
-	//   - a settle window makes the rebound at the end of a flick re-arm the
-	//     detector rather than fire a second, phantom jump.
-	// It is on foot only and idle while the stick is deflected, because steering
-	// and running shake the Nunchuk constantly.
-	{
-		static bool   s_jumpPulse = false;
-		static float  s_gravity = 0.0f;   // slow |accel| at rest, about one g
-		static float  s_gx = 0.0f, s_gy = 0.0f, s_gz = 0.0f; // slow gravity vector: which way is down
-		static bool   s_settling = false;  // deaf while a flick rings down
-		static float  s_settleT = 0.0f;
-		s_jumpPulse = false;
-
-		const WPADData *wd = WPAD_Data(WPAD_CHAN_0);
-		CPlayerPed *ped = FindPlayerPed();
-		const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
-			wd->exp.type == WPAD_EXP_NUNCHUK;
-		const bool onFoot = ped != nullptr && !ped->bInVehicle;
-		// Menus run with the player ped still alive on foot, so without this the
-		// flick would pulse Square behind an open menu.  Gameplay input is paused
-		// in menus anyway, so the pulse would go nowhere -- this just keeps the
-		// gesture honest.
-		const bool inMenu = FrontEndMenuManager.m_bMenuActive;
-
-		// Calibrated g-forces, not the raw counts in nunchuk.accel: see the note on
-		// the constants above.  A Nunchuk whose calibration never arrived reports
-		// nonsense here instead (the conversion divides by it), so a reading no real
-		// hand could produce is treated as no reading at all; the comparison is
-		// written so that a NaN fails it too.
-		float ax = 0.0f, ay = 0.0f, az = 0.0f, mag = 0.0f;
-		bool readable = false;
-		if(nunchukReady && onFoot && !inMenu){
-			ax = wd->exp.nunchuk.gforce.x;
-			ay = wd->exp.nunchuk.gforce.y;
-			az = wd->exp.nunchuk.gforce.z;
-			mag = std::sqrt(ax*ax + ay*ay + az*az);
-			readable = mag < kFlickMaxSaneG;
-		}
-
-		if(!readable){
-			s_settling = false;
-			s_settleT = 0.0f;
-		}else{
-			if(s_gravity <= 0.0f){
-				s_gravity = mag;                    // first sample seeds the baseline
-				s_gx = ax; s_gy = ay; s_gz = az;
-			}else{
-				s_gravity += (mag - s_gravity)*kFlickGravityFollow;
-				s_gx += (ax - s_gx)*kFlickGravityFollow;
-				s_gy += (ay - s_gy)*kFlickGravityFollow;
-				s_gz += (az - s_gz)*kFlickGravityFollow;
-			}
-			// How far the current acceleration sits above the gravity baseline, as a
-			// fraction of that baseline.  A deliberate flick spikes this; holding,
-			// walking, or steering do not.
-			const float dev = (mag - s_gravity)/(s_gravity > 0.1f ? s_gravity : 1.0f);
-			// Which way is "down" right now, from the slowly-followed gravity
-			// vector (not the raw sample, which is what the jolt perturbs).  At rest
-			// the accelerometer already reads the gravity vector, so this alignment
-			// is about 1 however the remote is held.  A down-flick pushes further
-			// along gravity and keeps it near 1; an up-flick opposes gravity and
-			// drops it, so requiring real alignment rejects up-flicks.  A cosine over
-			// all three axes, so it is the angle that is tested and not the size of
-			// the jolt.
-			const float glen = std::sqrt(s_gx*s_gx + s_gy*s_gy + s_gz*s_gz);
-			const float align = (glen > 0.1f && mag > 0.1f) ?
-				(ax*s_gx + ay*s_gy + az*s_gz)/(glen*mag) : 1.0f;
-			const bool wentDown = align > kFlickDownAlign;
-			if(s_settling){
-				// Wait for the jolt and its rebound to fall away before arming again,
-				// so one flick is exactly one pulse.
-				if(dev > kFlickRearmFraction)
-					s_settleT = 0.0f;
-				else
-					s_settleT += s_pointerDt;
-				if(s_settleT >= kFlickSettleSec)
-					s_settling = false;
-			}else if(dev > kFlickFraction && wentDown){
-				s_jumpPulse = true;
-				s_settling = true;
-				s_settleT = 0.0f;
-			}
-		}
-		s_flickJumpPulse = s_jumpPulse;
-	}
+	// Square).  One detector per player, each reading its own player's remote: see
+	// updateFlick.
+	updateFlick(s_flick[PLAYER_ONE],
+		s_devices[PLAYER_ONE].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[PLAYER_ONE].channel) : nullptr,
+		FindPlayerPed());
+	updateFlick(s_flick[PLAYER_TWO],
+		s_devices[PLAYER_TWO].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[PLAYER_TWO].channel) : nullptr,
+		CCoop::GetPartner());
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which
 	// is monotonic and always alive here, unlike CTimer, which stops with the
@@ -1264,20 +1422,40 @@ WiiPadScan(void)
 void
 WiiPadCapture(int padID, CControllerState &state)
 {
+	// Pad 0 is player 1 and PAD_COOP is couch co-op's partner.  Nothing is ever
+	// read into pad 1: it is the engine's debug pad, and a controller on it
+	// would be pressing debug hotkeys.  See PAD_COOP in Pad.h.
+	if(padID != 0 && padID != PAD_COOP)
+		return;
+	const PadDevice &device = s_devices[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE];
+	// This capture runs every frame whether or not anyone is playing player 2,
+	// and it is how co-op learns that somebody could: the partner joins when a
+	// controller turns up here and leaves when it has been gone a while.
+	if(padID == PAD_COOP)
+		CCoop::ReportPartnerPad(device.kind != PadDevice::NONE);
+	if(device.kind == PadDevice::NONE)
+		return;
+
 	const StickSettings settings = currentStickSettings();
 
 	StickAccumulator sticks = { 0.0f, 0.0f, 0.0f, 0.0f };
-	// A live GameCube pad owns this slot alone.  Merging Wiimote / Classic on
+	// A live GameCube pad owns its slot alone.  Merging Wiimote / Classic on
 	// top of it was what made IR and remote buttons steal camera and actions
 	// while a GC controller was already plugged in.
-	if(!captureGameCube(padID, s_connectedGameCubePads, state, sticks, settings)){
-		WPADData *data = WPAD_Data(padID);
+	if(device.kind == PadDevice::GAMECUBE){
+		captureGameCube(device.channel, s_connectedGameCubePads, state, sticks, settings);
+	}else{
+		WPADData *data = WPAD_Data(device.channel);
 		if(data != nullptr){
-			const u32 expansion = probeExpansion(padID, *data);
+			const u32 expansion = probeExpansion(device.channel, *data);
 			if(expansion == WPAD_EXP_CLASSIC)
 				captureClassic(*data, state, sticks, settings);
 			else
-				captureWiimote(*data, expansion, state, sticks, settings);
+				captureWiimote(padID, *data, expansion, state, sticks, settings);
+			// Player 1's pointer is read in WiiPadCaptureMouse, because for them
+			// it is also the mouse.  The partner's is only ever a reticle.
+			if(padID == PAD_COOP)
+				capturePartnerPointer(*data, expansion);
 		}
 	}
 
@@ -1294,9 +1472,12 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	state.x = 0.0f;
 	state.y = 0.0f;
 
-	// Same exclusivity as WiiPadCapture: any GameCube pad silences IR so a
-	// live remote cannot steer the camera while driving with GC.
-	if(s_connectedGameCubePads != 0){
+	// Same exclusivity as WiiPadCapture: player 1 on a GameCube pad silences IR,
+	// so a live remote cannot steer the camera while they drive with the pad.
+	// (It used to be ANY GameCube pad, which was the same thing until a second
+	// pad could mean a second player; now a partner plugging one in would have
+	// taken player 1's pointer away.)
+	if(s_devices[PLAYER_ONE].kind == PadDevice::GAMECUBE){
 		stopPointerHold();
 		releaseCrosshair();
 		return;
@@ -1310,10 +1491,21 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	}
 
 	const bool tracked = data->ir.valid != 0;
+	s_leadPointerAims = data->exp.type != WPAD_EXP_CLASSIC;
 
 	const bool aimWithPointer = !FrontEndMenuManager.m_bMenuActive && pointerAimWanted();
 	if(!aimWithPointer)
 		releaseCrosshair();
+
+	// How long the pointer has been off the sensor bar.  Out of co-op the reticle
+	// is carried along the screen edge for as long as that lasts, because the
+	// camera is still being turned by it.  In co-op nothing is being turned, and
+	// a reticle parked at the bottom of the screen for a player who has put the
+	// remote in their lap would keep that player's body facing down the screen
+	// -- so there it is carried only briefly, and then left for CCoop to retire.
+	static float untrackedSeconds = 0.0f;
+	untrackedSeconds = tracked ? 0.0f : untrackedSeconds + s_pointerDt;
+	const bool carryReticle = !CCoop::IsRunning() || untrackedSeconds < 0.6f;
 
 	if(FrontEndMenuManager.m_bMenuActive){
 		// A cursor, absolutely: aiming at an option has to put the cursor on that
@@ -1407,9 +1599,11 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		s_heldSeconds += s_pointerDt;
 		if(s_heldSeconds >= kPointerHoldSeconds){
 			stopPointerHold();
-			if(aimWithPointer)
+			// (Not in co-op, where the middle of the screen is no resting place: it
+			// is roughly where the players are standing.)
+			if(aimWithPointer && !CCoop::IsRunning())
 				steerCrosshair(kAimDefaultX, kAimDefaultY);
-		}else if(aimWithPointer)
+		}else if(aimWithPointer && carryReticle)
 			steerCrosshair(s_lostX, s_lostY);
 	}
 
@@ -1458,8 +1652,13 @@ WiiPadUpdateRumble(void)
 		}
 	}else
 		s_rumblePhase = 0.0f;
-	WPAD_Rumble(WPAD_CHAN_0, running);
-	PAD_ControlMotor(PAD_CHAN0, running ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+	// Player 1's own controller, and only that one.  Both used to be driven
+	// together; with a second player that is the partner's hands buzzing every
+	// time player 1 is shot.  (The partner gets none of their own yet: the
+	// engine sends every shake to pad 0.)
+	const bool onGameCube = s_devices[PLAYER_ONE].kind == PadDevice::GAMECUBE;
+	WPAD_Rumble(WPAD_CHAN_0, onGameCube ? 0 : running);
+	PAD_ControlMotor(PAD_CHAN0, (onGameCube && running) ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
 }
 
 WiiConnectedPad

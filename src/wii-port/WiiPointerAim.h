@@ -34,7 +34,7 @@ extern int8_t WiiAimInCar;
 extern int8_t WiiDriveByAnyWeapon;
 
 // True while that is in force: the Standard method with Pointer Aim and Aim In Car all
-// on, and no GameCube pad plugged in (one of those silences the pointer).  The engine
+// on, and player 1 not on a GameCube pad (which silences the pointer).  The engine
 // asks this in the few places a vehicle has to behave differently for it.
 bool WiiPointerAimInCar(void);
 

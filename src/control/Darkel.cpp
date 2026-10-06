@@ -189,6 +189,20 @@ CDarkel::FrenzyOnGoing()
 	return Status == KILLFRENZY_ONGOING;
 }
 
+// The slot of the player's that a rampage has put its own weapon into, or -1
+// when there is no rampage or it is one fought from a vehicle.  Couch co-op's
+// weapon sharing reads this, to leave that slot alone while it lasts.
+int
+CDarkel::GetFrenzyWeaponSlot()
+{
+	if (Status != KILLFRENZY_ONGOING)
+		return -1;
+	eWeaponType fixedWeapon = WeaponType == WEAPONTYPE_UZI_DRIVEBY ? WEAPONTYPE_UZI : (eWeaponType)WeaponType;
+	if (fixedWeapon >= WEAPONTYPE_TOTALWEAPONS)
+		return -1;
+	return CWeaponInfo::GetWeaponInfo(fixedWeapon)->m_nWeaponSlot;
+}
+
 
 uint16
 CDarkel::ReadStatus()
@@ -234,6 +248,11 @@ CDarkel::RegisterKillByPlayer(CPed *victim, eWeaponType weapon, bool headshot)
 	if (CReplay::IsPlayingBack())
 		return;
 #endif
+	// Couch co-op's partner is not a kill.  The players can shoot each other,
+	// and the partner is back a few seconds later -- which would make them an
+	// endless supply of rampage kills and "people wasted" otherwise.
+	if (IsAnyPlayerPed(victim) && victim != FindPlayerPed())
+		return;
 	if (FrenzyOnGoing() && (weapon == WeaponType
 			|| weapon == WEAPONTYPE_EXPLOSION
 			|| weapon == WEAPONTYPE_UZI_DRIVEBY && WeaponType == WEAPONTYPE_UZI

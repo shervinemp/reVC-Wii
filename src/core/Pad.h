@@ -142,7 +142,17 @@ enum
 	// taken from miss2
 	PAD1 = 0,
 	PAD2,
-	
+	// Couch co-op's second player.  A slot of its own rather than PAD2, because
+	// PAD2 is not a spare: outside MASTER builds it is the engine's debug pad, and
+	// a dozen places read it directly -- Circle toggles the world viewer camera
+	// (Camera.cpp), Start hides the HUD (Hud.cpp), R1 fast-forwards the clock
+	// (Clock.cpp), the right stick click cycles the weather (Weather.cpp).  Circle
+	// is the fire button, so a second player on PAD2 would have flipped the debug
+	// camera with their first shot.  Nothing reads this slot except the player
+	// ped it belongs to, which removes the conflict instead of chasing it through
+	// every one of those call sites.
+	PAD_COOP,
+
 	MAX_PADS
 };
 

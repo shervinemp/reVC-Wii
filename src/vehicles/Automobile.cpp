@@ -3883,7 +3883,13 @@ CAutomobile::DoDriveByShootings(void)
 
 	bool lookingLeft = false;
 	bool lookingRight = false;
+	// Which side a drive-by goes out of is normally read off the camera: it is
+	// the side the car camera has swung round to look at.  A camera that does
+	// not swing gets it from the buttons instead -- the old top-down mode, the
+	// cinematic one, and couch co-op's shared camera, which without this had no
+	// way to do a drive-by at all.
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
+	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP ||
 	   TheCamera.m_bObbeCinematicCarCamOn){
 		if(CPad::GetPad(0)->GetLookLeft())
 			lookingLeft = true;

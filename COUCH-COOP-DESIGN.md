@@ -1,321 +1,420 @@
 # Couch co-op (GTA:SA PS2 model) — design
 
-Branch: `couch-coop`, cut from `definitive-qol` at `1bd67275`.
+Branch: `couch-coop`, on top of `definitive-qol`.
 
 Target model is the **PS2 GTA: San Andreas co-op** the Wii was built alongside:
 two players, **one shared camera, one screen**, no split-screen. Player 1 stays
-the script driver; player 2 is a real second ped who walks, aims, shoots and rides
-along, but never owns a mission.
-
-## Freeroam only: co-op does not run during missions
-
-Co-op is **off while a mission is running.** This is a hard boundary, not a
-degradation.
-
-It is worth being clear about why, because it looks like a limitation and is
-actually the thing that makes the rest affordable:
-
-- It turns a **degraded** mode into a **bounded** one. Letting co-op run through a
-  mission means player 2 is a bodyguard for the whole campaign, which is the part
-  of this design with the most ways to be subtly wrong and the least fun.
-- It removes a whole class of risk rather than managing it. Mission scripts, the
-  cutscene cameras, mission-failure respawn and every `PlayerInFocus` assumption
-  inside a scripted sequence all stop mattering, because none of it runs
-  concurrently with a second ped. The camera already yields to cutscenes; that
-  patch exists because of a structural conflict, and this removes the conflict.
-- It is what SA MP actually did. There was no co-op campaign; co-op was freeroam
-  and community missions.
-
-Cost: nothing, since player 1 owning scripts and player 2 being a passenger was
-already the design. This just makes it explicit rather than letting the mode run
-in a state it was never designed for.
-
-Co-op missions remain possible later as **custom `.scm` missions**, which drop
-straight in from the SD card, and which get co-op only once they opt in.
-
-### What this makes the top remaining risk
-
-**Player 2 dying in freeroam.** Nobody respawns them: respawn is driven off
-`PlayerInFocus`, which stays 0, so a second ped that dies is a corpse the camera
-then frames for the rest of the session. In mission-free co-op this is a *likely*
-event rather than an edge case, so it needs explicit wiring before co-op is
-usable rather than after.
-
-Not yet located: the respawn symbol itself. Three searches came back empty, so
-this is recorded as an open question rather than a known gap.
-
-1. **Semi-top-down shared camera.** One camera for both players, angled down.
-2. **The pointer is a reticle only.** In co-op it never rotates the camera — the
-   camera does not turn, so aiming has nothing to fight.
-3. **Per-player reticle colours**, so on a shared screen you can tell whose aim is
-   whose at a glance.
-4. **`PlayerInFocus` stays 0.** All scripts, the HUD, mission triggers and pickups
-   keep talking to player 1 exactly as they do now. This is what makes the whole
-   thing affordable.
-5. **Player 2 spawns next to player 1** when co-op is switched on, and is **not
-   saved** — see "Save format" below.
-
-Decisions 1 and 2 are the load-bearing ones, and they are the reason this design
-works. The single-player scheme is pointer-*driven* aiming: the crosshair is the
-IR dot and the camera chases it (`irAimRate`). With a fixed downward camera there
-is no chase, so the reticle decouples from the view for free and two players stop
-fighting over one camera.
-
-## Verified anchors
-
-Facts below were read out of this tree, not assumed.
-
-| Thing | Where |
-|---|---|
-| Player slots | `src/core/config.h:16` — `NUMPLAYERS = 1`, doubling as the `CWorld::Players[]` array size (`World.h:62`) |
-| Player ped is born hardcoded to slot 0 | `src/core/Pools.cpp:589` and `:637`, both `CWorld::Players[0].m_pPed = …` |
-| Single focus player, read by everything | `#define PLAYER (CWorld::Players[CWorld::PlayerInFocus].m_pPed)` — `src/core/Camera.cpp:71` |
-| Save identifies the player ped by type | `CPools::SavePedPool` / `LoadPedPool`, `src/core/Pools.cpp:504`/`:552`, gated on `m_nPedType == PEDTYPE_PLAYER1` |
-| **Wiimote channel is hardcoded** | `WPAD_CHAN_0` at `WiiPad.cpp:982,986,1005,1011,1046,1083,1195,1344` and `WiiPadState.cpp:485,502`, plus `WiiSpeaker.cpp:33` |
-| GameCube pads *are* per-pad | `CapturePad(padID)` → `WiiPadCapture(padID, …)` → `captureGameCube(padID, …)` — `wii_game.cpp:445`, `WiiPad.cpp:1154` |
-| Camera target is a single entity | `Cam.cpp:163` — `CameraTarget = CamTargetEntity->GetPosition()` |
-| Top-down mode exists but is dead | `Camera.h:38` declares `MODE_TOPDOWN`; `Cam.cpp:176` has its handler **commented out** |
-| Peds are placement-new'd into a fixed pool | `typedef CPool<CPed,CPlayerPed> CPedPool` — `Pools.h:16`; `CPool` has no `Allocate` (`templates.h:38`) |
-
-## Revision after studying the PS2 SA co-op
-
-Gate 0 shipped (`d45ff871`) and is correct as far as it goes, but studying what
-SA MP actually does says five things, four of which are changes.
-
-**Control ownership is dynamic — this is SA MP's best idea and Gate 0 lacks it.**
-Only one player *has control* at a time. The other is a passenger/assistant who
-can move and shoot but does not drive, and a button hands control over. Gate 0
-hardcodes player 1 as the camera subject, which is the static version of that and
-is worse: whoever is not driving is a passenger *by definition*, and the camera
-never goes where the action is.
-
-This is a separate axis from script ownership. **Scripts stay with player 1** —
-that is unchanged, and SA MP agrees with it, having shipped no co-op campaign at
-all. What follows the controller is the camera, the vehicle, and pickup
-attribution.
-
-**The camera follows the controller, not player 1.** Follows from the above.
-
-**A plain midpoint fails once the players separate.** At 30m the average sits
-halfway between them and the controller sits on the very edge of frame. SA MP
-guarantees both are visible. So: weight the midpoint toward the controller, and
-past a separation threshold follow the controller alone.
-
-**The ped must face its reticle.** It does not yet. The ped keeps facing
-wherever it was walking while the dot is elsewhere, so shooting looks broken even
-though the ray is correct. The engine's aim state wants driving the upper body
-and weapon from the reticle position.
-
-**The pitch was probably too shallow.** 41 degrees was picked for legibility of
-the 3D, which is the wrong priority in a design where aiming *is* a reticle. The
-steeper the camera the closer the screen-to-ground mapping is to linear — near
-vertical is nearly orthographic — so a shallow angle compresses the horizon and
-makes aiming at distance twitchy. **Try 55–60 degrees.** The instinct behind
-"semi-topdown" was better than the number that was first put on it.
-
-### Lock-on already solves aiming, and it never touched the camera
-
-`MODE_AIMING` is **commented out** (`Cam.cpp:235`) — the general weapon-aim camera
-does not exist in this engine. Lock-on is `m_pPointGunAt` / `m_bHasLockOnTarget`,
-both members of **`CPlayerPed`**, and it aims the ped. Only the sniper scope and
-the rocket launcher get a camera mode of their own.
-
-Two consequences, and they reorder the work:
-
-**Lock-on is camera-independent, so it survives the fixed camera untouched.** It
-carries aiming in co-op with no changes at all. That makes the assist redirect
-below a *polish* item for the free-aim case rather than the thing that makes
-aiming viable, which is how it was first described.
-
-**Everything per-ped comes free with the second ped.** Lock-on, weapon state,
-`m_wepAccuracy`, health and armour are all `CPlayerPed` members rather than
-globals or anything keyed on `PlayerInFocus`. The moment player 2 exists as a
-`CPlayerPed`, it has all of it. Pickups and mission triggers are the opposite
-case -- those *are* keyed on `PlayerInFocus` and stay player 1's.
-
-### This reorders the gates
-
-Gate 1 (input) was placed before Gate 2 (ped) on the reasoning that input is the
-blocker. That is backwards. **The ped is where the unknowns are** and it unlocks
-every per-ped system; input is mechanical plumbing that drives systems which will
-already work. So: Gate 2, then Gate 1, then the assist redirect as polish.
-
-### Framing follows the lock target, not just the players
-
-Pull-back on player separation is the wrong target. If player 1 is locked onto
-something across the map, a camera framed only on the two peds shows your own
-character shooting at something you cannot see -- precisely the failure the fixed
-camera was meant to remove. The rule becomes: weight the midpoint toward the
-controller, and widen to include **each player's current lock target**.
-
-### Pitch: pull back, do not steepen
-
-This has now been argued twice and been wrong twice. It was first pushed steeper
-(55-60 degrees) for screen-to-ground linearity in free aim, then partly walked
-back once assist turned out to carry that case. With lock-on carrying aiming
-outright, pitch is purely a framing question -- how well both players and their
-targets read -- and that argues for pulling back rather than steepening. Choose
-it by looking at it; the prior is now the opposite of the first guess.
-
-The most important consequence of the fixed camera, and one Gate 0 does not
-handle.
-
-`CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset)` is called
-from `Cam.cpp:1539` inside the follow-ped path, and what it writes is then applied
-straight to the camera's look angles:
-
-    CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset);
-    Alpha += AlphaOffset;
-    Beta  += BetaOffset;
-
-So aim assist **turns the camera**. The pointer is fine adjustment layered on top
-of a snap that is already doing most of the work — the crosshair turning red
-(`Hud.cpp:295`, `CAimAssist::IsEngaged()`) is the tell that it has engaged.
-
-That makes two things true at once:
-
-1. **Reticle-only aim is viable precisely because the snap exists.** It is not a
-   downgrade. This is the strongest argument for the whole design and it was
-   missing from the first draft of it.
-2. **A camera that takes no input loses aim assist entirely.** Gate 0 as shipped
-   loses it, which is a far bigger loss than losing camera steering — it is losing
-   the mechanism that was doing most of the aiming.
-
-The fix is to redirect assist from the camera to the reticle. A target's screen
-position is just that target projected onto the image plane, and the reticle is
-already screen-space, so assist's magnetism becomes "ease the reticle toward the
-target's projected position". Same snap, camera stays still, and it comes free
-per player because each has their own reticle.
-
-**This also weakens the steeper-pitch argument above.** It was argued that a
-steeper camera gives a more linear screen-to-ground mapping and so finer aim. If
-assist does the heavy lifting and the pointer is fine adjustment, the precision of
-that mapping matters much less, and 41 degrees is more defensible than the note
-above claims. The pitch should be chosen by how well the 3D reads, not by aiming
-linearity.
-
-### Also worth copying
-
-**Drop-in / drop-out rather than on/off.** SA MP's second player could leave and
-rejoin freely. On this port that falls out of the toggle having three states —
-off, joined, and *requested* — with the join only completing when a second
-controller is actually present.
-
-### What SA MP confirms about the rest
-
-Player 1 owning scripts, freeroam plus custom missions only, the non-controller
-as a free-aim role, per-player health/armour/weapons, and pull-back-on-separation
-are all what SA MP settled on after years of people attempting it. That is
-evidence rather than taste, so none of it is being changed.
-
-### Gate 0 — the shared camera (do this first)
-
-The engine's top-down camera is dead code, so this is written from scratch. Add a
-`MODE_WII_COOP` branch to the dispatch switch in `Cam.cpp` (beside `MODE_TOPDOWN`
-at :174) that:
-
-- computes a target as the **midpoint of the live player peds**, clamped so the
-  pair cannot drag the view somewhere neither of them is;
-- places the camera at a **fixed offset above and behind that midpoint** — fixed
-  pitch, no yaw, which is precisely what stops aiming from rotating the view;
-- widens with separation, GTA:SA-style, so splitting up zooms out rather than
-  losing someone off the edge;
-- ignores mouse/pointer input entirely. It must not read `GetMouseX/Y` at all.
-
-With one player it degenerates to a normal top-down follow, so it is testable
-alone — that is the point of doing it first.
-
-### Gate 1 — a second controller: bigger than it looks
-
-`WPAD_CHAN_0` is hardcoded in nine places. Threading a channel through them is the
-easy half and is pure mechanics.
-
-**The hard half is that the port has exactly one input sink.** `WiiPadState.cpp`
-holds `g_keys`, `g_mouse`, `g_moveX/Y`, `g_lookX/Y` and the cursor in a single
-anonymous namespace, and every pad's state is funnelled into one
-`lwjgl::Keyboard` and one `lwjgl::Mouse` -- process-wide singletons that `Pad.cpp`
-and `Frontend.cpp` read directly. `CapturePad(padID)` does give each pad its own
-`CControllerState`, so *buttons* are already per-pad. The pointer, the cursor and
-the reticle are not.
-
-So a second Wiimote needs all three of:
-
-1. the channel threaded through the nine `WPAD_CHAN_0` sites,
-2. per-pad `g_keys`/`g_mouse`/cursor/reticle state, and
-3. **a per-pad keyboard and mouse sink** -- which the engine does not have, because
-   that is the interface `Pad.cpp` and the frontend read.
-
-Step 3 is the actual work, and it is not a Wii-port change: it is a change to
-how the engine receives input. Until that exists, a second controller is not a
-`WiiPad.cpp` edit.
-
-Two remotes today do not merely collide, they **overwrite**: both read channel 0,
-so one player drives two peds.
-
-### Gate 1 — a second controller
-
-`WPAD_CHAN_0` is hardcoded in nine places. Everything else in the capture path is
-already parameterised by `padID`, so the work is threading a channel through
-instead of a constant. Two Wiimotes on channels 0 and 1, each with its Nunchuk;
-player 1 keeps the pointer (channel 0), player 2 does not need one because under
-this design aiming is a reticle and the camera is fixed.
-
-The speaker (`WiiSpeaker.cpp:33`) is the fiddly one — it belongs to whoever's
-remote owns the reticle.
-
-Two Wiimotes currently produce something worse than unsupported: **both pads read
-channel 0**, so one player would drive two peds. Worth fixing regardless of co-op.
-
-### Gate 2 — a second ped
-
-- `NUMPLAYERS` 1 → 2.
-- Parameterise the two hardcoded `Players[0]` assignments in `Pools.cpp`.
-- New `CWorld::AddSecondPlayer()`: placement-new a `CPlayerPed` into the ped pool
-  (there is no `Allocate`; `CPool` slots are constructed in place), place it next
-  to player 1, register it in `Players[1].m_pPed`.
-- Because `PlayerInFocus` never leaves 0, nothing else has to learn that two
-  players exist. That is the entire trick.
-
-## Save format — player 2 is deliberately not persisted
-
-`SavePedPool`/`LoadPedPool` gate on `PEDTYPE_PLAYER1` and `LoadPedPool` assigns
-every match to `CWorld::Players[0]`. Two options:
-
-- **Chosen:** player 2 is **not** `PEDTYPE_PLAYER1`, is not written to the save,
-  and is re-spawned next to player 1 whenever co-op is switched on. Keeps every
-  existing save byte-identical and valid — important, because save compatibility
-  is already load-bearing on this port.
-- Rejected: writing both peds means touching the save format and every load path,
-  and buys nothing a player would miss.
-
-## What this deliberately does not do
-
-Stock missions stay single-player. Mission triggers, cutscene cameras and
-`PlayerInFocus` all belong to player 1, so during a mission player 2 is a
-bodyguard. That is exactly the PS2 SA co-op compromise, and the existing PC mods
-hit the same wall — one of them ships "crashes if a cutscene shows up" as a known
-issue and another simply blocks save/load from the menu.
-
-Per-player *state* that a fuller co-op would want, from the feature list of the
-existing PC mods and not yet in scope here:
-
-- **wanted level synchronisation** — the stars cannot be player 1's problem alone
-- **pickup ownership for player 2** — health, armour, weapons, money
-
-Both are the same class of problem as mission ownership: per-player state the
-engine keys off `PlayerInFocus`.
-
-## Honest cost, and the testing problem
-
-| | |
-|---|---|
-| Gate 0 — shared camera | ~2–3 days, **testable solo** |
-| Gate 1 — channel plumbing | ~1 day, mechanical |
-| Gate 2 — second ped | ~2–3 days |
-| Co-op mission work | ongoing, per mission |
-| Freeroam-only playable | ~1–2 weeks |
-
-The testing problem is worse than the coding. This needs two humans, two
-remotes, and eyes on a television. Dolphin will not take a second controller
-reliably. Gate 0 is the only slice that can be verified alone, which is why it
-goes first.
+the script driver; player 2 is a real second ped who walks, aims, shoots and
+rides along, but never owns a mission.
+
+This document describes the design **as it is built**. An earlier version of it
+was written before any of the code could be run, and three of the things it
+stated as fact turned out not to be; those are listed under "What the first
+draft got wrong", because each one cost time and each is the kind of thing that
+gets re-believed.
+
+**Nothing here has been run on hardware yet.** It compiles and links, and every
+path was written against the engine code it calls, but the first boot with two
+controllers is still ahead. See `HANDOFF-COUCH-COOP.md` for the test plan.
+
+## The rules, and why each one
+
+**Freeroam only: co-op does not run during missions.** This is a hard boundary,
+not a degradation, and it is the thing that makes the rest affordable. Mission
+scripts, their cutscene cameras, their fail states and every `PlayerInFocus`
+assumption inside a scripted sequence were written for one player; with co-op
+off while `CTheScripts::IsPlayerOnAMission()` is true, none of that ever runs
+next to a second ped. It is also what SA did: there was no co-op campaign.
+In practice "off" means the partner is taken out of the world and the camera is
+the ordinary one again; both come back when the mission ends.
+
+**`PlayerInFocus` stays 0.** `FindPlayerPed()` is player 1 forever. Scripts, the
+HUD, pickups, the wanted level and the save all keep talking to the player they
+have always talked to, and nothing has to learn that a second one exists.
+
+**One camera, and aiming never moves it.** The shared camera takes no input
+from the pointer or a stick. Each player's pointer is a reticle — a mark on the
+screen — so two people can share one view without fighting over it.
+
+**Each player aims at their own reticle, from their own gun.** Not along the
+camera. See "Aiming" below; this is the part the first draft had wrong in a way
+that mattered.
+
+**Player 2 is not saved.** The partner is `PEDTYPE_PLAYER2`, and
+`CPools::SavePedPool` picks what to write by `PEDTYPE_PLAYER1`. Every existing
+save stays byte-identical and valid.
+
+**Drop-in, drop-out.** With the menu toggle on, the partner appears when a
+second controller is connected and leaves when it has been gone a few seconds.
+Nobody has to go back to the menu.
+
+## How it is built
+
+### The session — `CCoop` (`src/core/Coop.cpp`)
+
+One class owns co-op: whether it is running this frame, who the partner is, and
+where each player is aiming. `CCoop::Update()` runs once a frame from
+`CGame::Process`, after the scripts and before the world.
+
+`CCamera::bWiiCoopCamera` is only the menu toggle — it says the players *want*
+co-op. `CCoop::IsRunning()` says whether co-op is in charge right now, and is
+also false during missions, cutscenes, replays and while player 1 is wasted or
+busted. Anything whose behaviour depends on co-op reads `IsRunning()` (or
+`UsesReticleAim()`, below), never the toggle.
+
+### The second player
+
+- `NUMPLAYERS` is 2. Slot 1 of `CWorld::Players[]` is the partner's and is nil
+  whenever nobody is playing it. `COMMAND_CREATE_PLAYER` accepts slot 0 only.
+- The partner is a `CPlayerPed`, `PEDTYPE_PLAYER2` (keeps it out of the save),
+  `MISSION_CHAR` (keeps it, and any car it is sitting in, from being deleted by
+  the population code — the same protection `CREATE_PLAYER` gives player 1),
+  `bStayInCarOnJack` (stays seated when player 1 gets back into the car) and
+  `bDontDragMeOutCar` (player 1 coming to the passenger door climbs past them
+  instead of hauling them out).
+- `Players[1].m_pPed` is a registered reference, so the engine nils it if it
+  deletes the ped. `CCoop` never caches the pointer; nil means "bring them back".
+- **Input** is a pad slot of its own, `PAD_COOP` (index 2). Not pad 1: outside
+  `MASTER` builds pad 1 is the engine's debug pad — Circle (the fire button)
+  toggles the debug camera, Start hides the HUD, and so on.
+  `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that reads
+  a pad on a player's behalf while processing a ped uses it.
+- **Controller**: player 1 is what it always was (a GameCube pad in port 1, else
+  Wii Remote 1). The partner is the first other controller present — any further
+  GameCube pad, then any Wii Remote with a Nunchuk or Classic Controller.
+- **Joining takes a button press.** A controller being connected is not a
+  player: the remote that launched the game is still switched on while its owner
+  plays on a GameCube pad, and would otherwise put an idle second Tommy beside
+  everyone who plays that way. The help box says "Player 2: press any button to
+  join" once when a second controller is noticed. They leave when the
+  controller has been gone for 6 s.
+
+### Coming and going
+
+Everything that has to move the partner does it by **replacing** them: the ped
+is deleted (the destructor already handles every state a ped can be in) and a
+fresh one is put beside player 1, carrying over health, armour, their weapons
+and ammo, and which one was in hand. That covers:
+
+- **Dying or being arrested.** Nothing in the engine brings a player back except
+  `CGameLogic`, which only knows the player in focus. The partner is left where
+  they fell for 3.5 s and then returns beside player 1 at full health.
+- **Getting past the leash** (28 m — see "Staying together"), falling through
+  the world, being driven off by someone else, or player 1 being teleported by a
+  script. The world is only streamed around player 1, so a partner left behind
+  is on ground that is about to stop existing.
+- **No seat.** If player 1 is driving something with no free seat (or a boat),
+  the partner waits out of the world and rejoins when player 1 stops or gets out.
+- **A change of clothes, a cutscene loading, a replay** — anything that unloads
+  the player model or rebuilds the ped pool. `CCoop::Suspend()`.
+
+### Staying together
+
+There is a limit on how far apart the two can get, in two parts.
+
+**On foot it is a wall** (`CCoop::LimitSeparation`, applied to the walking
+velocity in `CPed::UpdatePosition` and to a jump's take-off). Past 18 m a player
+moving away from the other is slowed, and at 24 m they are stopped; walking
+back, or sideways along the edge, is untouched. It holds both players equally —
+neither can leave the other behind — and it is sized so that at the wall both
+are still on screen. The help box says so the first time someone reaches it.
+
+**The wall only works on someone walking**, so behind it there is a leash at
+28 m for everything that gets past: a car driving off, a fall, the blast from an
+explosion. Past the leash the partner is brought back to player 1 — into the
+passenger seat if player 1 is the one in the car, otherwise beside them.
+
+### Riding along
+
+- **Getting in.** The partner presses the enter/exit button (2 on the Wii
+  Remote, Y on a GameCube pad, X on a Classic Controller) within 12 m of the car
+  player 1 is driving or getting into. If it is standing still they walk to the
+  nearest free passenger door and get in the way anyone does; if it is already
+  rolling they are put straight into the seat, since nobody catches a moving car
+  on foot. On a bike they ride pillion, and are always put straight onto it,
+  and only once player 1 is sitting on it: the engine hands a bike to any
+  player who finishes climbing on, so a partner still walking over when
+  player 1 got off again would be left on a bike with no rider, which the
+  bike's own code does not survive.
+- **Being left behind.** If player 1 simply drives off, the leash does the same
+  thing at 28 m: the partner appears in a free seat.
+- **No free seat** (a full car, a boat, a train): the partner waits out of the
+  world and reappears beside player 1 when they stop or get out.
+- **Riding.** The partner sits. They do not steer and cannot yet shoot from the
+  car. They stay put while player 1 gets out and back in.
+- **Getting out.** The same button: stepping out once the car has stopped, or
+  rolling out of it at speed. The order is only given when the engine would
+  obey it (`CanPedExitCar`, or the roll-out test) — one it refuses is kept,
+  retried five seconds later and marks the ped a hostage meanwhile, so an early
+  press used to lock the door and throw the partner out later. In between
+  (too fast to step out, too slow to roll) holding the button gets them out the
+  moment it can. Off the back of a moving bike there is no getting out; the
+  engine has no such move. If player 1 gets out and walks off, the partner is
+  pulled out to their side at the leash.
+- **When it goes wrong.** A car on fire puts the partner out of it by itself. One
+  killed in the car, or still in it when it explodes, comes back the usual few
+  seconds later. If someone else takes the wheel, the partner is brought back to
+  player 1.
+
+Only ever player 1's car, and only ever as a passenger: the engine makes any
+player who boards a bike or a boat its driver whatever seat they asked for. For
+the same reason the partner is never allowed to finish dragging someone out of a
+seat (`CPed::PedSetInCarCB` makes whoever did the dragging the driver).
+
+The partner never drives. `CAutomobile::ProcessControl` and friends read pad 0
+throughout; that is a separate, larger job.
+
+Player 1's **drive-by** still works under the shared camera: the side is taken
+from the look-left/look-right buttons directly, the way the engine already does
+it for its own top-down and cinematic cameras, instead of from which way the car
+camera has swung.
+
+### Weapons
+
+Pickups, shops and scripts all hand weapons to `FindPlayerPed()`, and that is
+left alone. Instead the partner is given whatever player 1 **gains**: a weapon
+player 1 did not have a moment ago, or the ammo player 1's count just went up by.
+One pickup arms both players; the partner's ammo is still their own to spend.
+
+- A partner who is **new, or who died**, gets a copy of everything player 1 is
+  carrying.
+- A partner who was only **moved** (regrouped, seated, set aside for a mission)
+  keeps their own weapons and ammo, plus whatever player 1 gained while they
+  were away.
+- **Swapping a weapon for another in the same slot** (M4 for a Ruger) passes on
+  only the difference, because that slot's ammo carries over from one weapon to
+  the next for the partner just as it did for player 1.
+- **A rampage's weapon is not shared.** `CDarkel` puts it in one of player 1's
+  slots and takes it out afterwards; that slot is ignored while it lasts
+  (`CDarkel::GetFrenzyWeaponSlot`). The partner fights the rampage with their
+  own.
+
+### The camera
+
+`MODE_WII_COOP`, **requested through `CCamera::CamControl` like any other mode**.
+It stands in for every camera whose job is simply following the player (on foot,
+in a car, the lock-on and scope cameras) and stands aside for everything the game
+points on purpose: garages, the arrest and death cameras, trains, anything a
+script directs.
+
+- Fixed pitch. Only the distance changes: further back as the players separate
+  and as the car speeds up.
+- Fixed heading on foot — whatever way the view was facing when it took over.
+  It follows a car player 1 is driving, because a camera pitched down from behind
+  sees four times as far ahead as behind and driving toward it is driving blind.
+- Looks at the midpoint of the two players. Its height follows slowly, so
+  kerbs and steps do not shake the view, but never from more than 6 m behind.
+- Comes in along its own line when a building is in the way, so indoors it ends
+  up under the ceiling rather than looking at the roof. The line that is tested
+  runs back from **each player**, not from the midpoint: the midpoint is an
+  average and can be inside a staircase or under a floor, and from in there the
+  test finds the surface it started beneath. With two answers the camera takes
+  the roomier one — it cannot be under one player's ceiling and still show the
+  other down the street.
+- The **cinematic camera** and Classic controls' **look-around** are off while
+  co-op runs. Both take the view (and the second also the controls) away from
+  the players, and co-op has the button that would give them back.
+- **The renderer had to be told about it.** Several things in the engine assume
+  the camera stands right behind the player, and none of them are in `Cam.cpp`:
+  - *Shadows* are only drawn within 13–27 m of the camera, which from this
+    camera's position is nobody on screen. They are measured from the point the
+    camera looks at instead (`ShadowViewPoint`, `Shadows.cpp`).
+  - *What gets drawn at all* is whatever is in the map sectors under a triangle
+    from the camera to the far top corners of the view. A camera looking steeply
+    down also sees a wide strip beside and beneath itself, which that triangle
+    misses; two wedges are added to cover it (`ScanCoopViewEdges`,
+    `Renderer.cpp`). Without them, buildings in the bottom corners of the screen
+    come and go with the sector grid.
+  - *Heat haze* is laid across the screen where a level camera has its horizon;
+    it is off, as it is for the engine's own top-down modes.
+  - *Drive-bys* read the side to shoot from off the car camera; see "Riding
+    along".
+- **Four framings**, stepped through in game with player 1's camera button
+  (− on the Wii Remote) and kept in the INI as `CoopFraming`:
+
+  | | pitch | distance |
+  |---|---|---|
+  | 0 low | 41° | 18 m |
+  | 1 middle (default) | 50° | 22 m |
+  | 2 high | 60° | 26 m |
+  | 3 overhead | 78° | 28 m |
+
+  The pitch has been argued both ways on paper more than once and settled
+  neither time; it has to be chosen by looking at it. That is what the button is
+  for.
+
+  The fourth is there for a different reason. The camera does not turn on
+  foot, so a tall building on its side of the street is between it and anyone
+  on that pavement, and the only thing it can do is come in close — within
+  about 14 m of such a building the view tightens, and right against it the
+  camera is pinned at 3 m. From overhead there is no such side. A camera that
+  tilted up by itself near walls would be better still; see "Not done".
+
+### Aiming
+
+`CCoop::UsesReticleAim()` — co-op running, Standard controls, and the shared
+camera actually on screen. Classic controls keep their lock-on, which never
+needed the camera.
+
+Each frame, per player:
+
+1. **Where is the reticle?** A Wii Remote pointer if that player has one;
+   otherwise the right stick as a direction (twin-stick style), with the reticle
+   drawn 9 m out along it. A pointer that goes quiet for 1.5 s lapses.
+2. **What is under it?** The ray through the reticle is followed into the world.
+   On a ped or a vehicle, that exact point is the target. On scenery, the player
+   means a *direction*, and the ray is met with a level plane at the player's own
+   chest height — not the ground, which seen from above and behind is a metre
+   past a target's feet and enough to miss by from the side.
+3. **Assist.** While firing, a reticle that is on nothing still bends the shot
+   to a live target that is nearly in line (the same cone `CAimAssist` uses, and
+   the same "Aim Assist" option switches it off). On-screen targets only. The
+   reticle turns red on a target.
+
+**An aim does not lapse while it is being used.** While a player is firing, a
+direction that has stopped arriving — the right stick let go so the same thumb
+can hold the trigger, the pointer off the screen — is held where it was, and a
+player who never gave one is taken to be aiming the way they face. So anyone
+holding fire strafes facing a fixed direction, whatever they aim with. Without
+this the aim ran out mid-burst and the controls changed under the player's
+hands to ones that do not turn or walk while firing.
+
+Shots then leave **the gun**, toward that target — `CCoop::FindShotVector`,
+called from `CWeapon::FireInstantHit`, `FireShotgun`, `FireAreaEffect` and
+`FireProjectile`. With only a direction, the line is level and the engine's own
+vertical auto-aim (`DoDoomAiming`) finishes it. **The shot goes to the reticle
+only when the gun is pointing within 50° of it**, and straight out of the gun
+otherwise: the body turns toward the reticle at its own pace and a sprinting
+player is not facing it at all, so a round sent to the reticle regardless would
+leave sideways or backwards through the shooter. The shooter's own collision is
+ignored by their shots for the same reason.
+
+There is **no scope**: the scope is a camera and there is one camera. The two
+sniper rifles fire as long-range instant-hit weapons and the rocket launcher
+fires along the aim — one shot per press, straight from the weapon with no
+animation, which is how the scope itself fires them. They cannot use the
+ordinary attack: `weapon.dat` gives all three a bare fist's animations, because
+the stock game never shows a player firing one. The camera (the weapon) does
+nothing.
+
+### Which way a player faces
+
+`CCoop::FacesAim`, decided once a frame per player:
+
+- **Gun (or anything thrown) out, and an aim** → the body faces the reticle, and
+  the stick moves the player across the screen whichever way they are facing.
+  This is the stock "first-person run-around" control with its strafing and
+  backing-up animations; the only change is that the stick is read against the
+  screen rather than against the body.
+- **Sprint held** → the body faces the way the stick points (the Classic
+  control). Facing the reticle while running somewhere means running sideways at
+  the pace those animations move. Shots fired like this go where the gun
+  points.
+- **Fists, a bat or a blade** → the Classic control too, **including through
+  the swing**. The engine's own fight picks who is hit and turns the body onto
+  them for each blow; pulling the body back to the reticle between blows made
+  every one of them miss. Melee is not aimed. (Crouched is the one exception,
+  because the Classic control does not let a crouching player move.)
+- **Gun out but no aim** (no pointer, stick untouched, not firing) → the
+  Classic control, until the trigger is pulled.
+
+### Smaller rules
+
+- **The players can shoot and punch each other** — it is more fun that way —
+  **but nothing aims at the other player for them.** Classic lock-on skips
+  them, the aim assist skips them, and a reticle resting on the other player
+  does not turn red or snap; it is treated as pointing past them.
+- **What they do to each other is not a crime** and not a statistic: no wanted
+  level for hitting your partner, and a dead partner is not a rampage kill.
+- **The heat is shared** for everything else. There is one wanted level,
+  player 1's, and the partner's crimes count toward it.
+- **Notices.** The help box says when player 2 joins or leaves, when co-op is
+  paused for a mission, and which framing the camera button picked.
+- **Marks on screen.** One colour per player (cyan, pink), worn by their reticle
+  and by a pip with a health bar over their head. The pips only appear once there
+  are two players; the health bar is the only place the partner's health is shown.
+- **The stock zoom does not cycle** while co-op has the camera button.
+
+## What the first draft got wrong
+
+Recorded because each was stated as a verified fact.
+
+1. **"The port has exactly one input sink" — it does not.** `WiiPadState.cpp`,
+   with its `lwjgl::Keyboard` and `lwjgl::Mouse`, is a leftover from a different
+   port. It is behind `#ifdef WII_PLATFORM`, which nothing defines, and it is not
+   in the build. Buttons and sticks were already per-pad in `WiiPad.cpp`; what
+   was actually shared was the pointer (one crosshair on `CCamera`) and a handful
+   of pad-0 reads in ped code.
+2. **"Gate 0 — the shared camera — done" — it had never run, and could not have
+   worked.** It forced its mode from inside `CCam::Process`, underneath the mode
+   selection in `CCamera::CamControl`, so every frame the selector saw the wrong
+   mode and started a transition back: one frame of shared view, a second and a
+   half of follow camera, repeat. It also took its heading from player 1's
+   facing while the control code took player 1's facing from the camera, which
+   spins; eased with `GetTimeStep()` (fiftieths of a second) where it meant
+   seconds; scaled only its distance back and not up, so the pitch flattened as
+   the players separated; and left `DirectionWasLooking` and
+   `m_cvecTargetCoorsForFudgeInter` stale. All of that is replaced.
+3. **"The shot ray goes through the reticle, so aiming stays correct" — only for
+   a camera over the shoulder.** Along a camera ray from overhead, a shot starts
+   in mid air and hits whatever can be seen from up there, walls or no. Hence
+   shots from the gun.
+4. The fix in `CPed::FinishLaunchCB` for a second player's jump was written into
+   the `#else` of `#ifdef FREE_CAM`. `FREE_CAM` is defined; that branch is never
+   compiled.
+
+## Not done
+
+- **Player 2 cannot drive**, and cannot do drive-bys as a passenger. Vehicle
+  control reads pad 0 throughout.
+- **Boats and trains**: the partner waits out of the world.
+- **Pickups** are still player 1's (the partner gets weapons by mirroring).
+  Health, armour and money pickups do nothing for the partner.
+- **No rumble and no remote speaker for player 2.** The engine sends every shake
+  to pad 0, and the speaker code drives one remote.
+- **Player 2 looks exactly like player 1.** The pips are what tells them apart.
+  A different model needs a model slot scripts will not reuse.
+- **Indoors** the camera ends up close under low ceilings. It works; it is not
+  pretty.
+- **A camera that tilts up by itself near walls.** The honest fix for tall
+  buildings on the camera's side (see the framings). It was left out on
+  purpose: it needs a controller with hysteresis, and it has to tell a wall
+  (steeper is clearer) from a ceiling (steeper is *worse* — the room under a
+  ceiling of height h is h/sin(pitch)), which means probing both ways every
+  frame. A camera that nods is worse than one that is sometimes tight, and
+  there was no way to watch it. The overhead framing is the manual version.
+- **A few statics are still shared between the players**: the jack-cancel tap
+  (`cancelJack` in `CPed::ProcessControl`), the melee combo flag
+  (`nPlayerInComboMove`), and under Classic controls the lock-on's
+  `bDontAllowWeaponChange` and its single target marker. Each is a moment's
+  oddity, not a fault.
+- **Sound is quieter.** The listener is the camera, and it is 15–30 m from the
+  players instead of 4. (Height hardly counts — the audio code scales it by a
+  fifth — but the distance back does.) Footsteps and nearby chatter suffer most.
+- **Pop-in at the top of the screen when the players are far apart.** Pedestrians
+  are created about 40 m from player 1, on the understanding that this is off
+  screen; pulled all the way back, the low framing sees further than that.
+- **Ammo for player 2 is not shown anywhere.** The engine switches weapon when
+  one runs dry, which is the only notice they get.
+- **Dynamic control ownership** — SA let the players hand "control" back and
+  forth, with the camera following whoever had it. Here the camera frames the
+  midpoint and player 1 is the anchor. Framing a player's lock target is not
+  done either.
+- **Co-op missions.** Custom `.scm` missions that opt in remain possible later.
+
+## Tunables
+
+| what | where | value |
+|---|---|---|
+| framings | `kCoopFramings`, `Cam.cpp` | see table above |
+| pull-back per metre apart | `kCoopSeparationGain` | 1.0, beyond 6 m |
+| the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
+| leash | `kLeash`, `Coop.cpp` | 28 m |
+| camera's furthest | `kCoopMaxDistance`, `Cam.cpp` | 40 m |
+| respawn delay | `kRespawnAfterMs` | 3.5 s |
+| join / drop-out delay | `kJoinAfterMs` / `kDropAfterMs` | 0.4 s (then a button) / 6 s |
+| pointer lapse | `kPointerFreshMs` | 1.5 s |
+| shot follows the reticle within | `kAimArc`, `Coop.cpp` | 50° of the gun |
+| view height may trail by | `kCoopHeightLag`, `Cam.cpp` | 6 m |
+| assist cone | `kAssistMinCone` / `kAssistMaxCone` | 2.5° / 8° |
+| player colours | `kCoopColours`, `Hud.cpp` | cyan / pink |

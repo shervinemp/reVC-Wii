@@ -9,6 +9,7 @@
 #include "Bones.h"
 #include "Ped.h"
 #include "PlayerPed.h"
+#include "Coop.h"
 #ifdef NINTENDO_WII
 #include "WiiTrace.h"
 #endif
@@ -117,53 +118,105 @@ float PLAYERPED_LEVEL_SMOOTHING_CONST_INV = 0.6f;
 float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 
 // --- couch co-op camera -------------------------------------------------------
-// One camera for both players: above and behind the midpoint between them, at a
-// fixed downward angle.  Two properties are the whole design, not preferences:
+// One camera for both players, looking down on them from a fixed angle.  Two
+// properties are the whole design, not preferences:
 //
-//   It takes no input.  Nothing here reads the pointer, the sticks or the
-//   shoulder buttons, so aiming cannot move the view -- the reticle is just a
-//   mark on the screen and the shot ray goes through it (Camera.cpp's
-//   Find3rdPersonCrosshairRay is screen-space, so it stays correct).  That is
-//   what lets two people share one view instead of fighting over it.
+//   It takes no input from aiming.  Nothing here reads the pointer or a stick,
+//   so aiming cannot move the view: each player's reticle is a mark on the
+//   screen (CCoop works out what is under it), and two people can share one
+//   view without fighting over it.
 //
-//   Its angle is fixed.  Only the distance changes as the players separate, so
-//   splitting up zooms out rather than swinging the camera around.
-static const float kCoopBaseBack = 11.0f;		// units behind the midpoint
-static const float kCoopBaseHeight = 9.5f;		// units above it: about 41 degrees down.
-// 41 is a placeholder and probably wrong.  The steeper the camera the closer the
-// screen-to-ground mapping is to linear, and in this design aiming IS a reticle,
-// so a shallow angle compresses the horizon and makes aiming at distance
-// twitchy.  Steeper is the better trade here; see COUCH-COOP-DESIGN.md.
-static const float kCoopSeparationGain = 0.5f;	// extra pull-back per unit of split
-static const float kCoopMaxBack = 28.0f;
-static const float kCoopFollowRate = 5.0f;		// per second, so the view eases into place
+//   Its pitch is fixed.  Only the distance changes -- further back as the
+//   players separate or the car speeds up -- so splitting up zooms out rather
+//   than swinging the camera around.
+//
+// Its heading is fixed too, with one exception: it follows a car player 1 is
+// driving, because a camera pitched down from behind sees four times as far
+// ahead as behind, and driving toward it is driving blind.  On foot it stays
+// wherever it was, which is what lets each player's body turn to face their
+// reticle without the view turning with them.
+//
+// The framing is the one thing here that has to be chosen by looking at it,
+// and this has been argued both ways on paper already (COUCH-COOP-DESIGN.md):
+// a low camera reads best as a 3D scene but shows a long way ahead and almost
+// nothing behind, a high one is closer to a map and shows both sides more
+// evenly.  So there are three, and player 1's camera button steps through them
+// in game.  CCoop::ms_nFraming picks one; it is kept in the INI.
+//
+// And a fourth, which is not a matter of taste.  This camera does not turn on
+// foot, so a tall building on its side of the street stands between it and
+// anyone on that pavement, and all it can do about that is come in close
+// (see the line-of-sight test in Process_WiiCoop).  From nearly straight
+// overhead there is no such side: the players can pick it when they are
+// hemmed in, and go back when they are not.
+struct CoopFraming
+{
+	float pitch;		// below the horizontal
+	float distance;		// from the players, along the view
+};
+static const CoopFraming kCoopFramings[CCoop::NUM_FRAMINGS] = {
+	{ DEGTORAD(41.0f), 18.0f },	// low: the angle this camera started at, pulled back
+	{ DEGTORAD(50.0f), 22.0f },	// middle, and the default
+	{ DEGTORAD(60.0f), 26.0f },	// high
+	{ DEGTORAD(78.0f), 28.0f },	// overhead
+};
+// How far apart the players can be before the camera starts backing off, and
+// how far it backs off per metre beyond that.  Sized against the limit CCoop
+// puts on how far apart they can walk (kTetherMax, Coop.cpp): at that limit
+// both players are still on screen in the camera's worst direction, which is
+// the one where one of them is toward the bottom edge.  A metre back per metre
+// apart is what that direction needs; it is not generous.
+static const float kCoopSeparationFree = 6.0f;
+static const float kCoopSeparationGain = 1.0f;
+// Extra room at speed, per unit of vehicle speed (one unit is 50 m/s), so the
+// road ahead arrives on screen sooner than the car does.
+static const float kCoopSpeedGain = 18.0f;
+static const float kCoopSpeedRoom = 12.0f;
+static const float kCoopMaxDistance = 40.0f;
+// Never closer than this, however low the ceiling.
+static const float kCoopMinDistance = 3.0f;
+// Players closer together than this share one test for what is overhead.
+static const float kCoopSeparateClip = 2.0f;
+// The view's height may trail the players' by this much and no more, and a
+// change of height bigger than the second figure is the players having been
+// put somewhere else rather than having got there.
+static const float kCoopHeightLag = 6.0f;
+static const float kCoopSnapHeight = 30.0f;
+
+// All per second.  The view point follows the players quickly sideways and
+// slowly in height, so steps and kerbs do not shake it; the distance and the
+// heading move slowly enough to read as the camera settling rather than
+// reacting.  Coming back out after something was in the way is slowest of all,
+// because going in is instant and a camera that pumps in and out along a row
+// of awnings is worse than one that stays in a moment too long.
+static const float kCoopFollowRate = 9.0f;
+static const float kCoopHeightRate = 3.0f;
+static const float kCoopZoomRate = 2.5f;
+static const float kCoopYawRate = 1.6f;
+static const float kCoopUnclipRate = 2.0f;
+// Below this speed (about 3 m/s) a car's heading is not worth following.
+static const float kCoopYawMinSpeed = 0.06f;
 
 int8 CCamera::bWiiCoopCamera = 0;
 
+static float s_coopYaw;
+static float s_coopDistance;
+static float s_coopClip = 1.0f;
+static CVector s_coopTarget;
+
 #ifdef NINTENDO_WII
-// Co-op has no second player yet, so the only part of it anyone can actually
-// exercise is this camera and the reticle.  That makes guessing about it
-// expensive: there is one chance to notice that aiming still nudges the view, or
-// that the pitch is wrong, and a black screen afterwards tells us nothing.
-//
-// So it narrates itself to debug.log, which is the only medium that survives a
-// freeze.  Deliberately not a per-frame trace.  The heartbeat is on a two second
-// timer because the values it carries are slow, and a per-frame line here would
-// cost the very frame time it is measuring -- the same trade the stall report
-// makes.  Transitions are logged the moment they happen, because "the camera
-// left co-op" is exactly the thing that needs explaining when it goes wrong.
-static u32 s_coopLastLogMs = 0;
-
-static void
-coopLogTransition(const char *what)
-{
-	WiiTraceReport("WII coop: %s\n", what);
-}
+// The shared camera can only be judged on a console, by two people, and a
+// black screen afterwards tells nobody anything.  So it says what it is doing
+// in debug.log -- but only for its first minute after taking over, a line every
+// five seconds: enough to see whether the framing numbers and the reticle are
+// sane, and bounded, because the log lives on a small SD card and a line every
+// few seconds for a whole evening is the flood the rest of the port's logging
+// was cut back to stop.
+static uint32 s_coopLogTime;
+static int s_coopLogLines;
+static const int kCoopLogLines = 12;
+static const uint32 kCoopLogEveryMs = 5000;
 #endif
-
-// Whether the previous frame ran the co-op camera, so that the transition into it
-// and the transition back out can each reset exactly once.
-static bool s_wasCoopCamera = false;
 
 void
 CCam::Process(void)
@@ -177,54 +230,6 @@ CCam::Process(void)
 
 	if(CamTargetEntity == nil)
 		CamTargetEntity = TheCamera.pTargetEntity;
-
-	// Couch co-op owns the camera outright while it is on.  Forced here, at the
-	// one place every frame passes through, rather than in the mode-selection
-	// machinery further down -- that machinery owns interpolation state, and a
-	// flag that has to unwind a half-finished transition to be switched off is a
-	// flag that eventually strands a camera mid-move.  This way turning co-op off
-	// restores the stock behaviour exactly, because nothing else was touched.
-	if(TheCamera.bWiiCoopCamera && !TheCamera.m_bStartInterScript && TheCamera.m_uiTransitionState == 0){
-		// No scope is promised in co-op.  The sniper and rocket launcher want a
-		// first-person weapon camera, which the line below overrides every frame --
-		// so without this you get crosshair-corrected fire with no scope view at all,
-		// which reads as a bug rather than a decision.  Clearing it here means the
-		// weapon camera never engages, and GetWeaponFirstPersonOn() stays false so the
-		// firing path stays consistent with what is on screen.
-		if(TheCamera.PlayerWeaponMode.Mode != MODE_NONE)
-			TheCamera.ClearPlayerWeaponMode();
-
-		Mode = MODE_WII_COOP;
-		// Reset on the way IN only.  Setting it every frame looked harmless --
-		// Process_WiiCoop never reads it -- but it meant the frame co-op was
-		// switched off left ResetStatics false, so the stock camera picked up from
-		// wherever the shared view happened to be instead of starting clean.
-		if(!s_wasCoopCamera){
-			ResetStatics = true;
-			s_wasCoopCamera = true;
-#ifdef NINTENDO_WII
-			coopLogTransition("camera engaged: shared top-down, pointer is a reticle only");
-			s_coopLastLogMs = 0;
-#endif
-		}
-		Process_WiiCoop(CamTargetEntity->GetPosition(), 0.0f, 0.0f, 0.0f);
-		return;
-	}
-	// A cutscene or an in-flight mode transition takes the camera back, rather than
-	// being silently overridden every frame.  Deliberately narrow: m_bStartInterScript
-	// and m_uiTransitionState are the two the engine already uses for exactly this.
-	// If this predicate is ever wrong the symptom is "co-op does not engage", which
-	// is obvious -- the alternative was a broken story beat nobody noticed.
-	if(s_wasCoopCamera){
-		// Leaving co-op is the other transition that needs a reset, for the same
-		// reason: the stock modes initialise from ResetStatics and would otherwise
-		// inherit a camera position from a mode that no longer exists.
-		s_wasCoopCamera = false;
-		ResetStatics = true;
-#ifdef NINTENDO_WII
-		coopLogTransition("camera left co-op (cutscene or mode transition)");
-#endif
-	}
 
 	m_iFrameNumWereAt++;
 	if(m_iFrameNumWereAt > m_iDoCollisionCheckEveryNumOfFrames)
@@ -291,9 +296,8 @@ CCam::Process(void)
 
 	switch(Mode){
 	case MODE_WII_COOP:
-	// Handled before the switch in Process, so reaching here means co-op was
-	// switched off between the two; fall through to the stock top-down path,
-	// which is dead code but keeps the case honest rather than silent.
+		Process_WiiCoop(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
+		break;
 	case MODE_TOPDOWN:
 	case MODE_GTACLASSIC:
 	//	Process_TopDown(CameraTarget, TargetOrientation, SpeedVar, TargetSpeedVar);
@@ -996,10 +1000,9 @@ bool
 CCam::Using3rdPersonMouseCam(void) 
 {
 	// MODE_WII_COOP counts as a mouse camera even though the pointer cannot turn
-	// it, because that is precisely what the mode is for: the pointer is a
-	// reticle and the crosshair has to keep tracking it.  Without this the
-	// pointer-aim gate in WiiPad fails closed and the crosshair freezes on the
-	// spot the moment co-op switches the camera over.
+	// it: the players there are aimed with a pointer and not with the camera,
+	// and the code that asks this is asking exactly that -- whether a shot goes
+	// where the player points, whether the gun is held toward it.
 	return CCamera::m_bUseMouse3rdPerson &&
 		(Mode == MODE_FOLLOWPED || Mode == MODE_WII_COOP);
 }
@@ -1129,78 +1132,174 @@ float fDefaultSpeedLimit4Avoid = 0.25f;
 float fAvoidGeomThreshhold = 1.5f;
 float fMiniGunBetaOffset = 0.3f;
 
+// How far the couch co-op camera can back away from a point along a line
+// before the scenery is in the way.  Buildings only: a lamp post or a passing
+// bus is not worth moving the view for.
+static float
+CoopRoomBehind(const CVector &from, const CVector &reach)
+{
+	CColPoint col;
+	CEntity *blocker = nil;
+	if(!CWorld::ProcessLineOfSight(from, from + reach, col, blocker, true, false, false, false, false, true, true))
+		return reach.Magnitude();
+	return (col.point - from).Magnitude() - 0.5f;
+}
+
 // Couch co-op.  See the constants above; this is the whole camera.
 //
-// With one player live it degenerates to a top-down follow of that ped, which is
-// deliberate: the mode is then testable by one person, before a second remote
-// exists, and the difference from the stock camera is visible immediately.
+// With one player in the world it frames that one, which is deliberate: the
+// mode can be switched on and looked at by one person before a second
+// controller exists.
 void
-CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
+CCam::Process_WiiCoop(const CVector &, float, float, float)
 {
 	FOV = DefaultFOV;
 	m_bFixingBeta = false;
 	bBelowMinDist = false;
 	bBehindPlayerDesired = false;
-	// The stock cadence alternates collision frames to spread the cost; with two
-	// players and a fixed angle there is less of it to spread, so always on.
 	m_bCollisionChecksOn = true;
+	// A look-behind or look-left still set from the car the player was just in
+	// would otherwise survive in here for good: nothing below clears it, and
+	// CCamera::Process reads it every frame to put the camera back where it was
+	// "before looking" and to turn TheCamera.Orientation round by half a turn --
+	// which is the heading every player's stick is measured against.
+	DirectionWasLooking = LOOKING_FORWARD;
 
-	// Where to look: the midpoint of the live player peds.  Averaging keeps the
-	// view on the line between them, so however far apart they wander the camera
-	// can never end up somewhere neither of them actually is.
-	CVector target = CameraTarget;
-	float separation = 0.0f;
-	// Compile-time constant test on purpose.  NUMPLAYERS is an enum, so #if cannot
-	// see it, and CWorld::Players only has as many slots as it has values -- but a
-	// folded-false branch is still type-checked, so this compiles at NUMPLAYERS 1
-	// and never runs.  It reads the second slot only once that slot exists, which
-	// is why NUMPLAYERS is still 1: see the note there.
-	CPlayerPed *second = nil;
-	if(NUMPLAYERS > 1)
-		second = CWorld::Players[1].m_pPed;
-	if(second != nil && second != CamTargetEntity){
-		const CVector other = second->GetPosition();
-		target = (target + other)*0.5f;
-		separation = (other - CameraTarget).Magnitude2D();
+	CPlayerPed *lead = FindPlayerPed();
+	if(lead == nil)
+		return;
+
+	// This mode stands in for both the on-foot and the in-car cameras, so the
+	// change of mode that used to bring CamTargetEntity up to date when the
+	// player got into a car no longer happens.  Keep it current by hand; other
+	// code reads it.
+	if(TheCamera.pTargetEntity != nil && CamTargetEntity != TheCamera.pTargetEntity){
+		CamTargetEntity = TheCamera.pTargetEntity;
+		CamTargetEntity->RegisterReference(&CamTargetEntity);
+		// The camera's own pointer too: it is the change of mode that used
+		// to register that one as well.
+		TheCamera.pTargetEntity->RegisterReference(&TheCamera.pTargetEntity);
 	}
 
-	// Which way to look from.  Player 1's heading, deliberately, not the
-	// midpoint's: player 1 is the one the scripts are following, so the view
-	// should agree with the mission rather than with whichever way the partner
-	// happens to be drifting.
-	CVector facing(0.0f, 1.0f, 0.0f);
-	if(CamTargetEntity != nil){
-		const CVector fwd = CamTargetEntity->GetForward();
-		if(fwd.x != 0.0f || fwd.y != 0.0f){
-			facing.x = fwd.x;
-			facing.y = fwd.y;
-			if(facing.Magnitude2D() > 0.001f)
-				facing.Normalise();
+	// Where to look: the midpoint of the players, so the view stays on the line
+	// between them and can never end up somewhere neither of them is.
+	// Player 1 is wherever the game says the player is: in a car that is the
+	// car, and while they stand holding the remote for an RC one it is that.
+	CVehicle *leadVehicle = lead->bInVehicle ? lead->m_pMyVehicle : nil;
+	if(CWorld::Players[CWorld::PlayerInFocus].m_pRemoteVehicle != nil)
+		leadVehicle = CWorld::Players[CWorld::PlayerInFocus].m_pRemoteVehicle;
+	const CVector leadPos = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
+	CVector target = leadPos;
+	CVector partnerPos = leadPos;
+	float separation = 0.0f;
+	CPlayerPed *partner = CCoop::GetPartner();
+	if(partner != nil){
+		CVehicle *partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
+		partnerPos = partnerVehicle != nil ? partnerVehicle->GetPosition() : partner->GetPosition();
+		separation = (partnerPos - leadPos).Magnitude();
+		target = (leadPos + partnerPos)*0.5f;
+	}
+
+	const float dt = CTimer::GetTimeStepInSeconds();
+
+	// Which way to look from.  Wherever the view was already facing when this
+	// camera took over, so switching to it does not also spin the world round.
+	if(ResetStatics){
+		const CVector &facing = TheCamera.GetForward();
+		if(Abs(facing.x) > 0.01f || Abs(facing.y) > 0.01f)
+			s_coopYaw = Atan2(-facing.x, facing.y);
+		else
+			s_coopYaw = lead->m_fRotationCur;
+	}
+	float speed = 0.0f;
+	if(leadVehicle != nil && leadVehicle->pDriver == lead){
+		const CVector &move = leadVehicle->GetMoveSpeed();
+		const CVector &ahead = leadVehicle->GetForward();
+		speed = move.Magnitude2D();
+		// Forwards only.  Following the nose while reversing out of a parking
+		// space would swing the view through a half turn to show the kerb.
+		if(speed > kCoopYawMinSpeed && move.x*ahead.x + move.y*ahead.y > 0.0f &&
+		   (Abs(ahead.x) > 0.01f || Abs(ahead.y) > 0.01f)){
+			float turn = Atan2(-ahead.x, ahead.y) - s_coopYaw;
+			while(turn >= PI) turn -= 2*PI;
+			while(turn < -PI) turn += 2*PI;
+			s_coopYaw += turn*(1.0f - exp(-kCoopYawRate*dt));
+			while(s_coopYaw >= PI) s_coopYaw -= 2*PI;
+			while(s_coopYaw < -PI) s_coopYaw += 2*PI;
 		}
 	}
 
-	// Back and up, in that order, so the angle never changes and only the
-	// distance responds to the pair separating.
-	const float back = Min(kCoopMaxBack, kCoopBaseBack + separation*kCoopSeparationGain);
-	const CVector wanted = target - facing*back + CVector(0.0f, 0.0f, kCoopBaseHeight);
+	int framingIndex = CCoop::ms_nFraming;
+	if(framingIndex < 0 || framingIndex >= CCoop::NUM_FRAMINGS)
+		framingIndex = 1;
+	const CoopFraming &framing = kCoopFramings[framingIndex];
+	const float wantedDistance = Min(kCoopMaxDistance, framing.distance +
+		Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain +
+		Min(kCoopSpeedRoom, speed*kCoopSpeedGain));
 
-	// Eased, because the midpoint jumps when the two are on opposite sides of a
-	// wall and a hard cut there is unpleasant enough to look like a bug.  Except
-	// on the first frame, where ResetStatics means what it means in every other
-	// Process_ function here -- start clean -- so switching co-op on from the pause
-	// menu does not swoop the view across the map from wherever it happened to be.
-	const float follow = ResetStatics ? 1.0f
-		: 1.0f - exp(-kCoopFollowRate*(float)CTimer::GetTimeStep());
-	Source += (wanted - Source)*follow;
+	const CVector moved = target - s_coopTarget;
+	if(ResetStatics || moved.MagnitudeSqr2D() > SQR(20.0f) || Abs(moved.z) > kCoopSnapHeight){
+		// Starting, or the players were moved somewhere else: be there, do not
+		// glide there across the map.
+		s_coopTarget = target;
+		s_coopDistance = wantedDistance;
+		s_coopClip = 1.0f;
+#ifdef NINTENDO_WII
+		if(ResetStatics){
+			s_coopLogLines = 0;
+			s_coopLogTime = 0;
+		}
+#endif
+	}else{
+		const float follow = 1.0f - exp(-kCoopFollowRate*dt);
+		s_coopTarget.x += (target.x - s_coopTarget.x)*follow;
+		s_coopTarget.y += (target.y - s_coopTarget.y)*follow;
+		s_coopTarget.z += (target.z - s_coopTarget.z)*(1.0f - exp(-kCoopHeightRate*dt));
+		// Slowly, but not from any further behind than this.  Left to the rate
+		// alone, a long fall or a fast lift leaves the players off the edge of
+		// the picture -- and far enough behind, it used to look like having
+		// been moved somewhere else, and reset the view every few frames.
+		s_coopTarget.z = Clamp(s_coopTarget.z, target.z - kCoopHeightLag, target.z + kCoopHeightLag);
+		s_coopDistance += (wantedDistance - s_coopDistance)*(1.0f - exp(-kCoopZoomRate*dt));
+	}
 
-	// Still worth doing: a fixed downward angle looks straight into rooftops and
-	// overpasses, which is the one thing this angle cannot avoid.
-	const CVector origSource = Source;
-	TheCamera.AvoidTheGeometry(origSource, target, Source, FOV);
+	// Back along the view by the distance: the pitch never changes.
+	const float level = Cos(framing.pitch);
+	const CVector view(-Sin(s_coopYaw)*level, Cos(s_coopYaw)*level, -Sin(framing.pitch));
 
-	Front = target - Source;
+	// A camera this high up looks straight into rooftops, awnings and the
+	// undersides of bridges.  Whatever the scenery puts between it and the
+	// players, it comes in along its own line to just this side of -- so the
+	// angle still does not change, and indoors it ends up under the ceiling.
+	//
+	// The line that is tested runs back from each player, not from the point
+	// the view is centred on.  That point is an average and nothing stands on
+	// it: between two players on a staircase it is inside the stairs, and
+	// behind one who is climbing it is under the floor.  The line test hits
+	// surfaces from behind as well as in front, so from in there the first
+	// thing it meets is whatever it started underneath, and the camera came
+	// all the way in for nothing.  A player is always standing in the open.
+	//
+	// With two answers, the roomier.  The camera cannot be in under one
+	// player's ceiling and still show the other one down the street, and a
+	// view of one of them is better than a view of neither.
+	const CVector reach = view*-s_coopDistance;
+	float room = CoopRoomBehind(leadPos, reach);
+	if(partner != nil && separation > kCoopSeparateClip)
+		room = Max(room, CoopRoomBehind(partnerPos, reach));
+	const float clear = Min(1.0f, Max(room, kCoopMinDistance)/Max(s_coopDistance, kCoopMinDistance));
+	if(clear < s_coopClip)
+		s_coopClip = clear;
+	else
+		s_coopClip += (clear - s_coopClip)*(1.0f - exp(-kCoopUnclipRate*dt));
+
+	Source = s_coopTarget - view*(s_coopDistance*s_coopClip);
+	Front = s_coopTarget - Source;
 	m_fRealGroundDist = Front.Magnitude2D();
 	m_fMinDistAwayFromCamWhenInterPolating = m_fRealGroundDist;
+	// CCam::Process and CCamera::Process both measure the camera against this
+	// after the mode has run; left stale it is wherever the last mode put it.
+	m_cvecTargetCoorsForFudgeInter = s_coopTarget;
 	Front.Normalise();
 	GetVectorsReadyForRW();
 	TheCamera.m_bCamDirectlyBehind = false;
@@ -1208,24 +1307,18 @@ CCam::Process_WiiCoop(const CVector &CameraTarget, float, float, float)
 	ResetStatics = false;
 
 #ifdef NINTENDO_WII
-	// The heartbeat, and the two things in it that are the whole point of the
-	// mode.  front and reticle together: if aiming really has stopped turning the
-	// view, then front is steady across lines while reticle moves, and that is
-	// visible in the log without anyone having to judge it by eye.  If they move
-	// together, the reticle is still steering the camera and the design has failed.
-	// Then the framing numbers, so the pitch and pull-back can be tuned from
-	// evidence, and the frame time, because this camera is new code on a CPU that
-	// was already the constraint.
-	const u32 nowMs = (u32)CTimer::GetTimeInMilliseconds();
-	if(nowMs - s_coopLastLogMs >= 2000){
-		s_coopLastLogMs = nowMs;
-		WiiTraceReport("WII coop: peds=%d sep=%.1f back=%.1f h=%.1f target=%.0f,%.0f,%.0f"
-		               " front=%.3f,%.3f,%.3f reticle=%.3f,%.3f frame=%ums\n",
-		               second != nil ? 2 : 1, separation, back, kCoopBaseHeight,
-		               target.x, target.y, target.z,
-		               Front.x, Front.y, Front.z,
-		               (float)CCamera::m_f3rdPersonCHairMultX,
-		               (float)CCamera::m_f3rdPersonCHairMultY,
+	const uint32 now = (uint32)CTimer::GetTimeInMilliseconds();
+	if(s_coopLogLines < kCoopLogLines && now - s_coopLogTime >= kCoopLogEveryMs){
+		s_coopLogTime = now;
+		s_coopLogLines++;
+		float reticleX = 0.0f, reticleY = 0.0f;
+		bool engaged = false;
+		const bool reticle = CCoop::GetReticle(0, reticleX, reticleY, engaged);
+		WiiTraceReport("WII coop: camera players=%d sep=%.1f framing=%d dist=%.1f clear=%.2f yaw=%.0f"
+		               " target=%.0f,%.0f,%.0f reticle=%c%.2f,%.2f frame=%ums\n",
+		               partner != nil ? 2 : 1, separation, framingIndex, s_coopDistance, s_coopClip,
+		               RADTODEG(s_coopYaw), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
+		               reticle ? '+' : '-', reticleX, reticleY,
 		               (unsigned)CTimer::GetTimeStepInMilliseconds());
 	}
 #endif

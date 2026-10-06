@@ -1026,6 +1026,72 @@ enum Corners
 	CORNER_PRIO_RIGHT,
 };
 
+// Couch co-op's shared camera, and the part of its view the scans below miss.
+//
+// What gets drawn (and what gets streamed in) is whatever lives in the map
+// sectors under a triangle: the camera at one point, the two far top corners of
+// the view at the others.  That is the whole view for a camera at head height
+// looking along the street, because such a camera sees almost nothing beside
+// or beneath itself.  A camera twenty metres up looking steeply down does: the
+// bottom edge of its picture is a strip of ground fifteen metres to either side
+// of the spot it is standing over, and the triangle is a metre wide there.
+// Whether that strip is drawn then depends on which side of a sector boundary
+// the camera happens to be -- a building in the bottom corner of the screen
+// that is there in one street and gone in the next.
+//
+// The engine's own top-down modes get round this by scanning every sector in a
+// box around the whole view, which is fine straight down and far too much at an
+// angle (the top of this view reaches the horizon).  So instead the two missing
+// wedges are added to the triangle: from the camera, out to where each bottom
+// corner of the view passes a level safely below the players' feet, and on to
+// the top corner on the same side.  They are scanned as triangles, in the same
+// winding as the stock one, because triangles are all ScanSectorPoly has ever
+// been given.
+static void
+ScanCoopViewEdges(const CVector *vectors, const CVector &topLeft, const CVector &topRight, void (*scanfunc)(CPtrList *))
+{
+	const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
+	if(cam.Mode != CCam::MODE_WII_COOP)
+		return;
+
+	const CVector &camPos = vectors[CORNER_CAM];
+	const float floorZ = cam.m_cvecTargetCoorsForFudgeInter.z - 30.0f;
+	CVector botLeft = vectors[CORNER_FAR_BOTLEFT];
+	CVector botRight = vectors[CORNER_FAR_BOTRIGHT];
+	// Only a camera above that level with both bottom corners passing down
+	// through it; anything else is not this camera doing its job.
+	if(camPos.z <= floorZ + 1.0f || botLeft.z >= floorZ || botRight.z >= floorZ)
+		return;
+	LimitFrustumVector(botLeft, camPos, floorZ);
+	LimitFrustumVector(botRight, camPos, floorZ);
+
+	RwV2d tri[3];
+	tri[0].x = CWorld::GetSectorX(camPos.x);
+	tri[0].y = CWorld::GetSectorY(camPos.y);
+
+	// The stock triangle's winding, to hold the wedges to.  A wedge that comes
+	// out the other way round is not a wedge -- the bottom corner is inside the
+	// triangle already -- and is skipped rather than handed to the scan.
+	const float stock = (CWorld::GetSectorX(topLeft.x) - tri[0].x)*(CWorld::GetSectorY(topRight.y) - tri[0].y) -
+		(CWorld::GetSectorY(topLeft.y) - tri[0].y)*(CWorld::GetSectorX(topRight.x) - tri[0].x);
+
+	tri[1].x = CWorld::GetSectorX(botLeft.x);
+	tri[1].y = CWorld::GetSectorY(botLeft.y);
+	tri[2].x = CWorld::GetSectorX(topLeft.x);
+	tri[2].y = CWorld::GetSectorY(topLeft.y);
+	float wedge = (tri[1].x - tri[0].x)*(tri[2].y - tri[0].y) - (tri[1].y - tri[0].y)*(tri[2].x - tri[0].x);
+	if(wedge*stock > 0.0f)
+		CRenderer::ScanSectorPoly(tri, 3, scanfunc);
+
+	tri[1].x = CWorld::GetSectorX(topRight.x);
+	tri[1].y = CWorld::GetSectorY(topRight.y);
+	tri[2].x = CWorld::GetSectorX(botRight.x);
+	tri[2].y = CWorld::GetSectorY(botRight.y);
+	wedge = (tri[1].x - tri[0].x)*(tri[2].y - tri[0].y) - (tri[1].y - tri[0].y)*(tri[2].x - tri[0].x);
+	if(wedge*stock > 0.0f)
+		CRenderer::ScanSectorPoly(tri, 3, scanfunc);
+}
+
 void
 CRenderer::ScanWorld(void)
 {
@@ -1140,6 +1206,7 @@ CRenderer::ScanWorld(void)
 				poly[2].x = CWorld::GetSectorX(vectors[CORNER_LOD_RIGHT].x);
 				poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
 				ScanSectorPoly(poly, 3, ScanSectorList);
+				ScanCoopViewEdges(vectors, vectors[CORNER_LOD_LEFT], vectors[CORNER_LOD_RIGHT], ScanSectorList);
 			}else{
 				poly[0].x = CWorld::GetSectorX(vectors[CORNER_CAM].x);
 				poly[0].y = CWorld::GetSectorY(vectors[CORNER_CAM].y);
@@ -1148,6 +1215,7 @@ CRenderer::ScanWorld(void)
 				poly[2].x = CWorld::GetSectorX(vectors[CORNER_FAR_TOPRIGHT].x);
 				poly[2].y = CWorld::GetSectorY(vectors[CORNER_FAR_TOPRIGHT].y);
 				ScanSectorPoly(poly, 3, ScanSectorList);
+				ScanCoopViewEdges(vectors, vectors[CORNER_FAR_TOPLEFT], vectors[CORNER_FAR_TOPRIGHT], ScanSectorList);
 			}
 			
 #ifdef NO_ISLAND_LOADING
@@ -1246,6 +1314,7 @@ CRenderer::RequestObjectsInFrustum(void)
 		poly[2].x = CWorld::GetSectorX(vectors[CORNER_LOD_RIGHT].x);
 		poly[2].y = CWorld::GetSectorY(vectors[CORNER_LOD_RIGHT].y);
 		ScanSectorPoly(poly, 3, ScanSectorList_RequestModels);
+		ScanCoopViewEdges(vectors, vectors[CORNER_LOD_LEFT], vectors[CORNER_LOD_RIGHT], ScanSectorList_RequestModels);
 	}
 }
 

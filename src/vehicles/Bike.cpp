@@ -2025,7 +2025,9 @@ CBike::DoDriveByShootings(void)
 
 	bool lookingLeft = false;
 	bool lookingRight = false;
+	// (MODE_WII_COOP: see CAutomobile::DoDriveByShootings.)
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
+	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP ||
 	   TheCamera.m_bObbeCinematicCarCamOn){
 		if(CPad::GetPad(0)->GetLookLeft())
 			lookingLeft = true;

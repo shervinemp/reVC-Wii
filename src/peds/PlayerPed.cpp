@@ -24,6 +24,7 @@
 #include "PedPlacement.h"
 #include "VarConsole.h"
 #include "SaveBuf.h"
+#include "Coop.h"
 
 #define PAD_MOVE_TO_GAME_WORLD_MOVE 60.0f
 #ifdef NINTENDO_WII
@@ -47,8 +48,11 @@ const uint32 CPlayerPed::nSaveStructSize =
 int32 idleAnimBlockIndex;
 
 CPad*
-GetPadFromPlayer(CPlayerPed*)
+GetPadFromPlayer(CPlayerPed *ped)
 {
+	// See PAD_COOP for why the partner is not simply on pad 1.
+	if (ped != nil && ped == CWorld::Players[1].m_pPed)
+		return CPad::GetPad(PAD_COOP);
 	return CPad::GetPad(0);
 }
 
@@ -111,8 +115,13 @@ CPlayerPed::CPlayerPed(void) : CPed(PEDTYPE_PLAYER1)
 void
 CPlayerPed::ClearWeaponTarget()
 {
-	if (m_nPedType == PEDTYPE_PLAYER1) {
+	// The lock is this ped's own, so any player drops theirs.  The weapon
+	// camera and the target marker there is only one of each, and they are the
+	// focus player's: couch co-op's partner is PEDTYPE_PLAYER2 and leaves both
+	// alone, or one player losing a target would take the other's marker.
+	if (IsPlayer())
 		SetWeaponLockOnTarget(nil);
+	if (m_nPedType == PEDTYPE_PLAYER1) {
 		TheCamera.ClearPlayerWeaponMode();
 		CWeaponEffects::ClearCrossHair();
 	}
@@ -167,8 +176,14 @@ CPlayerPed::ClearAdrenaline(void)
 CPlayerInfo *
 CPlayerPed::GetPlayerInfoForThisPlayerPed()
 {
-	if (CWorld::Players[0].m_pPed == this)
-		return &CWorld::Players[0];
+	// Every slot, not just the first.  This returned nil for couch co-op's
+	// partner, and CPed::RemoveWeaponWhenEnteringVehicle dereferences the
+	// result without looking: a second player with SMG ammo getting into a car
+	// was a null read.
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		if (CWorld::Players[i].m_pPed == this)
+			return &CWorld::Players[i];
+	}
 
 	return nil;
 }
@@ -884,8 +899,22 @@ CPlayerPed::PlayerControl1stPersonRunAround(CPad *padUsed)
 	float upDown = padUsed->GetPedWalkUpDown();
 	float padMove = CVector2D(leftRight, upDown).Magnitude();
 	float padMoveInGameUnit = padMove / PAD_MOVE_TO_GAME_WORLD_MOVE;
+	// Which way the body faces.  In the stock game this function does not
+	// decide that at all: the line below sets a heading the mouse camera then
+	// overwrites, every frame, with the direction the camera is looking
+	// (CCam::Process_FollowPedWithMouse).  The shared camera does no such thing
+	// -- it is not looking where anyone is aiming -- so in couch co-op the
+	// heading is set here and is the direction of this player's own reticle.
+	// CPed::CalculateNewVelocity turns the body toward it at the ped's own
+	// turning rate, and the stick then moves the player across the screen
+	// whichever way they are facing: see WorkOutHeadingForMovingFirstPerson.
+	const bool coopAim = CCoop::UsesReticleAim();
+	if (coopAim)
+		m_fRotationDest = CCoop::GetAimHeading(this);
+
 	if (padMoveInGameUnit > 0.0f) {
-		m_fRotationDest = CGeneral::LimitRadianAngle(TheCamera.Orientation);
+		if (!coopAim)
+			m_fRotationDest = CGeneral::LimitRadianAngle(TheCamera.Orientation);
 		m_fMoveSpeed = Min(padMoveInGameUnit, 0.07f * CTimer::GetTimeStep() + m_fMoveSpeed);
 	} else {
 		m_fMoveSpeed = 0.0f;
@@ -1085,7 +1114,10 @@ CPlayerPed::FindNextWeaponLockOnTarget(CEntity *previousTarget, bool lookToLeft)
 		CPed *pedToCheck = CPools::GetPedPool()->GetSlot(h);
 		if (pedToCheck) {
 			if (pedToCheck != this && pedToCheck != previousTarget) {
-				if (!pedToCheck->DyingOrDead()
+				// (Never another player.  Couch co-op's partner is in this pool, and
+				// the two of them can shoot each other -- that is the fun of it --
+				// but they have to aim to do it; the game will not do it for them.)
+				if (!pedToCheck->DyingOrDead() && !pedToCheck->IsPlayer()
 #ifndef AIMING_VEHICLE_OCCUPANTS // Mobile thing
 					&& (!pedToCheck->bInVehicle || (pedToCheck->m_pMyVehicle && pedToCheck->m_pMyVehicle->IsBike()))
 #endif
@@ -1135,7 +1167,7 @@ CPlayerPed::FindWeaponLockOnTarget(void)
 		CPed *pedToCheck = CPools::GetPedPool()->GetSlot(h);
 		if (pedToCheck) {
 			if (pedToCheck != this) {
-				if (!pedToCheck->DyingOrDead()
+				if (!pedToCheck->DyingOrDead() && !pedToCheck->IsPlayer()
 #ifndef AIMING_VEHICLE_OCCUPANTS // Mobile thing
 					&& (!pedToCheck->bInVehicle || (pedToCheck->m_pMyVehicle && pedToCheck->m_pMyVehicle->IsBike()))
 #endif
@@ -1273,7 +1305,32 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	else
 		m_wepAccuracy = 100;
 
-	if (!m_pFire) {
+	// No scope in couch co-op.  The scope is a camera, there is one camera, and
+	// it is the one both players are looking through.
+	//
+	// The weapons that are nothing without one -- the rocket launcher and the
+	// two rifles -- are fired there the way the scope itself fires them
+	// (PlayerControlSniper): straight from the weapon on the press of the
+	// button, with no animation.  They cannot go on to the ordinary attack
+	// below instead.  weapon.dat gives all three the animations of a bare fist,
+	// because the stock game never shows a player firing one, and the attack
+	// would have Tommy throw a punch to launch a rocket.  CWeapon::Fire aims
+	// them like everything else in co-op.  The camera needs its viewfinder, and
+	// does nothing.
+	if (CCoop::IsRunning()) {
+		eWeaponType weapon = GetWeapon()->m_eWeaponType;
+		if (weapon == WEAPONTYPE_ROCKETLAUNCHER || weapon == WEAPONTYPE_SNIPERRIFLE ||
+			weapon == WEAPONTYPE_LASERSCOPE || weapon == WEAPONTYPE_CAMERA) {
+			if (weapon != WEAPONTYPE_CAMERA && !m_pFire && padUsed->WeaponJustDown() &&
+				m_nMoveState != PEDMOVE_SPRINT && m_nSelectedWepSlot == m_currentWeapon &&
+				CTimer::GetTimeInMilliseconds() > GetWeapon()->m_nTimer) {
+				CVector firePos(0.0f, 0.0f, 0.6f);
+				firePos = GetMatrix() * firePos;
+				GetWeapon()->Fire(this, &firePos);
+			}
+			return;
+		}
+	} else if (!m_pFire) {
 		eWeaponType weapon = GetWeapon()->m_eWeaponType;
 		if (weapon == WEAPONTYPE_ROCKETLAUNCHER || weapon == WEAPONTYPE_SNIPERRIFLE ||
 			weapon == WEAPONTYPE_LASERSCOPE || weapon == WEAPONTYPE_M4 ||
@@ -1357,7 +1414,9 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	if (pointedGun == 2) pointedGun = 1;
 
 	// Rotate player/arm when shooting. We don't have auto-rotation anymore
-	if (CCamera::m_bUseMouse3rdPerson && CCamera::bFreeCam &&
+	// (Not in couch co-op: this turns the player to face along the camera, and
+	// there the camera is not where anyone is aiming.)
+	if (CCamera::m_bUseMouse3rdPerson && CCamera::bFreeCam && !CCoop::UsesReticleAim() &&
 		m_nSelectedWepSlot == m_currentWeapon && m_nMoveState != PEDMOVE_SPRINT) {
 
 #define CAN_AIM_WITH_ARM (weaponInfo->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM) && !bIsDucking && !bCrouchWhenShooting)
@@ -1527,7 +1586,11 @@ CPlayerPed::PlayerControlZelda(CPad *padUsed)
 	}
 
 #ifdef FREE_CAM
-	if (TheCamera.Cams[0].Using3rdPersonMouseCam() && smoothSprayRate > 0.0f) {
+	// Standing still to spray is the free camera's half of a bargain: the stick
+	// is taken away because the pointer turns the player instead.  Couch co-op's
+	// camera turns nobody, so there the stick goes on turning them, as it does
+	// on Classic controls.
+	if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCoop::UsesReticleAim() && smoothSprayRate > 0.0f) {
 		padMoveInGameUnit = 0.0f;
 		smoothSprayWithoutMove = false;
 	}
@@ -1773,7 +1836,10 @@ CPlayerPed::ProcessControl(void)
 	}
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
-			if (m_pMyVehicle->IsCar() && ((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
+			// The driver's door is the driver's to pull shut.  A passenger is in
+			// PED_DRIVING too, and with a second player ped there can be one.
+			if (m_pMyVehicle->IsCar() && m_pMyVehicle->pDriver == this &&
+				((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
 				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
 
 				if (m_pMyVehicle->m_nGettingOutFlags & CAR_DOOR_FLAG_LF || rollDoorAssoc || (rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LO_LHS))) {
@@ -1805,7 +1871,14 @@ CPlayerPed::ProcessControl(void)
 	if (bIsLanding)
 		RunningLand(padUsed);
 
-	if (padUsed && padUsed->WeaponJustDown() && !TheCamera.Using1stPersonWeaponMode()) {
+	// Decided once a frame, here, and remembered: the movement code in CPed asks
+	// for the answer later (and next frame, before this line runs again).
+	const bool coopAim = CCoop::UsesReticleAim();
+	const bool facesReticle = padUsed && CCoop::FacesAim(this, padUsed);
+
+	// (The click of a scoped weapon fired without its scope.  In couch co-op
+	// those weapons fire, so there is nothing to click about.)
+	if (padUsed && padUsed->WeaponJustDown() && !TheCamera.Using1stPersonWeaponMode() && !CCoop::IsRunning()) {
 		// ...Really?
 		eWeaponType playerWeapon = FindPlayerPed()->GetWeapon()->m_eWeaponType;
 		if (playerWeapon == WEAPONTYPE_SNIPERRIFLE || playerWeapon == WEAPONTYPE_LASERSCOPE) {
@@ -1829,11 +1902,15 @@ CPlayerPed::ProcessControl(void)
 					if (padUsed)
 						PlayerControlSniper(padUsed);
 
-				} else if (TheCamera.Cams[0].Using3rdPersonMouseCam()
+				// Couch co-op: facing the reticle and strafing, or -- sprinting, or
+				// with nothing but fists out -- facing wherever the stick points,
+				// which is the Classic control further down.  CCoop::FacesAim says
+				// which and why.
+				} else if (coopAim ? facesReticle : (TheCamera.Cams[0].Using3rdPersonMouseCam()
 #ifdef FREE_CAM
 					&& !CCamera::bFreeCam
 #endif
-					) {
+					)) {
 					if (padUsed)
 						PlayerControl1stPersonRunAround(padUsed);
 
@@ -2013,6 +2090,13 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 	CAnimBlendAssociation* assoc;
 
 	if (TheCamera.m_WideScreenOn || bIsDucking)
+		return;
+
+	// The focus player only.  The timers below are function statics and the
+	// animation block is loaded and unloaded by this one function, so a second
+	// player ped would share both -- and a player who is busy unloads the block
+	// (the RemoveAnim below) out from under one who is standing idle.
+	if (this != FindPlayerPed())
 		return;
 
 	struct animAndGroup {

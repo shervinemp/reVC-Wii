@@ -29,6 +29,9 @@
 #ifdef NINTENDO_WII
 #include "WiiPointerAim.h"
 #endif
+#include "Coop.h"
+#include "PlayerPed.h"
+#include "WeaponInfo.h"
 
 #if defined(FIX_BUGS)
 	#define SCREEN_SCALE_X_FIX(a) SCREEN_SCALE_X(a)
@@ -220,6 +223,71 @@ RwTexture *gpLaserSightTex;
 RwTexture *gpLaserDotTex;
 RwTexture *gpViewFinderTex;
 
+// Couch co-op: one colour per player, worn by their reticle and by the pip over
+// their head, so that on one screen it is plain whose aim is whose -- and, with
+// two identical figures on it, which of them is you.  Vice City's own pair.
+static const CRGBA kCoopColours[2] = { CRGBA(80, 215, 255, 255), CRGBA(255, 110, 200, 255) };
+
+static void
+DrawCoopMarks(void)
+{
+	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+
+	// The pips, and only once there are two players to tell apart.  Each has a
+	// health bar under it: the HUD proper is player 1's, so for the partner this
+	// is the only place their health is shown at all, and it is drawn for both
+	// so the two markers read the same way.
+	if (CCoop::GetPartner() != nil) {
+		const float maxHealth = Max(1.0f, (float)CWorld::Players[0].m_nMaxHealth);
+		for (int i = 0; i < 2; i++) {
+			CPlayerPed *ped = CWorld::Players[i].m_pPed;
+			if (ped == nil || ped->bInVehicle || !ped->bIsVisible)
+				continue;
+			CVector above = ped->GetPosition();
+			above.z += 1.35f;
+			CVector screen;
+			float w, h;
+			if (!CSprite::CalcScreenCoors(above, &screen, &w, &h, false))
+				continue;
+			const float rx = SCREEN_SCALE_X(3.0f);
+			const float ry = SCREEN_SCALE_Y(3.0f);
+			const float ex = SCREEN_SCALE_X(1.0f);
+			const float ey = SCREEN_SCALE_Y(1.0f);
+			CSprite2d::DrawRect(CRect(screen.x - rx - ex, screen.y - ry - ey, screen.x + rx + ex, screen.y + ry + ey), CRGBA(0, 0, 0, 255));
+			CSprite2d::DrawRect(CRect(screen.x - rx, screen.y - ry, screen.x + rx, screen.y + ry), kCoopColours[i]);
+
+			const float health = Clamp(ped->m_fHealth/maxHealth, 0.0f, 1.0f);
+			const float half = SCREEN_SCALE_X(11.0f);
+			const float top = screen.y + ry + 2.0f*ey;
+			const float bottom = top + SCREEN_SCALE_Y(2.5f);
+			CSprite2d::DrawRect(CRect(screen.x - half - ex, top - ey, screen.x + half + ex, bottom + ey), CRGBA(0, 0, 0, 255));
+			if (health > 0.0f)
+				CSprite2d::DrawRect(CRect(screen.x - half, top, screen.x - half + 2.0f*half*health, bottom), kCoopColours[i]);
+		}
+	}
+
+	// The reticles.  A full crosshair with something to shoot, a dot without --
+	// the same two marks the single-player HUD draws -- and red, like the
+	// single-player one, while it is on a target.
+	for (int i = 0; i < 2; i++) {
+		float x, y;
+		bool engaged;
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped == nil || !CCoop::GetReticle(i, x, y, engaged))
+			continue;
+		const bool armed = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_eWeaponFire != WEAPON_FIRE_MELEE;
+		const float size = armed ? 32.0f * 0.4f : 3.0f;
+		const float px = SCREEN_WIDTH * x;
+		const float py = SCREEN_HEIGHT * y;
+		const float rx = SCREEN_SCALE_X(size);
+		const float ry = SCREEN_SCALE_Y(size);
+		CHud::Sprites[HUD_SITEM16].Draw(CRect(px - rx, py - ry, px + rx, py + ry),
+			engaged ? CRGBA(255, 70, 70, 255) : kCoopColours[i],
+			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+	}
+}
+
 void CHud::Draw()
 {
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void*)rwFILTERNEAREST);
@@ -266,8 +334,14 @@ void CHud::Draw()
 		// Classic lock-on reticle on a targeted ped and never shows in free aim.)
 		// Drawn before the reticle so the real crosshair sits round it.  This block
 		// does not exist on other platforms.
+		//
+		// Couch co-op draws its own marks instead, a set per player, and the
+		// single crosshair below is switched off for as long as it does.
+		const bool coopMarks = CCoop::IsRunning();
+		if (coopMarks)
+			DrawCoopMarks();
 		bool pointerMark = false;
-		if (playerPed && playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
+		if (!coopMarks && playerPed && playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
 			if (TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam())
 				pointerMark = true;
 			else if (playerPed->bInVehicle && WiiPointerAimInCar() &&
@@ -300,8 +374,12 @@ void CHud::Draw()
 
 		if (Mode == CCam::MODE_M16_1STPERSON_RUNABOUT || Mode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT || Mode == CCam::MODE_SNIPER_RUNABOUT)
 			DrawCrossHairPC = true;
-		if (TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam() && (!CPad::GetPad(0)->GetLookBehindForPed() || TheCamera.m_bPlayerIsInGarage)
-			|| Mode == CCam::MODE_1STPERSON_RUNABOUT) {
+		if (
+#ifdef NINTENDO_WII
+			!coopMarks &&
+#endif
+			(TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam() && (!CPad::GetPad(0)->GetLookBehindForPed() || TheCamera.m_bPlayerIsInGarage)
+			|| Mode == CCam::MODE_1STPERSON_RUNABOUT)) {
 			if (playerPed) {
 				if (playerPed->m_nPedState != PED_ENTER_CAR && playerPed->m_nPedState != PED_CARJACK) {
 

@@ -25,6 +25,7 @@
 #include "Bike.h"
 #include "Glass.h"
 #include "SpecialFX.h"
+#include "Coop.h"
 
 uint16 nPlayerInComboMove;
 RpClump* flyingClumpTemp;
@@ -350,7 +351,17 @@ CPed::SetAttack(CEntity *victim)
 #else
 		} else {
 #endif
-			if (IsAnyPlayerPed(this) && TheCamera.Cams[0].Using3rdPersonMouseCam()) {
+			if (IsAnyPlayerPed(this) && CCoop::UsesReticleAim()) {
+				// Couch co-op: the gun points at this player's own reticle.  The
+				// branch below takes both angles from the camera -- the pitch from
+				// how far it is tilted -- and the shared camera is tilted steeply
+				// down at everyone, so a player aiming along the street would hold
+				// their gun at the pavement.  This is reached every frame the
+				// trigger is held, which is what keeps the arm following the
+				// reticle through a burst.
+				SetAimFlag(CCoop::GetAimHeading(this));
+				((CPlayerPed*)this)->m_fFPSMoveHeading = CCoop::GetAimPitch(this);
+			} else if (IsAnyPlayerPed(this) && TheCamera.Cams[0].Using3rdPersonMouseCam()) {
 				SetAimFlag(m_fRotationCur);
 				((CPlayerPed*)this)->m_fFPSMoveHeading = TheCamera.Find3rdPersonQuickAimPitch();
 			} else if (curWeapon->IsFlagSet(WEAPONFLAG_CANAIM_WITHARM)) {
@@ -360,6 +371,11 @@ CPed::SetAttack(CEntity *victim)
 	}
 #ifdef FIX_BUGS
 	// fix aiming for flamethrower and minigun while using PC controls
+	else if (curWeapon->m_AnimToPlay == ASSOCGRP_FLAMETHROWER && CCoop::UsesReticleAim() && IsAnyPlayerPed(this))
+	{
+		SetAimFlag(CCoop::GetAimHeading(this));
+		((CPlayerPed*)this)->m_fFPSMoveHeading = CCoop::GetAimPitch(this);
+	}
 	else if (curWeapon->m_AnimToPlay == ASSOCGRP_FLAMETHROWER && TheCamera.Cams[0].Using3rdPersonMouseCam() && IsAnyPlayerPed(this))
 	{
 		SetAimFlag(m_fRotationCur);
@@ -373,7 +389,7 @@ CPed::SetAttack(CEntity *victim)
 
 	if (IsPlayer() || (!victimPed || victimPed->IsPedInControl())) {
 		if (IsPlayer())
-			CPad::GetPad(0)->ResetAverageWeapon();
+			GetPadFromPlayer((CPlayerPed*)this)->ResetAverageWeapon();
 
 		uint8 pointBlankStatus;
 		if ((curWeapon->m_eWeaponFire == WEAPON_FIRE_INSTANT_HIT || GetWeapon()->m_eWeaponType == WEAPONTYPE_FLAMETHROWER)
@@ -865,7 +881,9 @@ CPed::Attack(void)
 				GetWeapon()->m_eWeaponType == WEAPONTYPE_TEARGAS) {
 				RemoveWeaponModel(CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nModelId);
 			}
-			if (GetWeapon()->m_nAmmoTotal == 0 && ourWeapon->m_eWeaponFire != WEAPON_FIRE_MELEE && FindPlayerPed() != this) {
+			// Pedestrians only.  A player who runs dry picks their next weapon
+			// through CPlayerPed::ProcessWeaponSwitch, whichever player they are.
+			if (GetWeapon()->m_nAmmoTotal == 0 && ourWeapon->m_eWeaponFire != WEAPON_FIRE_MELEE && !IsPlayer()) {
 				SelectGunIfArmed();
 			}
 
@@ -911,12 +929,12 @@ CPed::Attack(void)
 
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_MADECONTACT, (float)damagerType);
 			if (IsPlayer()) {
-				CPad::GetPad(0)->StartShake(240, 180);
+				GetPadFromPlayer((CPlayerPed*)this)->StartShake(240, 180);
 			}
 		} else {
 			DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_CHAINSAW_ATTACK, 0.0f);
 			if (IsPlayer()) {
-				CPad::GetPad(0)->StartShake(240, 90);
+				GetPadFromPlayer((CPlayerPed*)this)->StartShake(240, 90);
 			}
 		}
 		attackShouldContinue = false;
@@ -945,7 +963,10 @@ CPed::Attack(void)
 		}
 	}
 
-	if (IsPlayer()) {
+	// The focus player only: CSpecialFX::AddWeaponStreak draws on
+	// FindPlayerPed()'s weapon whoever asks, so a second player's swing would
+	// put the streak in the first player's hand.
+	if (this == FindPlayerPed()) {
 		if (GetWeapon()->m_eWeaponType == WEAPONTYPE_BASEBALLBAT || GetWeapon()->m_eWeaponType == WEAPONTYPE_GOLFCLUB || GetWeapon()->m_eWeaponType == WEAPONTYPE_KATANA) {
 			float loopEndWithDelay = animLoopEnd;
 			if (loopEndWithDelay >= 98.0f)
@@ -959,7 +980,7 @@ CPed::Attack(void)
 
 	// Anim breakout on running
 	if (IsPlayer()) {
-		if (CPad::GetPad(0)->GetSprint()) {
+		if (GetPadFromPlayer((CPlayerPed*)this)->GetSprint()) {
 			if (!attackShouldContinue && weaponAnimAssoc->currentTime > ourWeapon->m_fAnimBreakout) {
 				weaponAnimAssoc->blendDelta = -4.0f;
 				FinishedAttackCB(nil, this);
@@ -1432,7 +1453,7 @@ CPed::Fight(void)
 	if (m_curFightMove == FIGHTMOVE_SHUFFLE_F && !currentAssoc)
 		currentAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_SHUFFLE_B);
 
-	if (IsPlayer() && currentAssoc && weapon == WEAPONTYPE_KATANA) {
+	if (this == FindPlayerPed() && currentAssoc && weapon == WEAPONTYPE_KATANA) {
 		if (m_curFightMove == FIGHTMOVE_MELEE1 || m_curFightMove == FIGHTMOVE_MELEE2) {
 			static float streakDelay = 0.2f;
 
@@ -2071,7 +2092,7 @@ CPed::FightStrike(CVector &touchedNodePos, bool fightWithWeapon)
 	if (m_fightState == FIGHTSTATE_JUST_ATTACKED)
 		return false;
 
-	if (this == FindPlayerPed() && fightWithWeapon && GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED)
+	if (IsAnyPlayerPed(this) && fightWithWeapon && GetWeapon()->m_eWeaponType != WEAPONTYPE_UNARMED)
 		CGlass::BreakGlassPhysically(touchedNodePos, radius);
 
 	for (int i = 0; i < m_numNearPeds; i++) {

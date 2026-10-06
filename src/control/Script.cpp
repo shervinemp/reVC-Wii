@@ -1621,7 +1621,10 @@ int8 CRunningScript::ProcessCommands0To99(int32 command)
 		uint32 createPlayerIp = m_nIp - 2;
 		CollectParameters(&m_nIp, 4);
 		int32 index = ScriptParams[0];
-		script_assert(index < NUMPLAYERS);
+		// Slot 0 and no other.  This used to be "index < NUMPLAYERS", which was
+		// the same thing while NUMPLAYERS was 1; the second slot that exists now
+		// is couch co-op's (CCoop), and no script gets to fill it.
+		script_assert(index == 0);
 		if (!CStreaming::HasModelLoaded(MI_PLAYER)) {
 			CStreaming::RequestSpecialModel(MI_PLAYER, "player", STREAMFLAGS_DONT_REMOVE | STREAMFLAGS_DEPENDENCY);
 #ifdef NINTENDO_WII

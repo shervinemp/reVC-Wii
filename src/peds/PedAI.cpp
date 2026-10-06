@@ -2781,25 +2781,12 @@ CPed::PedAnimPullPedOutCB(CAnimBlendAssociation* animAssoc, void* arg)
 
 		bool isLow = !!veh->bLowVehicle;
 
-		int padNo;
 		if (ped->IsPlayer()) {
 
-			// BUG? This will cause crash if m_nPedType is bigger then 1, there are only 2 pads
-			switch (ped->m_nPedType) {
-				case PEDTYPE_PLAYER1:
-					padNo = 0;
-					break;
-				case PEDTYPE_PLAYER2:
-					padNo = 1;
-					break;
-				case PEDTYPE_PLAYER3:
-					padNo = 2;
-					break;
-				case PEDTYPE_PLAYER4:
-					padNo = 3;
-					break;
-			}
-			CPad *pad = CPad::GetPad(padNo);
+			// The pad used to be picked from the ped type, one pad per player type,
+			// which put a second player on pad 1 -- the engine's debug pad.  The
+			// player's own pad is the one that knows.
+			CPad *pad = GetPadFromPlayer((CPlayerPed*)ped);
 
 			if (!pad->ArePlayerControlsDisabled()) {
 
@@ -3213,25 +3200,12 @@ CPed::PedAnimStepOutCarCB(CAnimBlendAssociation* animAssoc, void* arg)
 	}
 	bool closeDoor = !veh->IsDoorMissing(door);
 
-	int padNo;
 	if (ped->IsPlayer()) {
 
-		// BUG? This will cause crash if m_nPedType is bigger then 1, there are only 2 pads
-		switch (ped->m_nPedType) {
-			case PEDTYPE_PLAYER1:
-				padNo = 0;
-				break;
-			case PEDTYPE_PLAYER2:
-				padNo = 1;
-				break;
-			case PEDTYPE_PLAYER3:
-				padNo = 2;
-				break;
-			case PEDTYPE_PLAYER4:
-				padNo = 3;
-				break;
-		}
-		CPad* pad = CPad::GetPad(padNo);
+		// The pad used to be picked from the ped type, one pad per player type,
+		// which put a second player on pad 1 -- the engine's debug pad.  The
+		// player's own pad is the one that knows.
+		CPad* pad = GetPadFromPlayer((CPlayerPed*)ped);
 		bool engineIsIntact = veh->IsCar() && ((CAutomobile*)veh)->Damage.GetEngineStatus() >= 225;
 		if (!pad->ArePlayerControlsDisabled() && veh->m_nDoorLock != CARLOCK_FORCE_SHUT_DOORS
 			&& (pad->GetTarget()

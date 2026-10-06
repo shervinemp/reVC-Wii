@@ -22,6 +22,7 @@
 #include "ColStore.h"
 #include "Radar.h"
 #include "Pools.h"
+#include "Coop.h"
 
 const struct {
 	const char *szTrackName;
@@ -185,6 +186,12 @@ CCutsceneMgr::LoadCutsceneData(const char *szCutsceneName)
 	uint32 size;
 	uint32 offset;
 	CPlayerPed *pPlayerPed;
+
+	// Couch co-op's partner leaves before anything is loaded.  CCoop::Update
+	// would take them out anyway once it saw a cutscene running, but that is
+	// later this frame, and what follows here unloads models the player peds
+	// are built from and holding.
+	CCoop::Suspend("cutscene loading");
 
 	ms_cutsceneProcessing = true;
 	ms_wasCutsceneSkipped = false;

@@ -14352,6 +14352,33 @@ POINTER BOX
 [WII_CC]
 COUCH CO-OP
 
+[WII_P2J]
+Player 2: press any button to join.
+
+[WII_P2I]
+Player 2 has joined.
+
+[WII_P2O]
+Player 2 has left.
+
+[WII_CCM]
+Co-op is paused until the mission is over.
+
+[WII_TTH]
+You cannot get any further from each other on foot.
+
+[WII_CF0]
+Shared camera: low.
+
+[WII_CF1]
+Shared camera: middle.
+
+[WII_CF2]
+Shared camera: high.
+
+[WII_CF3]
+Shared camera: overhead.
+
 [WII_SML]
 SMALL
 

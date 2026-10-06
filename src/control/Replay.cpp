@@ -52,6 +52,7 @@
 #include "Radar.h"
 #include "Fluff.h"
 #include "WaterCreatures.h"
+#include "Coop.h"
 
 uint8 CReplay::Mode;
 CAddressInReplayBuffer CReplay::Record;
@@ -1272,6 +1273,10 @@ void CReplay::TriggerPlayback(uint8 cam_mode, float cam_x, float cam_y, float ca
 {
 	if (Mode != MODE_RECORD)
 		return;
+	// A replay snapshots the ped pool, empties it and copies the snapshot back,
+	// and what it puts right afterwards is one player: one wanted record, one
+	// CPlayerInfo.  Couch co-op's partner sits it out and rejoins when it ends.
+	CCoop::Suspend("replay");
 	CameraFixedX = cam_x;
 	CameraFixedY = cam_y;
 	CameraFixedZ = cam_z;
@@ -1330,8 +1335,11 @@ void CReplay::TriggerPlayback(uint8 cam_mode, float cam_x, float cam_y, float ca
 void CReplay::StoreStuffInMem(void)
 {
 #ifdef FIX_BUGS
+	// Not every slot has a ped in it: the second is couch co-op's and is empty
+	// whenever nobody is playing it.  GetIndex on nil is arithmetic on a null
+	// pointer and then a read off the end of the pool's flag array.
 	for (int i = 0; i < NUMPLAYERS; i++)
-		nHandleOfPlayerPed[i] = CPools::GetPedPool()->GetIndex(CWorld::Players[i].m_pPed);
+		nHandleOfPlayerPed[i] = CWorld::Players[i].m_pPed != nil ? CPools::GetPedPool()->GetIndex(CWorld::Players[i].m_pPed) : -1;
 #endif
 	int i = CPools::GetPedPool()->GetSize();
 	while (--i >= 0) {
@@ -1442,6 +1450,10 @@ void CReplay::RestoreStuffFromMem(void)
 	pRadarBlips = nil;
 #ifdef FIX_BUGS
 	for (int i = 0; i < NUMPLAYERS; i++) {
+		if (nHandleOfPlayerPed[i] < 0) {
+			CWorld::Players[i].m_pPed = nil;
+			continue;
+		}
 		CPlayerPed* pPlayerPed = (CPlayerPed*)CPools::GetPedPool()->GetAt(nHandleOfPlayerPed[i]);
 		assert(pPlayerPed);
 		CWorld::Players[i].m_pPed = pPlayerPed;

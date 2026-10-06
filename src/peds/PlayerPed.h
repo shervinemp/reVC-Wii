@@ -118,6 +118,12 @@ public:
 	static const uint32 nSaveStructSize;
 };
 
+// The pad that drives a player ped: pad 0 for the player in focus, PAD_COOP for
+// couch co-op's partner.  Anything that reads a pad on behalf of "the player"
+// while processing a ped wants this rather than CPad::GetPad(0), or the partner
+// moves when player 1 pushes the stick.
+class CPad *GetPadFromPlayer(CPlayerPed *ped);
+
 //VALIDATE_SIZE(CPlayerPed, 0x5F0);
 
 #endif // __GTA_PLAYERPED_H__

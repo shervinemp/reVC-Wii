@@ -1754,6 +1754,15 @@ void CPad::UpdatePads(void)
 	GetPad(1)->OldState.Clear();
 #endif
 
+#ifdef NINTENDO_WII
+	// Player 2.  Captured every frame whether or not a second player is in the
+	// game, because this capture is also how co-op finds out that a second
+	// controller has turned up: see WiiPadCapture.  With none connected the state
+	// simply stays clear.
+	CapturePad(PAD_COOP);
+	GetPad(PAD_COOP)->Update(PAD_COOP);
+#endif
+
 	// Improve keyboard input latency part 2
 #ifndef FIX_BUGS
 	OldKeyState = NewKeyState;

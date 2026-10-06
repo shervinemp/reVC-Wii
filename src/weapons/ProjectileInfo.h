@@ -22,7 +22,7 @@ public:
 
 	static void Initialise();
 	static void Shutdown();
-	static bool AddProjectile(CEntity *ped, eWeaponType weapon, CVector pos, float speed);
+	static bool AddProjectile(CEntity *ped, eWeaponType weapon, CVector pos, float speed, const CVector *direction = nil);
 	static void RemoveProjectile(CProjectileInfo *info, CProjectile *projectile);
 	static void RemoveNotAdd(CEntity *entity, eWeaponType weaponType, CVector pos);
 	static bool RemoveIfThisIsAProjectile(CObject *pObject);

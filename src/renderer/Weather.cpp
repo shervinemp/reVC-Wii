@@ -323,8 +323,11 @@ void CWeather::Update(void)
 
 void CWeather::AddHeatHaze()
 {
+	// (Couch co-op's camera too: the haze is laid across the middle of the
+	// screen where a level camera has its horizon, and this one has the street.)
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
-	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED)
+	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOP_DOWN_PED ||
+	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP)
 		return;
 	CVector pos;
 	pos.x = SCREEN_WIDTH*0.5f;

@@ -548,14 +548,14 @@ public:
 	uint32 m_uiFadeTimeStartedMusic;
 
 	static bool m_bUseMouse3rdPerson;
-	// Couch co-op.  While this is set the camera is MODE_WII_COOP and the pointer
-	// is a reticle only.  One flag for both halves on purpose: they only make
-	// sense together, and a mode where the camera is shared but aiming still
-	// turned the view would just be a worse version of single player.
+	// Couch co-op's switch: the pause menu's COUCH CO-OP row, and nothing more
+	// than that.  It says the players WANT co-op.  Whether co-op is actually in
+	// charge this frame is CCoop::IsRunning(), which is also false during
+	// missions and cutscenes however this is set -- so read that, not this,
+	// anywhere the answer changes what the game does.
 	//
-	// int8 rather than bool because the controls page persists it directly as a
-	// CCFOSelect, which writes through an int8*.  One variable, so the menu and
-	// the camera can never disagree about whether co-op is on.
+	// int8 rather than bool because the menu persists it directly as a
+	// CCFOSelect, which writes through an int8*.
 	static int8 bWiiCoopCamera;
 #ifdef FREE_CAM
 	static bool bFreeCam;
@@ -646,6 +646,10 @@ public:
 	void UpdateAimingCoors(CVector const &coors);
 	bool Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, CVector &target);
 	static CVector Find3rdPersonCrosshairRay(const CVector &front, const CVector &up, float fov);
+	// The same ray for a mark anywhere on the screen, given as fractions of it.
+	// Find3rdPersonCrosshairRay is this through the one crosshair the camera owns;
+	// couch co-op has a reticle per player and asks for each of theirs.
+	static CVector FindCrosshairRay(const CVector &front, const CVector &up, float fov, float multX, float multY);
 	float Find3rdPersonQuickAimPitch(void);
 	bool Using1stPersonWeaponMode(void);
 

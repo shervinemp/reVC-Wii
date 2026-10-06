@@ -40,6 +40,7 @@
 #include "Clock.h"
 #include "Wanted.h"
 #include "SaveBuf.h"
+#include "Coop.h"
 
 CPed *gapTempPedList[50];
 uint16 gnNumTempPedList;
@@ -1447,11 +1448,21 @@ CPed::CalculateNewVelocity(void)
 		m_moved = m_moved * (1 / 100.0f);
 	}
 
-	if ((!TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() && !TheCamera.Cams[0].Using3rdPersonMouseCam())
-		|| FindPlayerPed() != this || !CanStrafeOrMouseControl()) {
-
-		if (FindPlayerPed() == this)
-			FindPlayerPed()->m_fWalkAngle = 0.0f;
+	// Whether this ped moves like a first-person player: the stick picks a
+	// direction to travel in, independent of the way the body faces.  In the
+	// stock game that is the focus player under the mouse camera.  In couch
+	// co-op it is either player, and only while that player is facing their
+	// reticle (CCoop::FacesAim) -- one who is sprinting, or strolling about
+	// unarmed, faces the way they are going and moves like anybody else.
+	bool strafes;
+	if (CCoop::UsesReticleAim())
+		strafes = CCoop::IsFacingAim(this) && CanStrafeOrMouseControl();
+	else
+		strafes = (TheCamera.Cams[TheCamera.ActiveCam].GetWeaponFirstPersonOn() || TheCamera.Cams[0].Using3rdPersonMouseCam())
+			&& FindPlayerPed() == this && CanStrafeOrMouseControl();
+	if (!strafes) {
+		if (IsAnyPlayerPed(this))
+			((CPlayerPed*)this)->m_fWalkAngle = 0.0f;
 		return;
 	}
 
@@ -1508,10 +1519,27 @@ CPed::WorkOutHeadingForMovingFirstPerson(float offset)
 	if (!IsPlayer())
 		return 0.0f;
 
-	CPad *pad0 = CPad::GetPad(0);
+	CPad *pad0 = GetPadFromPlayer((CPlayerPed*)this);
 	float leftRight = pad0->GetPedWalkLeftRight();
 	float upDown = pad0->GetPedWalkUpDown();
 	float &angle = ((CPlayerPed*)this)->m_fWalkAngle;
+
+	if (CCoop::UsesReticleAim()) {
+		// Couch co-op.  Below, the stick is read against the body: up is "the
+		// way I am facing", which under the stock mouse camera is also the way
+		// the camera is looking, so it comes to the same thing as up the screen.
+		// Here the body faces the player's reticle, wherever on the screen that
+		// is, and the camera does not turn -- so the stick has to be read
+		// against the screen itself, the way CPlayerPed::PlayerControlZelda does,
+		// and the walk angle is whatever is left between that and the facing.
+		// It is that leftover CPlayerPed::ProcessAnimGroups picks the strafing
+		// and backing-up animations from.
+		if (leftRight != 0.0f || upDown != 0.0f) {
+			float travel = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -leftRight, upDown) - TheCamera.Orientation;
+			angle = CGeneral::LimitRadianAngle(travel - offset);
+		}
+		return CGeneral::LimitRadianAngle(offset + angle);
+	}
 
 	if (upDown != 0.0f) {
 		angle = CGeneral::GetRadianAngleBetweenPoints(0.0f, 0.0f, -leftRight, upDown);
@@ -1530,6 +1558,13 @@ CPed::UpdatePosition(void)
 {
 	if (CReplay::IsPlayingBack() || !bIsStanding || m_attachedTo)
 		return;
+
+	// Couch co-op: the two players cannot walk further apart than the shared
+	// camera can hold them both.  m_moved is the walking velocity everything
+	// below turns into movement, so this is the one place a limit on it holds
+	// whichever control scheme set it.
+	if (IsPlayer())
+		CCoop::LimitSeparation(this, m_moved);
 
 	CVector2D velocityChange;
 
@@ -2346,7 +2381,8 @@ CPed::ProcessControl(void)
 
 				float adjustedTs = Max(CTimer::GetTimeStep(), 0.01f);
 
-				CPad *pad0 = CPad::GetPad(0);
+				// Only read below for a ped that IsPlayer().
+				CPad *pad0 = GetPadFromPlayer((CPlayerPed*)this);
 				if ((m_nPedStateTimer <= 50.0f / (4.0f * adjustedTs) || m_nPedStateTimer * 0.01f <= forceDir.MagnitudeSqr())
 					&& (m_nCollisionRecords <= 1 || m_nPedStateTimer <= 50.0f / (2.0f * adjustedTs) || m_nPedStateTimer * 1.0f / 250.0f <= Abs(forceDir.z))) {
 
@@ -2605,7 +2641,7 @@ CPed::ProcessControl(void)
 			static bool cancelJack = false;
 			if (IsPlayer()) {
 				if (EnteringCar() && m_pVehicleAnim) {
-					CPad *pad = CPad::GetPad(0);
+					CPad *pad = GetPadFromPlayer((CPlayerPed*)this);
 
 					if (!pad->ArePlayerControlsDisabled()) {
 						int vehAnim = m_pVehicleAnim->animId;
@@ -3906,7 +3942,10 @@ bool
 CPed::CanStrafeOrMouseControl(void)
 {
 #ifdef FREE_CAM
-	if (CCamera::bFreeCam)
+	// (The free camera turns the player to face along itself when they shoot,
+	// instead of having them strafe.  Couch co-op's camera is nobody's to turn,
+	// so the option does not apply there.)
+	if (CCamera::bFreeCam && !CCoop::UsesReticleAim())
 		return false;
 #endif
 	return m_nPedState == PED_NONE || m_nPedState == PED_IDLE || m_nPedState == PED_FLEE_POS || m_nPedState == PED_FLEE_ENTITY ||
@@ -7132,7 +7171,11 @@ CPed::SetDead(void)
 
 	m_currentWeapon = WEAPONTYPE_UNARMED;
 	CEventList::RegisterEvent(EVENT_INJURED_PED, EVENT_ENTITY_PED, this, nil, 250);
-	if (this != FindPlayerPed()) {
+	// No player leaves their guns on the pavement.  With a second player ped
+	// that matters twice over: the partner carries a copy of what player 1
+	// carries and comes back with a fresh one, so a partner who dropped
+	// everything on dying would be an ammunition tap.
+	if (!IsAnyPlayerPed(this)) {
 		RemoveWeaponAnims(0, -1000.0f);
 		CreateDeadPedWeaponPickups();
 		CreateDeadPedMoney();
@@ -7710,7 +7753,7 @@ IsPedPointerValid(CPed* pPed)
 		return false;
 	if (pPed->bInVehicle && pPed->m_pMyVehicle)
 		return IsEntityPointerValid(pPed->m_pMyVehicle);
-	return pPed->m_entryInfoList.first || pPed == FindPlayerPed();
+	return pPed->m_entryInfoList.first || IsAnyPlayerPed(pPed);
 }
 
 bool
@@ -7735,7 +7778,7 @@ CPed::IsPointerValid(void)
 	if (pedIndex < 0 || pedIndex >= NUMPEDS)
 		return false;
 
-	if (m_entryInfoList.first || FindPlayerPed() == this)
+	if (m_entryInfoList.first || IsAnyPlayerPed(this))
 		return true;
 
 	return false;
@@ -9246,26 +9289,43 @@ CPed::FinishLaunchCB(CAnimBlendAssociation *animAssoc, void *arg)
 	
 	if (sq(velocityFromAnim) > ped->m_vecMoveSpeed.MagnitudeSqr2D() || ped->m_pCurrentPhysSurface) {
 
+		// Whether the jump goes where the stick points rather than where the
+		// body faces: the same question CPed::CalculateNewVelocity asks, and it
+		// has to get the same answer, or a strafing player leaps off sideways to
+		// the way they were moving.
+		//
+		// The gate on the ped is new, and not only for couch co-op.  This used to
+		// read "under the mouse camera" and nothing else, so it also caught every
+		// pedestrian who jumped while the player was using Standard controls --
+		// and WorkOutHeadingForMovingFirstPerson answers 0 for anyone who is not
+		// a player, which sent them all due north.  (An earlier fix for this was
+		// written into the #else of FREE_CAM, which this build never compiles.)
+		bool strafeJump;
+		if (CCoop::UsesReticleAim())
+			strafeJump = CCoop::IsFacingAim(ped);
+		else
+			strafeJump = TheCamera.Cams[0].Using3rdPersonMouseCam() && ped == FindPlayerPed()
 #ifdef FREE_CAM
-		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && !CCamera::bFreeCam) {
-#else
-		// Reticle-owner only, not merely "a mouse camera".  This block REPLACES the
-		// ped's move speed with a first-person value derived from m_fRotationCur, the
-		// direction the body faces.  Right for the player the reticle drives, because
-		// their facing IS their aim; wrong for anyone else, because with no reticle a
-		// ped's facing is its walking direction, so reinterpreting movement against it
-		// makes them strafe relative to where they are going instead of going there.  A
-		// no-op with one player, since the reticle owner is the only player; it starts
-		// mattering when a second exists, and should then follow that player's own
-		// reticle rather than staying tied to the camera.
-		if (TheCamera.Cams[0].Using3rdPersonMouseCam() && ped == FindPlayerPed()) {
+				&& !CCamera::bFreeCam
 #endif
+				;
+		if (strafeJump) {
 			float fpsAngle = ped->WorkOutHeadingForMovingFirstPerson(ped->m_fRotationCur);
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(fpsAngle);
 			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(fpsAngle);
 		} else {
 			ped->m_vecMoveSpeed.x = -velocityFromAnim * Sin(ped->m_fRotationCur);
 			ped->m_vecMoveSpeed.y = velocityFromAnim * Cos(ped->m_fRotationCur);
+		}
+
+		// (A jump is the one way a player on foot moves that CPed::UpdatePosition
+		// does not see, so couch co-op's limit on walking apart is applied to the
+		// take-off as well; otherwise it could be hopped over.)
+		if (ped->IsPlayer()) {
+			CVector2D launch(ped->m_vecMoveSpeed.x, ped->m_vecMoveSpeed.y);
+			CCoop::LimitSeparation(ped, launch);
+			ped->m_vecMoveSpeed.x = launch.x;
+			ped->m_vecMoveSpeed.y = launch.y;
 		}
 
 		if (ped->m_pCurrentPhysSurface) {
@@ -9597,6 +9657,14 @@ CPed::Undress(const char* name)
 	CAnimBlendAssociation* pAnim = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_PHONE_OUT);
 	if (pAnim)
 		FinishTalkingOnMobileCB(pAnim, this);
+
+	// A change of clothes unloads the player model and loads another into the
+	// same slot.  This ped gives up its copy first, on the line below; couch
+	// co-op's partner is built from the same model and has to as well, or it is
+	// left holding geometry and textures that are about to be freed.  They come
+	// back a moment later, in the new outfit.
+	if (this == FindPlayerPed())
+		CCoop::Suspend("change of clothes");
 
 	DeleteRwObject();
 	if (IsPlayer())

@@ -41,6 +41,7 @@ public:
 	static uint8 CalcFade(uint32 time, uint32 min, uint32 max);
 	static void DrawMessages(void);
 	static bool FrenzyOnGoing();
+	static int GetFrenzyWeaponSlot();
 	static void Init();
 	static uint16 QueryModelsKilledByPlayer(int32 modelId);
 	static uint16 ReadStatus();

@@ -59,7 +59,7 @@ CProjectileInfo::GetProjectileInfo(int32 id)
 }
 
 bool
-CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos, float speed)
+CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos, float speed, const CVector *direction)
 {
 	int8 SpecialCollisionResponseCase = COLLRESPONSE_NONE;
 	bool gravity = true;
@@ -81,7 +81,21 @@ CProjectileInfo::AddProjectile(CEntity *entity, eWeaponType weapon, CVector pos,
 				CVector vecSpeed = ((CPhysical*)entity)->m_vecMoveSpeed;
 				vy += Max(0.0f, DotProduct(vecSpeed, entity->GetForward())) + Max(0.0f, DotProduct(vecSpeed, entity->GetUp()));
 			} else {
-				if (ped->IsPlayer()) {
+				if (direction != nil) {
+					// Couch co-op: along this player's own aim, which CWeapon::
+					// FireProjectile worked out and hands over -- pos is already
+					// one step along it, so it cannot be worked out again from
+					// here.  The branch below sends a player's rocket where the
+					// camera is looking, and the shared camera is looking at the
+					// ground between the players.
+					CVector forward = *direction;
+					CVector right = CrossProduct(CVector(0.0f, 0.0f, 1.0f), forward);
+					right.Normalise();
+					matrix.GetForward() = forward;
+					matrix.GetUp() = CrossProduct(forward, right);
+					matrix.GetRight() = right;
+					matrix.GetPosition() = pos;
+				} else if (ped->IsPlayer()) {
 					matrix.GetForward() = TheCamera.Cams[TheCamera.ActiveCam].Front;
 					matrix.GetUp() = TheCamera.Cams[TheCamera.ActiveCam].Up;
 					matrix.GetRight() = CrossProduct(TheCamera.Cams[TheCamera.ActiveCam].Up, TheCamera.Cams[TheCamera.ActiveCam].Front);

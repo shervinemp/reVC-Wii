@@ -33,6 +33,7 @@
 #include "Debug.h"
 #include "GenericGameStorage.h"
 #include "Camera.h"
+#include "Coop.h"
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
 #endif
@@ -680,6 +681,43 @@ CCamera::Process(void)
 	m_bMoveCamToAvoidGeom = false;
 }
 
+// The modes couch co-op's shared camera stands in for: every way the game has
+// of simply following the player about.  Everything else is the game pointing
+// the view somewhere on purpose -- a garage's fixed camera, the arrest and
+// death cameras, a train, the lighthouse -- and the shared camera stands aside
+// for all of it, exactly as the follow camera would have.
+static bool
+CoopCameraReplaces(int16 mode)
+{
+	switch(mode){
+	case CCam::MODE_FOLLOWPED:
+	case CCam::MODE_CAM_ON_A_STRING:
+	case CCam::MODE_BEHINDCAR:
+	case CCam::MODE_BEHINDBOAT:
+	case CCam::MODE_1STPERSON:
+	case CCam::MODE_FIGHT_CAM:
+	case CCam::MODE_TOPDOWN:
+	case CCam::MODE_TOP_DOWN_PED:
+	// The lock-on cameras.  Lock-on itself aims the ped and never needed them.
+	case CCam::MODE_SYPHON:
+	case CCam::MODE_SYPHON_CRIM_IN_FRONT:
+	case CCam::MODE_SPECIAL_FIXED_FOR_SYPHON:
+	// The scopes.  CPlayerPed does not open one while co-op is running, so
+	// these only turn up if one was already open when it started.
+	case CCam::MODE_SNIPER:
+	case CCam::MODE_ROCKETLAUNCHER:
+	case CCam::MODE_M16_1STPERSON:
+	case CCam::MODE_SNIPER_RUNABOUT:
+	case CCam::MODE_ROCKETLAUNCHER_RUNABOUT:
+	case CCam::MODE_1STPERSON_RUNABOUT:
+	case CCam::MODE_M16_1STPERSON_RUNABOUT:
+	case CCam::MODE_FIGHT_CAM_RUNABOUT:
+	case CCam::MODE_WII_COOP:
+		return true;
+	}
+	return false;
+}
+
 void
 CCamera::CamControl(void)
 {
@@ -749,7 +787,10 @@ CCamera::CamControl(void)
 					boatTarget = true;
 
 				// Change user selected mode
-				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
+				// (Not while couch co-op is running, here or for the ped zoom below: the
+				// same button steps through the shared camera's framings there, and the
+				// zoom the player chose for themselves should still be theirs afterwards.)
+				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
 				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 				   !m_WideScreenOn){
 					CarZoomIndicator--;
@@ -757,7 +798,7 @@ CCamera::CamControl(void)
 					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
 						CarZoomIndicator--;
 				}
-				if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CReplay::IsPlayingBack() &&
+				if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
 				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 				   !m_WideScreenOn){
 					CarZoomIndicator++;
@@ -995,7 +1036,7 @@ CCamera::CamControl(void)
 		// Ped target
 		else if(pTargetEntity->IsPed()){
 			// Change user selected mode
-			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CReplay::IsPlayingBack() &&
+			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
@@ -1008,7 +1049,7 @@ CCamera::CamControl(void)
 #endif
 					PedZoomIndicator--;
 			}
-			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CReplay::IsPlayingBack() &&
+			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
@@ -1030,6 +1071,12 @@ CCamera::CamControl(void)
 			// Check 1st person mode
 			if((m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) && pTargetEntity->IsPed() &&
 			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) && !Cams[0].Using3rdPersonMouseCam()
+			   // Not in couch co-op.  Looking around is the right stick, and
+			   // there the right stick aims; and what this does once it has
+			   // started -- take the controls away so the view can turn --
+			   // would be copied to the second player's pad and hold them
+			   // both still for as long as the first one kept looking.
+			   && !CCoop::IsRunning()
 #ifdef FREE_CAM
 			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)
 #endif
@@ -1447,6 +1494,25 @@ CCamera::CamControl(void)
 		m_vecDoingSpecialInterPolation = false;
 	}
 
+	// Couch co-op.  The shared camera is asked for HERE, as the requested mode,
+	// and that placement is the whole fix for how it first went in.  It used to
+	// be forced from inside CCam::Process, underneath this function -- so every
+	// frame this function saw a camera that was not in the mode it had asked
+	// for and started a transition back, the override stood aside for the
+	// transition, and then took the camera again.  One frame of shared view,
+	// a second and a half of the follow camera gliding in, repeat.
+	//
+	// As a requested mode it goes through the same switch as any other, the
+	// transition state stays consistent, and it yields to everything listed
+	// above CoopCameraReplaces for free, because those are simply modes it does
+	// not replace.  m_bLookingAtPlayer is what leaves scripted cameras alone.
+	if(m_bLookingAtPlayer && CCoop::IsRunning() && CoopCameraReplaces(ReqMode)){
+		ReqMode = CCam::MODE_WII_COOP;
+		// No scope and no lock-on camera: there is one view, and it is shared.
+		if(PlayerWeaponMode.Mode != CCam::MODE_NONE)
+			ClearPlayerWeaponMode();
+	}
+
 	if(gbModelViewer)
 		ReqMode = CCam::MODE_MODELVIEW;
 
@@ -1469,6 +1535,12 @@ CCamera::CamControl(void)
 	   ReqMode == CCam::MODE_SNIPER_RUNABOUT || ReqMode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT ||
 	   ReqMode == CCam::MODE_1STPERSON_RUNABOUT || ReqMode == CCam::MODE_M16_1STPERSON_RUNABOUT ||
 	   ReqMode == CCam::MODE_FIGHT_CAM_RUNABOUT || ReqMode == CCam::MODE_HELICANNON_1STPERSON || ReqMode == CCam::MODE_CAMERA ||
+	   // Couch co-op as a whole, not only its own mode.  The cinematic camera
+	   // takes control of the view, and a view that is not looking at the
+	   // player is one co-op leaves alone: switched on while that camera was
+	   // already running, co-op would wait for it to finish, with the button
+	   // that changes the camera taken over for the framing.  It never would.
+	   CCoop::IsRunning() ||
 	   WhoIsInControlOfTheCamera == CAMCONTROL_SCRIPT ||
 	   m_bJustCameOutOfGarage || m_bPlayerIsInGarage)
 		canUseObbeCam = false;
@@ -1614,6 +1686,20 @@ CCamera::CamControl(void)
 			switchByJumpCut = true;
 		else if(Cams[ActiveCam].Mode == CCam::MODE_PED_DEAD_BABY && ReqMode != CCam::MODE_PED_DEAD_BABY)
 			switchByJumpCut = true;
+
+		// Into and out of the shared camera is a cut.  The interpolation the
+		// other modes get is built on each mode's own Alpha, Beta and Distance,
+		// and the shared camera has none of them to hand over.
+		if(ReqMode != Cams[ActiveCam].Mode &&
+		   (ReqMode == CCam::MODE_WII_COOP || Cams[ActiveCam].Mode == CCam::MODE_WII_COOP)){
+			switchByJumpCut = true;
+			if(ReqMode == CCam::MODE_FOLLOWPED){
+				// Hand the follow camera the direction this one was looking in,
+				// so the view cuts closer rather than cutting AND swinging round.
+				m_bUseTransitionBeta = true;
+				Cams[ActiveCam].m_fTransitionBeta = CGeneral::GetATanOfXY(Cams[ActiveCam].Front.x, Cams[ActiveCam].Front.y) + PI;
+			}
+		}
 
 		if(ReqMode != Cams[ActiveCam].Mode && Cams[ActiveCam].CamTargetEntity == nil)
 			switchByJumpCut = true;
@@ -4011,6 +4097,12 @@ CCamera::Find3rdPersonCamTargetVector(float dist, CVector pos, CVector &source, 
 CVector
 CCamera::Find3rdPersonCrosshairRay(const CVector &front, const CVector &up, float fov)
 {
+	return FindCrosshairRay(front, up, fov, m_f3rdPersonCHairMultX, m_f3rdPersonCHairMultY);
+}
+
+CVector
+CCamera::FindCrosshairRay(const CVector &front, const CVector &up, float fov, float multX, float multY)
+{
 #ifdef NINTENDO_WII
 	// The Wiimote pointer moves the crosshair around the screen, and the shot has to
 	// land where the crosshair is drawn.  The approximation below is close near the
@@ -4018,11 +4110,11 @@ CCamera::Find3rdPersonCrosshairRay(const CVector &front, const CVector &up, floa
 	// view window is the half extent of the image plane at distance 1.
 	const RwV2d *viewWindow = RwCameraGetViewWindow(Scene.camera);
 	CVector ray = front;
-	ray += up * ((1.0f - 2.0f*m_f3rdPersonCHairMultY) * viewWindow->y);
-	ray += CrossProduct(front, up) * ((2.0f*m_f3rdPersonCHairMultX - 1.0f) * viewWindow->x);
+	ray += up * ((1.0f - 2.0f*multY) * viewWindow->y);
+	ray += CrossProduct(front, up) * ((2.0f*multX - 1.0f) * viewWindow->x);
 #else
-	float angleX = DEGTORAD((m_f3rdPersonCHairMultX-0.5f) * 1.8f * 0.5f * fov * CDraw::GetAspectRatio());
-	float angleY = DEGTORAD((0.5f-m_f3rdPersonCHairMultY) * 1.8f * 0.5f * fov);
+	float angleX = DEGTORAD((multX-0.5f) * 1.8f * 0.5f * fov * CDraw::GetAspectRatio());
+	float angleY = DEGTORAD((0.5f-multY) * 1.8f * 0.5f * fov);
 	CVector ray = front;
 	ray += up * Tan(angleY);
 	ray += CrossProduct(front, up) * Tan(angleX);

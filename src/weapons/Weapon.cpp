@@ -37,9 +37,12 @@
 #include "Pickups.h"
 #include "SaveBuf.h"
 #include "AimAssist.h"
+#include "PlayerPed.h"
+#include "Coop.h"
 #ifdef NINTENDO_WII
 #include "WiiSpeaker.h"
 #include "WiiPointerAim.h"
+#include "WiiPad.h"
 
 // AIM IN CAR: how far from where the gun already points a drive-by shot may be
 // bent towards the crosshair.  The cosine of seventy degrees.
@@ -224,7 +227,12 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_SNIPERRIFLE:
 			case WEAPONTYPE_LASERSCOPE:
 			{
-				if (shooter == FindPlayerPed())
+				// FireSniper is the scope: it fires along the camera and refuses to
+				// fire at all unless the camera is in a scope mode.  Couch co-op has
+				// no scope, so there the rifle is an instant-hit weapon like any
+				// other, with a very long reach -- which is also what a second
+				// player's would have been anyway, not being FindPlayerPed().
+				if (shooter == FindPlayerPed() && !CCoop::IsRunning())
 					fired = FireSniper(shooter);
 				else
 					fired = FireInstantHit(shooter, source);
@@ -277,7 +285,8 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_DETONATOR_GRENADE:
 			case WEAPONTYPE_TEARGAS:
 			{
-				if ( shooter == FindPlayerPed() )
+				// Any player: how long the button was held is how hard the throw is.
+				if ( IsAnyPlayerPed(shooter) )
 				{
 					fired = FireProjectile(shooter, source, ((CPlayerPed*)shooter)->m_fAttackButtonCounter*0.0375f);
 				}
@@ -348,8 +357,12 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				
 				DMAudio.PlayOneShot(shooterPed->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 #ifdef NINTENDO_WII
-				// The player's guns crack through the Wiimote too.
-				if ( isPlayer && ((m_eWeaponType >= WEAPONTYPE_COLT45 && m_eWeaponType <= WEAPONTYPE_LASERSCOPE) ||
+				// The player's guns crack through the Wiimote too.  Player 1's only:
+				// the speaker code drives one remote, the first, and a second
+				// player's shots coming out of the first player's hand would be
+				// worse than their making no sound there at all.
+				if ( isPlayer && shooter == FindPlayerPed() && !WiiPadRemoteIsPartners() &&
+				     ((m_eWeaponType >= WEAPONTYPE_COLT45 && m_eWeaponType <= WEAPONTYPE_LASERSCOPE) ||
 				                  m_eWeaponType == WEAPONTYPE_M60 || m_eWeaponType == WEAPONTYPE_MINIGUN) )
 					WiiSpeakerPlayShot();
 #endif
@@ -484,8 +497,9 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 		DMAudio.PlayOneShot(shooter->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 #ifdef NINTENDO_WII
 		// The player's guns crack through the Wiimote from a car as well as on foot
-		// (see Fire).
-		if ( shooter->GetStatus() == STATUS_PLAYER )
+		// (see Fire), and on the same terms: not while that remote is in couch
+		// co-op's partner's hands.
+		if ( shooter->GetStatus() == STATUS_PLAYER && !WiiPadRemoteIsPartners() )
 			WiiSpeakerPlayShot();
 #endif
 
@@ -556,15 +570,15 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 
 	CPed *shooterPed = (CPed*)shooter;
 
-	if (shooterPed == FindPlayerPed())
+	if (IsAnyPlayerPed(shooterPed))
 	{
 		if (m_eWeaponType == WEAPONTYPE_GOLFCLUB || m_eWeaponType == WEAPONTYPE_NIGHTSTICK ||
 			(m_eWeaponType >= WEAPONTYPE_BASEBALLBAT && m_eWeaponType <= WEAPONTYPE_CHAINSAW))
-		{	
+		{
 			CGlass::BreakGlassPhysically(fireSource, info->m_fRadius);
-			
+
 			if (m_eWeaponType == WEAPONTYPE_CHAINSAW)
-				CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
+				CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, shooterPed, shooterPed, 1000);
 		}
 	}
 
@@ -1019,8 +1033,22 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		ahead.Normalise();
 #endif
 	}
-	else if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam()  )
+	else if ( IsAnyPlayerPed(shooter) && (CCoop::UsesReticleAim() || TheCamera.Cams[0].Using3rdPersonMouseCam())  )
 	{
+		if (CCoop::UsesReticleAim()) {
+			// Couch co-op.  The branches below fire along the camera, through the
+			// one crosshair it owns: right when the camera is over the player's
+			// shoulder, and wrong twice over from the shared view.  There is a
+			// reticle per player, so it has to be this player's; and the camera
+			// looks down from overhead, so a shot along its ray starts in mid air
+			// and reaches anything that can be seen from up there, walls or no.
+			// So the shot leaves the gun, toward whatever this player's reticle is
+			// on.  On nothing in particular, the line comes back level and the
+			// engine's own vertical auto-aim is allowed to tip it onto whoever is
+			// standing in the way -- which is what it is for.
+			if (!CCoop::FindShotVector(shooter, info->m_fRange, *fireSource, source, target))
+				DoDoomAiming(shooter, &source, &target);
+		} else
 #ifdef FREE_CAM
 		if (CCamera::bFreeCam) {
 			CPlayerPed* shooterPed = (CPlayerPed*)shooter;
@@ -1055,7 +1083,12 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 		CWorld::bIncludeBikers = true;
 		CWorld::bIncludeDeadPeds = true;
 		CWorld::bIncludeCarTyres = true;
+		// A couch co-op shot starts at the gun, which is inside the shooter's
+		// own collision; the camera's ray it stands in for never was.
+		if (CCoop::UsesReticleAim())
+			CWorld::pIgnoreEntity = shooter;
 		ProcessLineOfSight(source, target, point, victim, m_eWeaponType, shooter, true, true, true, true, true, false, false);
+		CWorld::pIgnoreEntity = nil;
 		CWorld::bIncludeBikers = false;
 		CWorld::bIncludeDeadPeds = false;
 		CWorld::bIncludeCarTyres = false;
@@ -1793,9 +1826,21 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		CColPoint point;
 		CEntity *victim;
 
-		if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam() )
+		if ( IsAnyPlayerPed(shooter) && (CCoop::UsesReticleAim() || TheCamera.Cams[0].Using3rdPersonMouseCam()) )
 		{
 			CVector Left;
+			if (CCoop::UsesReticleAim()) {
+				// Couch co-op: one unit along this player's own line of fire (see
+				// FireInstantHit), and the level direction across it to spread the
+				// pellets along.  The line is found over the gun's whole reach
+				// first, because that is the distance the vertical auto-aim looks
+				// along, and then cut back to the one unit.
+				if (!CCoop::FindShotVector(shooter, info->m_fRange, *fireSource, source, target))
+					DoDoomAiming(shooter, &source, &target);
+				target = source + (target - source) / info->m_fRange;
+				Left = CrossProduct(target - source, CVector(0.0f, 0.0f, 1.0f));
+				Left.Normalise();
+			} else
 #ifdef FREE_CAM
 			if (CCamera::bFreeCam) {
 				CPlayerPed* shooterPed = (CPlayerPed*)shooter;
@@ -1816,7 +1861,10 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 			CWorld::bIncludeCarTyres = true;
 			CWorld::bIncludeBikers = true;
 			CWorld::bIncludeDeadPeds = true;
+			if (CCoop::UsesReticleAim())
+				CWorld::pIgnoreEntity = shooter;
 			ProcessLineOfSight(source, target, point, victim, m_eWeaponType, shooter, true, true, true, true, true, false, false);
+			CWorld::pIgnoreEntity = nil;
 			CWorld::bIncludeDeadPeds = false;
 			CWorld::bIncludeCarTyres = false;
 		}
@@ -2139,13 +2187,27 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 
 	CVector source, target;
 	eWeaponType projectileType = m_eWeaponType;
+	// Couch co-op only: which way the shot was aimed, for CProjectileInfo.
+	CVector aimedAlong;
+	bool aimed = false;
 
 	if ( m_eWeaponType == WEAPONTYPE_ROCKETLAUNCHER )
 	{
 		source = *fireSource;
 		projectileType = WEAPONTYPE_ROCKET;
 
-		if ( shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
+		if ( CCoop::IsRunning() && IsAnyPlayerPed(shooter) )
+		{
+			// Couch co-op has no scope to fire this from (the branch below insists
+			// on one), so it goes where this player is aiming, or failing that the
+			// way they are facing.
+			CVector from, to;
+			CCoop::FindShotVector(shooter, 1.0f, *fireSource, from, to);
+			aimedAlong = to - from;
+			aimed = true;
+			*fireSource += aimedAlong;
+		}
+		else if ( shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
 		{
 			int16 mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 			if (!( mode == CCam::MODE_M16_1STPERSON
@@ -2201,7 +2263,7 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 		}
 	}
 	else
-		CProjectileInfo::AddProjectile(shooter, projectileType, *fireSource, power);
+		CProjectileInfo::AddProjectile(shooter, projectileType, *fireSource, power, aimed ? &aimedAlong : nil);
 	
 			
 	CWorld::pIgnoreEntity = nil;
@@ -2247,8 +2309,13 @@ CWeapon::FireAreaEffect(CEntity *shooter, CVector *fireSource)
 	CVector target;
 	CVector dir;
 
-	if ( IsAnyPlayerPed(shooter) && TheCamera.Cams[0].Using3rdPersonMouseCam() )
+	if ( IsAnyPlayerPed(shooter) && (CCoop::UsesReticleAim() || TheCamera.Cams[0].Using3rdPersonMouseCam()) )
 	{
+		if (CCoop::UsesReticleAim()) {
+			// Couch co-op: from the nozzle toward this player's own reticle, not
+			// along the camera.  See FireInstantHit.
+			CCoop::FindShotVector(shooter, info->m_fRange, *fireSource, source, target);
+		} else
 #ifdef FREE_CAM
 		if (CCamera::bFreeCam) {
 			CPlayerPed* shooterPed = (CPlayerPed*)shooter;
@@ -3240,7 +3307,9 @@ CWeapon::MakePedsJumpAtShot(CPhysical *shooter, CVector *source, CVector *target
 				&& ped->GetPosition().y > miny && ped->GetPosition().y < maxy
 				&& ped->GetPosition().z > minz && ped->GetPosition().z < maxz )
 			{
-				if ( ped != FindPlayerPed() && !((uint8)(ped->m_randomSeed ^ CGeneral::GetRandomNumber()) & 31) )
+				// No player is thrown into a dive by the engine, whichever of them
+				// it is: this only used to spare the one in focus.
+				if ( !ped->IsPlayer() && !((uint8)(ped->m_randomSeed ^ CGeneral::GetRandomNumber()) & 31) )
 					ped->SetEvasiveDive(shooter, 1);
 			}
 		}
