@@ -252,32 +252,7 @@ CStreaming::Init2(void)
 	// subtraction of 65 in that expression wraps for any budget below 65MB and
 	// the result clamps to MAXVEHICLESLOADED -- the most vehicles, on the machine
 	// that can afford the fewest.
-	// Cut again from 24MB, and this time on measurement rather than inference.
-	//
-	// 24MB was itself the fix for the 65MB case described above, and it did stop
-	// eviction being skipped -- but it is still more than this console can carry.  A
-	// freeze run with the budget at 24MB logged, at the moment it hung:
-	//
-	//     resident 24550KB   (ms_memoryAvailable is 24576KB)
-	//     MEM2 6347K free, tex 22386K
-	//
-	// 24550 against 24576 is 99.9% of the budget, which is exactly where MakeSpaceFor
-	// parks it: it evicts until ms_memoryUsed drops below the ceiling and then stops.
-	// So eviction was working perfectly and the ceiling was still too high to survive.
-	//
-	// The arithmetic that matters, from the same run: arena2 fell 50735K -> 6347K, of
-	// which texture growth accounts for 18260K, leaving 26128K for everything else --
-	// against a resident count of 24550K.  That is a ratio of about 1.06, so the CD
-	// bytes the budget counts and the memory actually occupied track each other
-	// almost exactly.  There is no expansion factor to exploit here and no unaccounted
-	// remainder: the whole drain is the models the budget permits plus the textures
-	// their models pull in, and the two together leave MEM2 too full for the renderer.
-	//
-	// 16MB therefore cuts about 8MB of models and, with them, a similar share of the
-	// textures, which is roughly 14MB back out of a 64MB MEM2.  The cost is more
-	// streaming churn and some pop-in at the draw-distance edge; if that shows, this is
-	// one constant and one revert.
-	ms_memoryAvailable = 16*MB;
+	ms_memoryAvailable = 24*MB;
 	desiredNumVehiclesLoaded = 12;
 #elif defined FIX_BUGS
 	// do what gta3 does
