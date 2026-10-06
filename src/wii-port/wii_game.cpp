@@ -1223,31 +1223,15 @@ main(int argc, char **argv)
 		                         CColStore::GetLoadedColBytes(),
 		                         (int)rw::gx::nativeTextureMemory);
 
-		// Per-MEMID allocation, differenced against the previous call.
+		// Per-MEMID allocation, as running totals.
 		//
-		// Cumulative-to-delta rather than reporting the running total, because the
-		// arena sampler's own question is "what grew in the last five seconds" and a
-		// monotonically rising total answers it badly -- every category looks large and
-		// the largest total is just the oldest one.
-		//
-		// Handed over the same way as the counts above, so this file stays independent
-		// of both the allocator and the trace internals.  The counter is maintained by
-		// PUSH_MEMID, which used to be a no-op on this platform; see MemoryHeap.h.
-		{
-			static int prevMemId[WII_MEMID_SLOTS];
-			static int memIdDelta[WII_MEMID_SLOTS];
-			static bool firstMemIdSample = true;
-			for(int i = 0; i < WII_MEMID_SLOTS; i++){
-				int now = (int)g_wiiMemidBytes[i];
-				// First sample has no previous value to difference against, and
-				// reporting the whole boot as one interval's growth would be a lie
-				// about when the memory went.
-				memIdDelta[i] = firstMemIdSample ? 0 : now - prevMemId[i];
-				prevMemId[i] = now;
-			}
-			firstMemIdSample = false;
-			WiiTraceSetMemIdGrowth(memIdDelta, WII_MEMID_SLOTS);
-		}
+		// Totals, not deltas.  Differencing here was wrong: this block runs every frame,
+		// so the "delta" it produced was one frame's allocation, and since only texture
+		// uploads allocate more than a few hundred KB in a single frame, the breakdown
+		// reported one category and looked like a finding rather than like a mistake.
+		// WiiTrace differences at the moment it prints instead, so the figure spans
+		// exactly the interval being reported.
+		WiiTraceSetMemIdTotals((const int *)g_wiiMemidBytes, WII_MEMID_SLOTS);
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely

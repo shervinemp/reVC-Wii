@@ -85,7 +85,10 @@ volatile int s_txdEvicted = -1;
 // categories visible alongside it.
 enum { kMemIdSlots = 32, kMemIdPrinted = 6, kMemIdMinReportBytes = 256 * 1024 };
 static int s_memidGrowth[kMemIdSlots];
+static int s_memidTotals[kMemIdSlots];
+static int s_memidPrevTotals[kMemIdSlots];
 static int s_memidSlotCount;
+static bool s_memidHaveTotals;
 
 // Names for the categories that can plausibly own a large share of the arena.  A MEMID
 // with no name here is still counted, it just is not worth a column of log.
@@ -225,9 +228,36 @@ unsigned int stalledSeconds = 0;
 				// more than the arena actually fell is churning, and one tracking it is
 				// a candidate for the growth.
 				{
-					// Repeatedly take the largest entry not already taken.  Five picks
-					// over a handful of candidates, so selection beats sorting and there
-					// is no allocation.
+					// Difference the running totals here, at the moment of printing, so the
+					// figure covers exactly the interval this line reports.
+					//
+					// It did not used to, and that is worth recording.  Differencing per
+					// frame in the frame loop produced one frame's allocation, and for
+					// every category except texture uploads that is zero -- so the
+					// breakdown showed a single line and read as a measurement rather than
+					// as a fault.
+					//
+					// The first interval has nothing to difference against.  Reporting the
+					// whole of boot as one interval's growth would be a lie about when the
+					// memory went, so it reports nothing and the second interval onwards
+					// carries the figures.
+					//
+					// Note the interval is NOT five seconds.  The gate below is five
+					// seconds, but it only reports while the arena is falling, so a gap
+					// where memory holds steady stretches the next interval to whatever
+					// it ended up being -- thirty seconds and more in practice.  That is
+					// why the threshold below is in bytes-per-interval and says so.
+					if(s_memidSlotCount > 0){
+						for(int i = 0; i < s_memidSlotCount; i++){
+							s_memidGrowth[i] = s_memidHaveTotals ? s_memidTotals[i] - s_memidPrevTotals[i] : 0;
+							s_memidPrevTotals[i] = s_memidTotals[i];
+						}
+						s_memidHaveTotals = true;
+					}
+
+					// Repeatedly take the largest entry not already taken.  Six picks over
+					// a handful of candidates, so selection beats sorting and there is no
+					// allocation.
 					//
 					// Chosen by INDEX and not by value: two categories can easily report
 					// the same delta, and comparing values would silently drop one of
@@ -246,10 +276,11 @@ unsigned int stalledSeconds = 0;
 								best = i;
 						}
 						// Thresholded rather than merely non-zero: a category that allocated
-						// a few kilobytes in five seconds is noise wearing the same clothes
-						// as the answer, and this project asked for minimal logging before
-						// it asked for attribution.  256KB per interval is about 50KB/s in
-						// one category -- well past churn, well short of "this is the 25MB".
+						// almost nothing across the interval is noise wearing the same
+						// clothes as the answer, and this project asked for minimal logging
+						// before it was asked for attribution.  256KB per interval, whatever
+						// the interval turned out to be -- comfortably past churn, well
+						// short of the tens of megabytes being looked for.
 						if(best < 0 || s_memidGrowth[best] < kMemIdMinReportBytes)
 							break;
 						chosen[slot] = best;
@@ -355,13 +386,14 @@ WiiTraceSetTxdEvictions(int evicted)
 }
 
 void
-WiiTraceSetMemIdGrowth(const int *bytesById, int numIds)
+WiiTraceSetMemIdTotals(const int *cumulativeById, int numIds)
 {
 	if(numIds > kMemIdSlots)
 		numIds = kMemIdSlots;
 	for(int i = 0; i < numIds; i++)
-		s_memidGrowth[i] = bytesById[i];
+		s_memidTotals[i] = cumulativeById[i];
 	s_memidSlotCount = numIds;
+	s_memidHaveTotals = true;
 }
 
 void
