@@ -351,10 +351,17 @@ CVisibilityPlugins::RenderFadingAtomic(RpAtomic *atomic, float camdist)
 	fadefactor = (mi->GetLargestLodDistance() - (camdist - FADE_DISTANCE))/FADE_DISTANCE;
 	if(fadefactor > 1.0f)
 		fadefactor = 1.0f;
+	// The lower clamp, missing here for the same reason it was missing in CWorldRender's
+	// fade path: past the largest LOD distance the numerator goes negative, and a
+	// negative fadefactor cast into the unsigned alpha wraps to something enormous, so
+	// the test below could not divert the atomic and everything beyond its draw
+	// distance fell into the branch that dereferences lodatm.
+	if(fadefactor < 0.0f)
+		fadefactor = 0.0f;
 	alpha = mi->m_alpha * fadefactor;
 	if(alpha == 255)
 		RENDERCALLBACK(atomic);
-	else{
+	else if(lodatm != nil){
 		RpGeometry *geo = RpAtomicGetGeometry(lodatm);
 		uint32 flags = RpGeometryGetFlags(geo);
 		RpGeometrySetFlags(geo, flags | rpGEOMETRYMODULATEMATERIALCOLOR);
@@ -365,6 +372,10 @@ CVisibilityPlugins::RenderFadingAtomic(RpAtomic *atomic, float camdist)
 		RpGeometryForAllMaterials(geo, SetAlphaCB, (void*)255);
 		RpGeometrySetFlags(geo, flags);
 	}
+	// With no LOD atomic there is nothing to fade towards.  Drawing it undimmed would be
+	// wrong too -- it is past its draw distance, which is what the fade is retiring it
+	// for -- so it goes undrawn this pass, matching the guarded LOD call in
+	// RenderObjVehicleAtomic.
 
 	if(mi->m_additive)
 		RwRenderStateSet(rwRENDERSTATEDESTBLEND, (void*)rwBLENDINVSRCALPHA);
