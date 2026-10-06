@@ -1372,6 +1372,61 @@ int16 nFadeControlThreshhold = 45;
 float fDefaultAlphaOrient = -0.22f;
 float fMouseAvoidGeomReturnRate = 0.92f;
 
+#ifdef NINTENDO_WII
+// Pointer aim: bring a pitch that has been left behind back to rest.
+//
+// With the pointer the camera only pitches while the pointer is past the top or the
+// bottom of the aim box, so wherever the last look up or down ended is where the view
+// stays -- at the sky, or at the player's feet -- until it is steered back by hand.
+// This steers it back, to the resting angle the game itself returns this camera to
+// after a fade (fDefaultAlphaOrient).
+//
+// Only when it cannot be mistaken for the player's own doing, which is the whole of
+// doing this properly:
+//   - the player is running or sprinting.  Standing or walking, a held pitch is taken
+//     to be deliberate, and the world is not already moving across the screen;
+//   - neither the aim button nor the trigger is down.  Holding Z keeps the view
+//     exactly where it is, which is the rule for the aim box as well;
+//   - the pointer is asking for no turn at all, in either axis;
+//   - and all of that has been true for kLevelDelay without a break, so a look that
+//     has only just ended is not undone the moment it does.
+// Then slowly: an ease with a ceiling on its rate, and nothing at all inside a couple
+// of degrees, so the view is never left creeping.
+static const float kLevelDelay = 1.5f;		// seconds of plain running before it starts
+static const float kLevelTau = 0.8f;		// seconds; the ease
+static const float kLevelMaxRate = 0.3f;	// radians a second, about 17 degrees
+static const float kLevelTolerance = 0.03f;	// radians; close enough to leave alone
+
+static float
+WiiLevelPitch(CEntity *target, float alpha, bool looking)
+{
+	static float quiet = 0.0f;
+
+	CPad *pad = CPad::GetPad(0);
+	bool running = false;
+	if(target->IsPed()){
+		const int move = ((CPed*)target)->m_nMoveState;
+		running = move == PEDMOVE_RUN || move == PEDMOVE_SPRINT;
+	}
+	if(!WiiPointerAimEnabled || looking || !running ||
+	   pad->GetTarget() || pad->GetWeapon() || pad->ArePlayerControlsDisabled()){
+		quiet = 0.0f;
+		return 0.0f;
+	}
+
+	const float dt = CTimer::GetTimeStepInSeconds();
+	quiet += dt;
+	if(quiet < kLevelDelay)
+		return 0.0f;
+
+	const float error = fDefaultAlphaOrient - alpha;
+	if(Abs(error) < kLevelTolerance)
+		return 0.0f;
+	const float maxStep = kLevelMaxRate*dt;
+	return Clamp(error*Min(1.0f, dt/kLevelTau), -maxStep, maxStep);
+}
+#endif
+
 #ifdef GTA_PC_CONTROLS
 void
 CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrientation, float, float)
@@ -1451,6 +1506,10 @@ CCam::Process_FollowPedWithMouse(const CVector &CameraTarget, float TargetOrient
 
 #ifdef AIM_ASSIST
 	CAimAssist::Process(Source, Front, Up, FOV, AlphaOffset, BetaOffset);
+#endif
+
+#ifdef NINTENDO_WII
+	AlphaOffset += WiiLevelPitch(CamTargetEntity, Alpha, AlphaOffset != 0.0f || BetaOffset != 0.0f);
 #endif
 
 	Alpha += AlphaOffset;
