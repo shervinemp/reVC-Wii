@@ -197,9 +197,13 @@ static const float kCoopSnapHeight = 30.0f;
 static const float kCoopFollowRate = 9.0f;
 static const float kCoopHeightRate = 3.0f;
 static const float kCoopZoomRate = 2.5f;
-// How many degrees wider the view opens across the distance range.  Capped, so the
-// far end is a wide shot and not a fisheye.
+// How many degrees wider the view opens, and over how much separation beyond the
+// free zone it does so.  Capped, so the far end is a wide shot and not a fisheye.
+// The span is the wall CCoop::LimitSeparation puts on how far apart they can
+// walk, so the view is fully open by the time they are as far apart as they can
+// get.
 static const float kCoopZoomFov = 20.0f;
+static const float kCoopZoomSpan = 18.0f;
 static const float kCoopYawRate = 1.6f;
 static const float kCoopUnclipRate = 2.0f;
 // Below this speed (about 3 m/s) a car's heading is not worth following.
@@ -1280,14 +1284,18 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		s_coopDistance += (wantedDistance - s_coopDistance)*(1.0f - exp(-kCoopZoomRate*dt));
 	}
 
-	// The field of view follows the distance, the way San Andreas' two-player
-	// camera does.  Vice City's co-op camera held a fixed FOV and only pulled back,
-	// and at a wide separation that crops whoever is on the edge of the picture:
-	// the distance needed to fit them both in would stand the camera off in the
-	// sky.  Opening the view as it pulls back keeps both framed at the framing's own
-	// pitch, and the cap stops the far end becoming a fisheye.
-	const float zoomSpan = Max(1.0f, kCoopMaxDistance - framing.distance);
-	const float zoom = Clamp((s_coopDistance - framing.distance)/zoomSpan, 0.0f, 1.0f);
+	// The field of view follows how far the players have separated, the way San
+	// Andreas' two-player camera does.  Vice City's co-op camera held a fixed FOV
+	// and only pulled back, and at a wide separation that crops whoever is on the
+	// edge of the picture: the distance needed to fit them both in would stand the
+	// camera off in the sky.  Opening the view as they separate keeps both framed
+	// at the framing's own pitch, and the cap stops the far end becoming a fisheye.
+	//
+	// It follows the separation, not the camera's distance, because that distance
+	// also carries the speed room -- which is there to bring the road on screen,
+	// and would otherwise shrink a fast car a second time for the same reason.
+	const float separationRoom = Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain;
+	const float zoom = Clamp(separationRoom/kCoopZoomSpan, 0.0f, 1.0f);
 	FOV = DefaultFOV + zoom*kCoopZoomFov;
 
 	// Back along the view by the distance: the pitch never changes.
