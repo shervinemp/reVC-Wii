@@ -662,9 +662,10 @@ CGameLogic::AfterDeathArrestSetUpShortCutTaxi()
 // resumes into a half-finished mission.  Once the mission script has finished
 // (bAlreadyRunningAMissionScript clears when its root script terminates) and a
 // short settle has passed, one quicksave lands in the dedicated PAUSE_SAVE_SLOT
-// (slot 9, not shown in the Load list).  It is a safety net behind the real
-// save zones, and it uses the engine's own SaveGameForPause, which already
-// refuses to run unless the world is stable and the timer allows it.
+// (slot 9, the Quick Save row on the Load screen).  It is a safety net behind the
+// real save zones, and it uses the engine's own SaveGameForPause, which refuses to
+// run while a mission script is running or its own timer says wait; the rest of
+// what makes a moment safe to save is checked below.
 static bool s_quicksaveArmed = false;
 static uint32 s_quicksaveArmedAt = 0;
 
@@ -686,8 +687,25 @@ CGameLogic::UpdateMissionPassedQuicksave()
 		return;
 	if(CTimer::GetTimeInMilliseconds() - s_quicksaveArmedAt < 1500)
 		return;
-	s_quicksaveArmed = false;
-	SaveGameForPause(SAVE_TYPE_QUICKSAVE_FOR_SCRIPT);
+	// And only of a player standing in the world.  A save is a snapshot, and one
+	// taken of a player who is dying, being arrested or under a cutscene loads back
+	// into exactly that -- a Tommy killed in the moment after the pass would load
+	// wasted.  The save stays armed meanwhile and lands once that is over, after a
+	// respawn if it comes to one, which still keeps the mission that was passed.
+	// A wanted level does not hold it up: plenty of missions end with the police
+	// out, and being chased after a reload is better than losing the mission.
+	const CPlayerInfo &player = CWorld::Players[CWorld::PlayerInFocus];
+	if(player.m_pPed == nil || player.m_WBState != WBSTATE_PLAYING || player.m_pPed->DyingOrDead() ||
+	   player.m_pPed->m_nPedState == PED_ARRESTED ||
+	   CCutsceneMgr::IsRunning() || CCutsceneMgr::IsCutsceneProcessing())
+		return;
+	// Disarmed only by a save that actually ran.  SaveGameForPause refuses while a
+	// mission retry is on offer or its own timer says wait, and a refusal used to
+	// drop the quicksave altogether; now it is tried again after the same settle.
+	if(SaveGameForPause(SAVE_TYPE_QUICKSAVE_FOR_SCRIPT))
+		s_quicksaveArmed = false;
+	else
+		s_quicksaveArmedAt = CTimer::GetTimeInMilliseconds();
 }
 #endif
 
