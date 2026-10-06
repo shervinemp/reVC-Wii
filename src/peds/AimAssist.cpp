@@ -31,14 +31,14 @@ const float kTargetRadius = 1.2f;	// metres
 // normal and eases back out on release.  The mouse camera already scales its look
 // speed by FOV/80, so the zoom slows the turn by the same share on top of the
 // multiplier below; the two are chosen to come to about 0.7 together.
-const float kAimZoomFov = 0.85f;
+const float kAimZoomFov = 0.8f;
 const float kZoomInSeconds = 0.08f;		// time constant of the ease in
 const float kZoomOutSeconds = 0.12f;	// and out
 
 // Look speed while the aim button is held, target or not, on top of the zoom's.
 // Only the aim button: slowing the camera while merely shooting would fight
 // sweeping across a crowd.
-const float kAimLookScale = 0.82f;
+const float kAimLookScale = 0.875f;
 
 // Further look speed with the crosshair dead on a target (on top of the above);
 // 1.0 at the edge of the cone.

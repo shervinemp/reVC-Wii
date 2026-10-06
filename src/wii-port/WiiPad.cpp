@@ -258,6 +258,19 @@ constexpr AimBox kAimBoxes[] = {
 	{ 0.23f, 0.77f, 0.23f, 0.77f },	// medium (half-extent 0.27, the default)
 	{ 0.14f, 0.86f, 0.14f, 0.86f },	// large  (half-extent 0.36)
 };
+// The box while the aim button is held.  One box cannot do both of its jobs: getting
+// around wants the camera to start turning early, and lining up a shot wants it not to
+// turn at all, because every small correction that crosses the edge drags the view
+// along with it.  So holding Z opens the box out almost to the screen edge -- the view
+// holds still and only the crosshair moves -- and letting go brings the player's own
+// box back.  The view can still be turned with Z held, slowly, by pointing off the
+// edge of the screen.
+//
+// Eased between the two rather than switched.  The pointer is often outside the small
+// box and inside this one at the moment Z is released, and a switch would start the
+// camera turning at whatever rate that distance asks for, all at once.
+constexpr AimBox kAimBoxPrecise = { 0.06f, 0.94f, 0.06f, 0.94f };
+constexpr float kAimPreciseTau = 0.12f;
 // The smoothing below is the only response shaping the crosshair gets; the turn
 // past the box edge is linear all the way to kPointerSaturation, shared with the
 // plain rate camera so the two feel like the same instrument.
@@ -289,6 +302,9 @@ bool s_aimActive;
 // rate camera -- because they are never active at the same time and because the
 // two are meant to feel like the same instrument.  See applyTurnSpinUp.
 float s_turnRate;
+
+// How far the aim box has opened towards kAimBoxPrecise, 0 to 1.
+float s_precise;
 
 // --- carrying the reticle on past the edge of the sensor bar -----------------
 // The remote stops being tracked the instant it leaves the bar's field, and the
@@ -905,6 +921,7 @@ releaseCrosshair(void)
 	if(s_aimActive)
 		s_turnRate = 0.0f;
 	s_aimActive = false;
+	s_precise = 0.0f;
 	CCamera::m_f3rdPersonCHairMultX = kAimDefaultX;
 	CCamera::m_f3rdPersonCHairMultY = kAimDefaultY;
 }
@@ -937,7 +954,8 @@ steerCrosshair(float targetX, float targetY)
 // centre box), and the camera turns only once the pointer is pushed past the
 // screen edge.  The WII_BOX option now controls how far in from that edge the
 // turn begins: a smaller box turns sooner, a larger one keeps the camera still
-// nearer the edge.  The turn is linear in how far outside the edge the pointer
+// nearer the edge.  Holding the aim button opens it out further still (see
+// kAimBoxPrecise).  The turn is linear in how far outside the edge the pointer
 // is and is capped at half the maximum once the pointer is off the sensor.
 // Returns false when the pointer is inside the turn ring (pure aiming, camera
 // still), which is what leaves the camera steady while the player aims.
@@ -953,7 +971,20 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	int size = WiiPointerBox;
 	if(size < 0 || size >= (int)(sizeof(kAimBoxes)/sizeof(kAimBoxes[0])))
 		size = 0;
-	const AimBox &box = kAimBoxes[size];
+	const AimBox &loose = kAimBoxes[size];
+
+	// Only where the crosshair is the pointer.  The aim button also holds a scope up,
+	// and through a scope the camera IS the aim: opening the box there would leave
+	// nothing to turn it with.
+	const bool steady = CPad::GetPad(0)->GetTarget() &&
+		TheCamera.Cams[TheCamera.ActiveCam].Using3rdPersonMouseCam();
+	s_precise += ((steady ? 1.0f : 0.0f) - s_precise)*(1.0f - std::exp(-s_pointerDt/kAimPreciseTau));
+	const AimBox box = {
+		loose.top + (kAimBoxPrecise.top - loose.top)*s_precise,
+		loose.bottom + (kAimBoxPrecise.bottom - loose.bottom)*s_precise,
+		loose.left + (kAimBoxPrecise.left - loose.left)*s_precise,
+		loose.right + (kAimBoxPrecise.right - loose.right)*s_precise,
+	};
 
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
