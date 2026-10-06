@@ -936,22 +936,31 @@ static const unsigned int kStallReportGapMs = 5000;
 static void
 startSavedGame(bool teardownFirst)
 {
-	if(teardownFirst)
-		CGame::ShutDownForRestart();
-
 	WiiTraceReport("WII game: loading saved game\n");
 	WiiTraceHeap("pre-load");
 
-	// Three steps and not one, and the order is the whole thing.  InitialiseGame
-	// builds the pools, streaming and world that the save is restored into, so it
-	// has to run first; ShutDownForRestart then clears what it placed; and
-	// InitialiseWhenRestarting is the one that actually reads the slot -- it is
-	// what consumes m_bWantToLoad and calls GenericLoad.  Same order as glfw.cpp
-	// and sdl2.cpp.  InitialiseGame on its own never reaches GenericLoad, which is
-	// why picking a slot used to start the story over from the beginning.
-	InitialiseGame();
-	CGame::ShutDownForRestart();
-	CGame::InitialiseWhenRestarting();
+	if(teardownFirst){
+		// In-game restart.  A world is already built, so it is only cleared and
+		// reloaded -- the two steps the desktop skeletons use for a restart.  Note
+		// CGame::Initialise is deliberately NOT run here: it opens with
+		// CPools::Initialise(), which creates the object pools, and re-running that
+		// over a live world rebuilds them underneath everything still holding a
+		// pointer into the old ones.
+		WiiTraceReport("WII load: shutdown (live world)\n");
+		CGame::ShutDownForRestart();
+		WiiTraceReport("WII load: InitialiseWhenRestarting\n");
+		CGame::InitialiseWhenRestarting();
+	}else{
+		// Boot.  Nothing is built yet, so the world is created first and the save is
+		// restored into it.  InitialiseGame on its own never reaches GenericLoad,
+		// which is why picking a slot used to start the story over from the start.
+		WiiTraceReport("WII load: InitialiseGame (no world yet)\n");
+		InitialiseGame();
+		WiiTraceReport("WII load: shutdown\n");
+		CGame::ShutDownForRestart();
+		WiiTraceReport("WII load: InitialiseWhenRestarting\n");
+		CGame::InitialiseWhenRestarting();
+	}
 	DMAudio.ChangeMusicMode(MUSICMODE_GAME);
 
 	FrontEndMenuManager.m_bGameNotLoaded = false;
@@ -972,17 +981,20 @@ startSavedGame(bool teardownFirst)
 	DMAudio.SetMusicFadeVol(127);
 
 	gGameState = GS_PLAYING_GAME;
+	WiiTraceReport("WII load: done\n");
 	WiiTraceHeap("post-load");
 }
 
 static void
 startFreshGame(bool teardownFirst)
 {
-	if(teardownFirst)
-		CGame::ShutDownForRestart();
-
 	WiiTraceReport("WII game: starting new game\n");
 	WiiTraceHeap("pre-load");
+	if(teardownFirst){
+		WiiTraceReport("WII new: shutdown (live world)\n");
+		CGame::ShutDownForRestart();
+	}
+	WiiTraceReport("WII new: InitialiseGame\n");
 	InitialiseGame();
 
 	FrontEndMenuManager.m_bGameNotLoaded = false;
@@ -992,6 +1004,7 @@ startFreshGame(bool teardownFirst)
 	DMAudio.SetMusicFadeVol(127);
 
 	gGameState = GS_PLAYING_GAME;
+	WiiTraceReport("WII new: done\n");
 	WiiTraceHeap("post-load");
 }
 
