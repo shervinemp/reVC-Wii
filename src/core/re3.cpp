@@ -557,6 +557,14 @@ bool LoadINISettings()
 	ReadIniIfExists("Wii", "AimDefaults", &aimDefaults);
 	if (aimDefaults < 1)
 		FrontEndMenuManager.m_ControlMethod = CONTROL_STANDARD;
+	// AIM IN CAR likewise shipped with its default off before it was changed to on.  A
+	// settings file saved in between keeps it off, and the custom-option load below
+	// would read that stored value straight back over the new default, so the key is
+	// dropped once and the default stands.  The controls page switches it from then on.
+	int8 aimCarDefaults = 0;
+	ReadIniIfExists("Wii", "AimCarDefaults", &aimCarDefaults);
+	if (aimCarDefaults < 1)
+		cfg["Controller"].remove("AimInCar");
 #endif
 	ReadIniIfExists("General", "Language", &FrontEndMenuManager.m_PrefsLanguage);
 	ReadIniIfExists("Display", "ShowHud", &FrontEndMenuManager.m_PrefsShowHud);
@@ -669,6 +677,7 @@ void SaveINISettings()
 	StoreIni("Controller", "Method", FrontEndMenuManager.m_ControlMethod);
 #ifdef NINTENDO_WII
 	StoreIni("Wii", "AimDefaults", (int8)1);
+	StoreIni("Wii", "AimCarDefaults", (int8)1);
 #endif
 	StoreIni("General", "Language", FrontEndMenuManager.m_PrefsLanguage);
 	StoreIni("Display", "ShowHud", FrontEndMenuManager.m_PrefsShowHud);

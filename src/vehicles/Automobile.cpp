@@ -3871,7 +3871,12 @@ CAutomobile::DoDriveByShootings(void)
 		return;
 
 	CWeapon *weapon = pDriver->GetWeapon();
-	if(CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN)
+	bool canDriveBy = CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN;
+#ifdef NINTENDO_WII
+	// The "Drive-By Weapons" option lets the other guns fire from a car too.
+	canDriveBy = canDriveBy || WiiDriveByWeaponAllowed(weapon->m_eWeaponType);
+#endif
+	if(!canDriveBy)
 		return;
 
 	weapon->Update(pDriver->m_audioEntityId, nil);

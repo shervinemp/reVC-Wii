@@ -1020,6 +1020,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 0;
 int8_t WiiAimInCar = 1;
+int8_t WiiDriveByAnyWeapon = 0;
 
 // Set by HOME, read by main() once the game has unwound.  See WiiPadScan.
 static bool s_returnToMenu;

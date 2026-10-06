@@ -243,6 +243,16 @@ void CHud::Draw()
 		eWeaponType WeaponType = playerPed->GetWeapon()->m_eWeaponType;
 		int32 Mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 
+		// The point the crosshair is at.  The reticle, the first-person sights and the
+		// Wiimote pointer's dot all sit here, so it is worked out once.  The dot used
+		// to compute its own anchor and miss the aspect-ratio correction the reticle
+		// applies, which left it a couple of pixels off the middle of the circle.
+		float crosshairX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
+		float crosshairY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
+#ifdef ASPECT_RATIO_SCALE
+		crosshairY -= SCREEN_SCALE_Y(2.0f);
+#endif
+
 #ifdef NINTENDO_WII
 		// The pointer's own mark: a solid dot with a dark rim wherever the Wiimote is
 		// pointing, whenever the pointer owns the crosshair -- on foot with or without
@@ -264,10 +274,10 @@ void CHud::Draw()
 				pointerMark = true;
 		}
 		if (pointerMark) {
-			float dotX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
-			float dotY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
-			const float r = SCREEN_SCALE_X(3.0f);		// the white dot
-			const float rim = r + SCREEN_SCALE_X(1.5f);	// the dark edge round it
+			const float dotX = crosshairX;
+			const float dotY = crosshairY;
+			const float r = SCREEN_SCALE_X(2.0f);		// the white dot
+			const float rim = r + SCREEN_SCALE_X(1.0f);	// the dark edge round it
 			const float cut = SCREEN_SCALE_X(1.0f);		// corners taken off, so it reads as round
 			const CRGBA dark(0, 0, 0, 255);
 			const CRGBA light(255, 255, 255, 255);
@@ -320,11 +330,8 @@ void CHud::Draw()
 #else
 				CRGBA chairColour(255, 255, 255, 255);
 #endif
-				float f3rdX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
-				float f3rdY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
-#ifdef ASPECT_RATIO_SCALE
-				f3rdY -= SCREEN_SCALE_Y(2.0f);
-#endif
+				float f3rdX = crosshairX;
+				float f3rdY = crosshairY;
 				if (playerPed && (WeaponType == WEAPONTYPE_M4 || WeaponType == WEAPONTYPE_RUGER || WeaponType == WEAPONTYPE_M60)) {
 					rect.left = f3rdX - SCREEN_SCALE_X(32.0f * 0.6f);
 					rect.top = f3rdY - SCREEN_SCALE_Y(32.0f  * 0.6f);

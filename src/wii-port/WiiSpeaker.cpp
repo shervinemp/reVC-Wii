@@ -476,7 +476,13 @@ WiiSpeakerService(void)
 
 	const u64 now = gettime();
 	if(s_state == STATE_WARMING){
-		if(WPAD_IsSpeakerEnabled(kChannel) <= 0){
+		// WPAD_IsSpeakerEnabled reports an error code, not a boolean: it is
+		// WPAD_ERR_NONE (0) once the remote's speaker is up and WPAD_ERR_NOT_READY
+		// (-2) until then.  Testing "<= 0" therefore treated READY as not-ready and
+		// returned every frame, so the speaker never left STATE_WARMING -- and the
+		// stream send and both clip and call paths are all gated on STATE_ON.  Every
+		// remote sound was silent because of this one comparison.
+		if(WPAD_IsSpeakerEnabled(kChannel) != WPAD_ERR_NONE){
 			if(now > s_deadline)
 				powerDown();
 			return;

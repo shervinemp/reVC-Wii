@@ -4746,6 +4746,14 @@ CPed::ClearWeapons(void)
 void
 CPed::RemoveWeaponWhenEnteringVehicle(void)
 {
+#ifdef NINTENDO_WII
+	// With the "Drive-By Weapons" option on, a weapon the car can actually fire is
+	// left in hand -- and so is its model, which is why the exit path below has to
+	// know not to re-attach it.  A weapon the option does not cover still falls
+	// through to the stock behaviour.
+	if (IsPlayer() && WiiDriveByWeaponAllowed(GetWeapon()->m_eWeaponType))
+		return;
+#endif
 	if (IsPlayer() && HasWeaponSlot(5) && GetWeapon(5).m_nAmmoTotal > 0 && ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed()->m_bDriveByAllowed) {
 		if (m_storedWeapon == WEAPONTYPE_UNIDENTIFIED)
 			m_storedWeapon = GetWeapon()->m_eWeaponType;
@@ -4759,6 +4767,13 @@ void
 CPed::ReplaceWeaponWhenExitingVehicle(void)
 {
 	eWeaponType weaponType = GetWeapon()->m_eWeaponType;
+
+#ifdef NINTENDO_WII
+	// Kept on entry (see RemoveWeaponWhenEnteringVehicle): its model is still
+	// attached, so there is nothing to restore or re-attach.
+	if (IsPlayer() && WiiDriveByWeaponAllowed(weaponType))
+		return;
+#endif
 
 	// If it's Uzi, we may have stored weapon. Uzi is the only gun we can use in car.
 	if (IsPlayer() && GetWeaponSlot(weaponType) == WEAPONSLOT_SUBMACHINEGUN) {

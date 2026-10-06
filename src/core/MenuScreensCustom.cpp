@@ -115,11 +115,13 @@
 	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
 	#define VIBRATION_TOGGLE
 	#define POINTER_CAR_TOGGLE
+	#define DRIVEBY_WEAPONS_TOGGLE
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -810,6 +812,7 @@ CMenuScreenCustom aScreens[] = {
 		POINTER_AIM_TOGGLE
 		POINTER_BOX_SELECT
 		POINTER_CAR_TOGGLE
+		DRIVEBY_WEAPONS_TOGGLE
 		MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 0, MENUALIGN_CENTER,
 		//MENUACTION_GOBACK,		"FEDS_TB",	{nil, SAVESLOT_NONE, 0}, 320, 260, MENUALIGN_CENTER, // original y
    },

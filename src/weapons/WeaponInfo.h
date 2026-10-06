@@ -72,6 +72,13 @@ public:
 	bool IsFlagSet(uint32 flag) const { return (m_Flags & flag) != 0; }
 };
 
+#ifdef NINTENDO_WII
+// True when the "Drive-By Weapons" option is on and this weapon is one the drive-by
+// fire path can shoot from a car.  False leaves Vice City's stock rule -- submachine
+// gun only -- for the caller to apply.
+bool WiiDriveByWeaponAllowed(eWeaponType weaponType);
+#endif
+
 VALIDATE_SIZE(CWeaponInfo, 0x64);
 
 #endif // __GTA_WEAPONINFO_H__

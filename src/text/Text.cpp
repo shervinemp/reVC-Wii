@@ -171,6 +171,7 @@ WiiFallbackText(const char *key)
 		// replaced.
 		{ "WII_QSV", "Quick Save" },
 		{ "WII_AIC", "AIM IN CAR" },
+		{ "WII_DBW", "DRIVE-BY WEAPONS" },
 
 		// The cheat menu.  Audited the same way as the rows above: every key referenced
 		// by the MENUPAGE_CHEATS pages has an entry here, because on an untouched card

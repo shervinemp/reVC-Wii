@@ -8,6 +8,9 @@
 #include "Weapon.h"
 #include "ModelInfo.h"
 #include "ModelIndices.h"
+#ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
+#endif
 
 uint16 CWeaponInfo::ms_aReloadSampleTime[WEAPONTYPE_TOTALWEAPONS] =
 {
@@ -104,6 +107,30 @@ CWeaponInfo::GetWeaponInfo(eWeaponType weaponType)
 {
 	return &aWeaponInfo[weaponType];
 }
+
+#ifdef NINTENDO_WII
+bool
+WiiDriveByWeaponAllowed(eWeaponType weaponType)
+{
+	if(!WiiDriveByAnyWeapon)
+		return false;
+	// Only what FireInstantHitFromCar can actually shoot.  It is a hitscan -- it
+	// traces from the car to the target and lands the hit -- so a launcher, a thrown
+	// weapon or a melee item would go through it as if it were a bullet.  What is
+	// left is every gun Vice City lets you carry, which on foot you may use and from
+	// a car the stock game will not.
+	switch(CWeaponInfo::GetWeaponInfo(weaponType)->m_nWeaponSlot){
+	case WEAPONSLOT_HANDGUN:
+	case WEAPONSLOT_SHOTGUN:
+	case WEAPONSLOT_SUBMACHINEGUN:
+	case WEAPONSLOT_RIFLE:
+	case WEAPONSLOT_SNIPER:
+		return true;
+	default:
+		return false;
+	}
+}
+#endif
 
 void
 CWeaponInfo::Initialise(void)
