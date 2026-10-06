@@ -65,15 +65,6 @@ CWeaponEffects::ClearCrossHair(void)
 	gCrossHair.m_bActive = false;
 }
 
-// How much larger than stock to draw the crosshair.  See the use in Render().
-//
-// 3.0, from 1.6, which was not enough.  The crosshair is a world-space marker placed by
-// CWeaponEffects::MarkTarget and sized by the view window at the target's depth, so it
-// shrinks as the target gets further away -- the boost compounds at range rather than
-// being a flat offset, which is why a factor that looked reasonable up close still read
-// as too small.
-static const float kCrossHairScale = 3.0f;
-
 void
 CWeaponEffects::Render(void)
 {
@@ -114,24 +105,6 @@ CWeaponEffects::Render(void)
 		if ( CSprite::CalcScreenCoors(gCrossHair.m_vecPos, &pos, &w, &h, true) )
 		{
 			PUSH_RENDERGROUP("CWeaponEffects::Render");
-
-			// The stock size is a couple of pixels at 480i, which is not something you
-			// can hold a TV at and aim with -- and on this port the crosshair is the
-			// pointer's only aiming reference whenever the player is unarmed.
-			//
-			// Scaling w and h scales the circle as well, because it is drawn at
-			// size*w, size*h, so one factor enlarges both and leaves the dot-to-circle
-			// proportion exactly as it was.  The unarmed case is unaffected in the
-			// other direction: its aCrossHairSize entry is 0.0f, so the circle stays
-			// collapsed and only the dot grows.
-			//
-			// No resolution ceiling to worry about: the source is target256, a 256x256
-			// texture, and the sprite is drawn far smaller than that, so even at 3x it
-			// is magnifying well inside the source's own resolution.  Raising this much
-			// further is what would eventually soften it -- the asset is not modified,
-			// so there is no higher-resolution source to fall back on.
-			w *= kCrossHairScale;
-			h *= kCrossHairScale;
 
 			float recipz = 1.0f / pos.z;
 			CSprite::RenderOneXLUSprite_Rotate_Aspect(pos.x, pos.y, pos.z,

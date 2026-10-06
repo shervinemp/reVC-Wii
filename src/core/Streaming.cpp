@@ -62,13 +62,13 @@ size_t CStreaming::ms_memoryUsed;
 CStreamingChannel CStreaming::ms_channel[2];
 int32 CStreaming::ms_channelError;
 int32 CStreaming::ms_numVehiclesLoaded;
-//
-// How many times a synchronous load-path read may be retried before it is
-// given up on and the model deferred.  Generous on purpose: this only has to
-// catch a read that is never going to finish, not one that is slow.  At roughly
-// 16ms a failed sync attempt this is a little over three seconds of retrying
-// before the load gives up and moves on.
-static const int kLoadReadMaxAttempts = 200;
+// How many times a synchronous load-path read may be tried before it is given up
+// on and the model deferred.  Small, because an attempt is not cheap when it fails
+// the way this is here to catch: CdStreamSync waits out its own timeout (five
+// seconds on the Wii) on a read that never returns, so even this many is a long
+// stall.  A read that fails outright fails again at once, and deferring loses
+// nothing -- the model is simply asked for again.
+static const int kLoadReadMaxAttempts = 3;
 
 int32 CStreaming::ms_numPedsLoaded;
 int32 CStreaming::ms_vehiclesLoaded[MAXVEHICLESLOADED];
@@ -2603,32 +2603,16 @@ CStreaming::LoadAllRequestedModels(bool priority)
 
 		//printf("process: order %d, ch %d, id %d\n", processI, nextChannel, streamIds[nextChannel]);
 
-		// Try again on error.  Bounded, for the same reason as the sibling loop in
-		// LoadAllRequestedModels: this had no attempt counter, so a read that kept
-		// failing became a spin on the game thread that could not report itself.
-		// CdStreamSync is timed now, so each pass costs up to that timeout rather
-		// than nothing, and this bound is what turns a wedged channel into a
-		// deferred model instead of a very slow freeze.
-		int attempts = 0;
-		while(CdStreamSync(nextChannel) != STREAM_NONE && attempts < kLoadReadMaxAttempts){
-			attempts++;
+		// Try again on error
+		while (CdStreamSync(nextChannel) != STREAM_NONE) {
 			CdStreamRead(nextChannel, ms_pStreamingBuffer[nextChannel], imgOffset+streamPoses[nextChannel], streamSizes[nextChannel]);
 		}
-		// Spent the whole budget without the read ever completing, so the buffer
-		// holds whatever was in it last and must NOT be handed to the converter --
-		// that would build an object out of uninitialised memory, which is a worse
-		// failure than the freeze this is here to prevent.  The model is left in
-		// STREAMSTATE_READING instead, which is the streaming system's own way of
-		// asking for it again later.
-		const bool readGaveUp = attempts >= kLoadReadMaxAttempts;
 		ms_aInfoForModel[streamIds[nextChannel]].m_loadState = STREAMSTATE_READING;
 
 		MakeSpaceFor(streamSizes[nextChannel] * CDSTREAM_SECTOR_SIZE);
-		if(!readGaveUp){
-			ConvertBufferToObject(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
-			if(ms_aInfoForModel[streamIds[nextChannel]].m_loadState == STREAMSTATE_STARTED)
-				FinishLoadingLargeFile(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
-		}
+		ConvertBufferToObject(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
+		if(ms_aInfoForModel[streamIds[nextChannel]].m_loadState == STREAMSTATE_STARTED)
+			FinishLoadingLargeFile(ms_pStreamingBuffer[nextChannel], streamIds[nextChannel]);
 
 		if(streamIds[nextChannel] < STREAM_OFFSET_TXD){
 			CSimpleModelInfo *mi = (CSimpleModelInfo*)CModelInfo::GetModelInfo(streamIds[nextChannel]);
@@ -2701,34 +2685,34 @@ CStreaming::LoadAllRequestedModels(bool priority)
 				wiiLog("WII streaming: load-all call=%u read item=%d offset=%u size=%u\n",
 				       wiiLoadAllCall, streamId, posn, size);
 #endif
-		// Bounded.  This loop had no attempt counter and no give-up, so a read that
-		// kept failing became an infinite spin on the game thread -- the one failure
-		// mode that produces no log line at all, because everything that would have
-		// logged it sits downstream of the spin.
-		//
-		// The bound is generous on purpose.  A slow card is not a broken one, and the
-		// cost of being wrong here is a model that never arrives, so it sits far above
-		// any read that is merely taking its time and only catches one that is never
-		// going to finish.  Giving up is not a special path either: the
-		// ConvertBufferToObject below already handles a bad buffer by deferring the
-		// model, which is exactly what this produces.
-		int attempts = 0;
-		bool pending;
-		do {
-			status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
-			pending = CdStreamSync(0) || status == STREAM_NONE;
-			if(pending)
-				attempts++;
-		} while(pending && attempts < kLoadReadMaxAttempts);
-		if(pending){
+			// Bounded.  This loop had no attempt counter and no give-up, so a read that
+			// kept failing became an infinite spin on the game thread -- the one failure
+			// mode that produces no log line at all, because everything that would have
+			// logged it sits downstream of the spin.
+			int attempts = 0;
+			bool pending;
+			do {
+				status = CdStreamRead(0, ms_pStreamingBuffer[0], imgOffset+posn, size);
+				pending = CdStreamSync(0) || status == STREAM_NONE;
+				if(pending)
+					attempts++;
+			} while(pending && attempts < kLoadReadMaxAttempts);
+			ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+			if(pending){
+				// Nothing was read, so the buffer still holds whatever the last item
+				// left in it and must not reach the converter: that would build this
+				// model out of another one's bytes.  Deferred the way
+				// ConvertBufferToObject defers a model it cannot build -- dropped and
+				// asked for again -- and the rest of this load waits for a later one.
 #ifdef NINTENDO_WII
-			WiiTraceReport("WII streaming: giving up on item %d after %d read attempts"
-			               " (offset=%u size=%u); it will be deferred\n",
-			               streamId, attempts, posn, size);
+				WiiTraceReport("WII streaming: giving up on item %d after %d read attempts"
+				               " (offset=%u size=%u); it will be deferred\n",
+				               streamId, attempts, posn, size);
 #endif
-			status = STREAM_NONE;
-		}
-		ms_aInfoForModel[streamId].m_loadState = STREAMSTATE_READING;
+				RemoveModel(streamId);
+				ReRequestModel(streamId);
+				break;
+			}
 
 			MakeSpaceFor(size * CDSTREAM_SECTOR_SIZE);
 			bool converted = ConvertBufferToObject(ms_pStreamingBuffer[0], streamId);

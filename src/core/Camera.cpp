@@ -244,12 +244,17 @@ CCamera::Init(void)
 	m_uiTransitionState = 0;
 	m_uiTimeTransitionStart = 0;
 	m_bLookingAtPlayer = true;
+#ifdef NINTENDO_WII
 	// Resting crosshair, centred on 0.5/0.5 so the free-aim room above and below the
 	// crosshair is the same.  The aim box in WiiPad.cpp is centred on 0.5 too; if the
 	// rest sat above centre (it was 0.4) the up-side would run into the turn box
 	// first and up/down would feel asymmetric again.
 	m_f3rdPersonCHairMultX = 0.5f;
 	m_f3rdPersonCHairMultY = 0.5f;
+#else
+	m_f3rdPersonCHairMultX = 0.53f;
+	m_f3rdPersonCHairMultY = 0.4f;
+#endif
 	m_fAvoidTheGeometryProbsTimer = 0.0f;
 	m_nAvoidTheGeometryProbsDirn = 0;
 }

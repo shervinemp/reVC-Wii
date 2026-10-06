@@ -1005,15 +1005,16 @@ CCarCtrl::PossiblyRemoveVehicle(CVehicle* pVehicle)
 			threshold *= EXTENDED_RANGE_DESPAWN_MULTIPLIER;
 		if (distanceToPlayer > threshold && !CGarages::IsPointWithinHideOutGarage(pVehicle->GetPosition())){
 			if (pVehicle->GetIsOnScreen()){
+				// Marked to fade, not freed: the caller carries on with it.
 				pVehicle->bFadeOut = true;
-			}else{
-				CWorld::Remove(pVehicle);
-				delete pVehicle;
+				return false;
 			}
+			CWorld::Remove(pVehicle);
+			delete pVehicle;
 			return true;
 		}
 	}
-	if (((pVehicle->GetStatus() == STATUS_SIMPLE || pVehicle->GetStatus() == STATUS_PHYSICS) &&
+	if ((pVehicle->GetStatus() == STATUS_SIMPLE || pVehicle->GetStatus() == STATUS_PHYSICS &&
 		(pVehicle->AutoPilot.m_nDrivingStyle == DRIVINGSTYLE_STOP_FOR_CARS || pVehicle->AutoPilot.m_nDrivingStyle == DRIVINGSTYLE_STOP_FOR_CARS_IGNORE_LIGHTS)) &&
 		CTimer::GetTimeInMilliseconds() - pVehicle->AutoPilot.m_nTimeToStartMission > 5000 &&
 		!pVehicle->GetIsOnScreen() &&

@@ -2235,6 +2235,7 @@ int16 CPad::GetSteeringUpDown(void)
 	switch (CURMODE)
 	{
 		case 0:
+#ifdef NINTENDO_WII
 		{
 			// Wii v3: the D-pad is the vehicle cluster (down is the handbrake), so
 			// it must not also drive steering up/down.  The Nunchuk stick does.
@@ -2242,6 +2243,7 @@ int16 CPad::GetSteeringUpDown(void)
 
 			break;
 		}
+#endif
 
 		case 2:
 		{
@@ -2490,9 +2492,13 @@ bool CPad::GetHorn(void)
 	{
 		case 0:
 		{
+#ifdef NINTENDO_WII
 			// Wii v3: horn is the Nunchuk C button alone.  The nitro-taxi jump
 			// (Automobile.cpp) reads HornJustDown, so this must stay unconditional.
 			return !!NewState.LeftShoulder1;
+#else
+			return !!NewState.LeftShock;
+#endif
 
 			break;
 		}
@@ -2569,6 +2575,7 @@ bool CPad::GetCarGunFired(void)
 	switch (CURMODE)
 	{
 		case 0:
+#ifdef NINTENDO_WII
 		{
 			// Wii v3: B (Circle) fires the car gun / drive-by, the same button that
 			// fires on foot (GetWeapon reads Circle in mode 0).  A is the gas, so B
@@ -2577,6 +2584,7 @@ bool CPad::GetCarGunFired(void)
 
 			break;
 		}
+#endif
 
 		case 1:
 		case 2:
@@ -2634,10 +2642,14 @@ int16 CPad::GetHandBrake(void)
 		case 0:
 		case 1:
 		{
+#ifdef NINTENDO_WII
 			// Wii v3: the handbrake is the D-pad down on its own.  It used to be a
 			// chord on the aim button (R1) plus 2, which made it impossible to
 			// brake and handbrake without also aiming.
 			return NewState.DPadDown;
+#else
+			return NewState.RightShoulder1;
+#endif
 
 			break;
 		}
@@ -2671,11 +2683,15 @@ int16 CPad::GetBrake(void)
 		case 1:
 		case 2:
 		{
+#ifdef NINTENDO_WII
 			// Wii v3: brake and reverse live on the Nunchuk trigger (Z,
 			// RightShoulder1).  It is the one control a player holds down for a
 			// long time while steering, and the trigger-shaped button under the
 			// index finger is the natural home for it.
 			return NewState.RightShoulder1;
+#else
+			return NewState.Square;
+#endif
 
 			break;
 		}
@@ -2831,16 +2847,6 @@ int16 CPad::GetAccelerate(void)
 	switch (CURMODE)
 	{
 		case 0:
-		{
-			// Wii v3: A (Cross) is the accelerator, matching every console game.
-			// A is the "commit" button everywhere: enter the car on foot, drive it
-			// once inside.  B stays the weapon in every context, so the gun and the
-			// drive-by need no exception for a vehicle that carries one of its own.
-			return NewState.Cross;
-
-			break;
-		}
-
 		case 2:
 		{
 			return NewState.Cross;
@@ -2975,12 +2981,14 @@ bool CPad::ChangeStationJustDown(void)
 	{
 		case 0:
 		{
-			// Wii v3: the radio station button is + (LeftShock).  C (horn) and the
-			// shoulder buttons no longer double as the station, so the wheel and
-			// the + key each do one thing.  The same field is the scoped zoom-in,
-			// which cannot overlap: you are either in a car or looking down a
-			// scope, never both.
+#ifdef NINTENDO_WII
+			// Wii v3: the radio station button is 1 (LeftShock).  C (horn) and the
+			// shoulder buttons no longer double as the station, so each of them
+			// does one thing.
 			return !!(NewState.LeftShock && !OldState.LeftShock);
+#else
+			return !!(NewState.LeftShoulder1 && !OldState.LeftShoulder1);
+#endif
 
 			break;
 		}
@@ -3324,15 +3332,17 @@ bool CPad::SniperZoomIn(void)
 	switch (CURMODE)
 	{
 		case 0:
+#ifdef NINTENDO_WII
 		{
-			// Wii v3: zoom in is Z (RightShoulder1) while scoped.  Z is the brake in a
-			// car, but a scoped player is never driving, so one field serves both
-			// without the two ever colliding.  Scope entry itself is also Z
-			// (TargetJustDown), which is why the button does the whole scope job.
-			return !!NewState.RightShoulder1;
+			// Wii v3: zoom in is A (Cross) while scoped.  Not Z: Z is the aim button,
+			// and it has to stay held to keep the scope up at all (GetTarget reads
+			// the same RightShoulder1), so zooming on it ran the scope to full zoom
+			// by itself every time it was raised.  A does nothing else while scoped.
+			return !!NewState.Cross;
 
 			break;
 		}
+#endif
 
 		case 1:
 		case 3:
@@ -3361,14 +3371,16 @@ bool CPad::SniperZoomOut(void)
 	switch (CURMODE)
 	{
 		case 0:
+#ifdef NINTENDO_WII
 		{
-			// Wii v3: zoom out is C (LeftShoulder1) while scoped, beside Z for in.
+			// Wii v3: zoom out is C (LeftShoulder1) while scoped, against A for in.
 			// C is the horn in a car, which a scoped player is not driving, so the
 			// two never overlap.
 			return !!NewState.LeftShoulder1;
 
 			break;
 		}
+#endif
 
 		case 1:
 		case 3:
