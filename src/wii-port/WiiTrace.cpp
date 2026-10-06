@@ -136,11 +136,17 @@ volatile bool s_logDirty;
 void
 commitLog(void)
 {
-	if(s_logFile == nullptr || !s_logDirty)
+	// The file is only looked at under the lock.  This runs on the watchdog thread,
+	// and the game thread can close the log between a check made out here and the
+	// lock being taken -- which left fsync looking up the descriptor of a FILE that
+	// had just been set to null, on the way out to the Wii menu.
+	if(!s_logDirty || s_logMutex == LWP_MUTEX_NULL)
 		return;
 	LWP_MutexLock(s_logMutex);
-	fsync(fileno(s_logFile));
-	s_logDirty = false;
+	if(s_logFile != nullptr && s_logDirty){
+		fsync(fileno(s_logFile));
+		s_logDirty = false;
+	}
 	LWP_MutexUnlock(s_logMutex);
 }
 
@@ -412,7 +418,10 @@ WiiTraceOpenLog(const char *directory)
 	char path[192];
 	std::snprintf(path, sizeof(path), "%s/debug.log", directory);
 
-	if(LWP_MutexInit(&s_logMutex, false) != 0){
+	// Created once and kept, never destroyed: the watchdog thread takes it, and a
+	// lock that could be destroyed under it would only move the race elsewhere.
+	if(s_logMutex == LWP_MUTEX_NULL && LWP_MutexInit(&s_logMutex, false) != 0){
+		s_logMutex = LWP_MUTEX_NULL;
 		SYS_Report("WII log: mutex create failed, %s not opened\n", path);
 		return;
 	}
@@ -420,13 +429,14 @@ WiiTraceOpenLog(const char *directory)
 	// Truncated rather than appended.  This is read after a run that did not
 	// finish, and a previous run's tail sitting above this one is the quickest
 	// way to misread where the current one stopped.
-	s_logFile = std::fopen(path, "w");
-	if(s_logFile == nullptr){
-		LWP_MutexDestroy(s_logMutex);
-		s_logMutex = LWP_MUTEX_NULL;
+	FILE *file = std::fopen(path, "w");
+	if(file == nullptr){
 		SYS_Report("WII log: could not open %s\n", path);
 		return;
 	}
+	LWP_MutexLock(s_logMutex);
+	s_logFile = file;
+	LWP_MutexUnlock(s_logMutex);
 
 	WiiTraceReport("WII log: writing to %s\n", path);
 #else
@@ -438,15 +448,16 @@ void
 WiiTraceCloseLog(void)
 {
 #if CREATE_LOG
-	if(s_logFile == nullptr)
+	if(s_logMutex == LWP_MUTEX_NULL)
 		return;
+	// The lock stays: see WiiTraceOpenLog.
 	LWP_MutexLock(s_logMutex);
-	std::fclose(s_logFile);
-	s_logFile = nullptr;
+	if(s_logFile != nullptr){
+		std::fclose(s_logFile);
+		s_logFile = nullptr;
+	}
 	s_logDirty = false;
 	LWP_MutexUnlock(s_logMutex);
-	LWP_MutexDestroy(s_logMutex);
-	s_logMutex = LWP_MUTEX_NULL;
 #endif
 }
 
@@ -462,7 +473,7 @@ void
 WiiTraceLogLine(const char *message)
 {
 #if CREATE_LOG
-	if(s_logFile == nullptr || message == nullptr)
+	if(message == nullptr || s_logMutex == LWP_MUTEX_NULL)
 		return;
 
 	// Trailing newlines are trimmed and one is written back, because the callers
@@ -478,11 +489,15 @@ WiiTraceLogLine(const char *message)
 	// bare step list cannot answer that.
 	const unsigned int elapsed = (unsigned int)ticks_to_millisecs(gettime());
 
+	// Checked under the lock for the same reason as in commitLog: the watchdog
+	// thread writes here too, and the game thread can close the log.
 	LWP_MutexLock(s_logMutex);
-	std::fprintf(s_logFile, "[%8u] %.*s\n", elapsed, (int)length, message);
-	// Only out of newlib's buffer; commitLog is what reaches the card.
-	std::fflush(s_logFile);
-	s_logDirty = true;
+	if(s_logFile != nullptr){
+		std::fprintf(s_logFile, "[%8u] %.*s\n", elapsed, (int)length, message);
+		// Only out of newlib's buffer; commitLog is what reaches the card.
+		std::fflush(s_logFile);
+		s_logDirty = true;
+	}
 	LWP_MutexUnlock(s_logMutex);
 #else
 	(void)message;
