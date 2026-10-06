@@ -1244,7 +1244,9 @@ main(int argc, char **argv)
 		// reported one category and looked like a finding rather than like a mistake.
 		// WiiTrace differences at the moment it prints instead, so the figure spans
 		// exactly the interval being reported.
+#if CREATE_LOG >= 2
 		WiiTraceSetMemIdTotals((const int *)g_wiiMemidBytes, WII_MEMID_SLOTS);
+#endif
 
 		// One line for a frame that took longer than any frame should, and then
 		// silence for a few seconds.  A freeze during play is otherwise entirely

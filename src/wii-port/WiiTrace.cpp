@@ -155,7 +155,9 @@ watchdogMain(void*)
 	// every five seconds until it stops.  No run-time switch, because unlike the heap
 	// walk this is two register reads -- SYS_GetArena1Size and SYS_GetArena2Size are
 	// not mallinfo and do not walk anything.
+#if CREATE_LOG >= 2
 constexpr unsigned int kArenaSampleSeconds = 5;
+#endif
 
 unsigned int stalledSeconds = 0;
 	unsigned int secondsSinceHeap = 0;
@@ -163,8 +165,10 @@ unsigned int stalledSeconds = 0;
 	// independent of the no-frame one above.
 	int lastPending = 0;
 	unsigned int pendingStalledSeconds = 0;
+#if CREATE_LOG >= 2
 	unsigned int secondsSinceArena = 0;
 	unsigned int lastArena2 = 0xFFFFFFFFu;
+#endif
 
 	while(s_watchdogRunning){
 		usleep(1000*1000);
@@ -192,6 +196,7 @@ unsigned int stalledSeconds = 0;
 		// Only logs while the arena is falling, so it is quiet on a healthy session and
 		// self-limiting during a drain: no threshold to tune, no flood, and it stops
 		// on its own the moment memory stops moving.
+#if CREATE_LOG >= 2
 		if(++secondsSinceArena >= kArenaSampleSeconds){
 			secondsSinceArena = 0;
 			const unsigned int arena1 = (unsigned int)SYS_GetArena1Size();
@@ -290,6 +295,7 @@ unsigned int stalledSeconds = 0;
 				}
 			lastArena2 = arena2;
 		}
+#endif
 
 		if(s_stepSerial != lastSerial){
 			lastSerial = s_stepSerial;

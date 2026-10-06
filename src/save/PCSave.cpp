@@ -125,7 +125,9 @@ C_PcSave::PopulateSlotInfo()
 		} header;
 		sprintf(savename, "%s%i%s", DefaultPCSaveFileName, i + 1, ".b");
 		int file = CFileMgr::OpenFile(savename, "rb");
+#if CREATE_LOG >= 2
 		WiiTraceReport("[SAVEDEBUG] Probe slot=%d name=%s handle=%d errno=%d\n", i, savename, file, errno);
+#endif
 		if (file != 0) {
 			CFileMgr::Read(file, (char*)&header, sizeof(header));
 			if (strncmp((char*)&header, TopLineEmptyFile, sizeof(TopLineEmptyFile)-1) != 0) {

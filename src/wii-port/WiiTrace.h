@@ -12,15 +12,17 @@
 //
 //   0  nothing runs at all.
 //   1  an EVENT log: debug.log beside the ELF (or on the SD card when the ELF is on a
-//      read-only stick) gets the rare lines -- boot, saves, HOME, errors -- and nothing
-//      else.  Nothing is done per asset or per frame, no thread runs, and the file is
-//      committed to the card at most once a second from the frame loop, so it costs
-//      nothing while playing.  This is the setting to leave on.
-//   2  full diagnostics: also a line for every model, texture and stream the game
-//      touches, a watchdog thread that reports stalls and samples the heap, and the
-//      renderer's frame trace.  For chasing a freeze or a leak, and expensive: the
-//      watchdog runs above the game thread and walks the whole heap, and every asset
-//      line is formatted, written and flushed.  It is what made the game hitch mid-play.
+//      read-only stick) gets the rare lines -- boot, saves, HOME, errors, and the
+//      debounced stall line -- and nothing else.  Nothing is done per asset, the arena
+//      is not sampled, and the file is committed to the card at most once a second, so
+//      it costs nothing while playing.  This is the setting to leave on.  The watchdog
+//      thread still runs here: it costs a one-second sleep and two register reads, and
+//      it is what reports a freeze, so it is deliberately kept.
+//   2  full diagnostics: also the arena drain sample and the per-MEMID allocation
+//      breakdown, a line for every model, texture and stream the game touches, and the
+//      renderer's frame trace.  For chasing a freeze or a leak, and expensive: every
+//      asset line is formatted, written and flushed, and the arena is sampled every few
+//      seconds.  It is what made the game hitch mid-play.
 //
 // The console copy is deliberately absent in a normal build: on the Wii both
 // printf through the console device and SYS_Report draw onto the framebuffer, which
@@ -56,9 +58,10 @@ void WiiTraceNote(const char *message);
 // once a frame; only does anything at CREATE_LOG 1 (at 2 the watchdog does it).
 void WiiTraceService(void);
 
-// Starts the reporting thread (CREATE_LOG 2 only).  It names the current step and reports the heap
-// whenever that step has not changed for a while, so a main thread stuck in a
-// loop or blocked on storage still gets described.
+// Starts the reporting thread (off only at CREATE_LOG 0).  It names the current step and
+// reports the heap whenever that step has not changed for a while, so a main thread stuck
+// in a loop or blocked on storage still gets described.  It also carries the arena drain
+// sample, which is gated to CREATE_LOG 2.
 void WiiTraceStartWatchdog(void);
 
 // The open log's file descriptor, or -1 if there is no log.  Exists so a crash
