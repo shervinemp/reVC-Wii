@@ -124,6 +124,10 @@ public:
 // moves when player 1 pushes the stick.
 class CPad *GetPadFromPlayer(CPlayerPed *ped);
 
+// The index of that pad, for the vehicle control code, which takes a pad
+// number (CAutomobile::ProcessControlInputs and friends) rather than a CPad.
+int32 GetPadIndexFromPlayer(CPlayerPed *ped);
+
 //VALIDATE_SIZE(CPlayerPed, 0x5F0);
 
 #endif // __GTA_PLAYERPED_H__

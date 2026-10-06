@@ -258,6 +258,19 @@ CVector vecHunterRocketPos(2.5f, 1.0f, -0.5f);
 CVector vecDAMAGE_ENGINE_POS_SMALL(-0.1f, -0.1f, 0.0f);
 CVector vecDAMAGE_ENGINE_POS_BIG(-0.5f, -0.3f, 0.0f);
 
+// Whose special collision model a car's hydraulics live in.  Player 1's, or
+// couch co-op's partner's when they are the one driving the car: the model,
+// the vehicle it belongs to and the flag that says it is in use are all kept
+// per player, and reading player 1's for a partner-driven Voodoo would put the
+// wheels of one car on the other's.
+static CPlayerInfo *
+SpecialColModelOwner(CPed *driver)
+{
+	if(driver != nil && driver->IsPlayer())
+		return ((CPlayerPed*)driver)->GetPlayerInfoForThisPlayerPed();
+	return &CWorld::Players[CWorld::PlayerInFocus];
+}
+
 #pragma optimize("", off) // a workaround for another compiler bug
 
 void
@@ -269,7 +282,7 @@ CAutomobile::ProcessControl(void)
 	float brake = 0.0f;
 
 	if(bUsingSpecialColModel)
-		colModel = &CWorld::Players[CWorld::PlayerInFocus].m_ColModel;
+		colModel = &SpecialColModelOwner(pDriver)->m_ColModel;
 	else
 		colModel = GetColModel();
 	bool drivingInSand = false;
@@ -403,8 +416,15 @@ CAutomobile::ProcessControl(void)
 		if(playerRemote ||
 		   pDriver && pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAG_FROM_CAR && pDriver->GetPedState() != PED_ARRESTED){
 			// process control input if controlled by player
-			if(playerRemote || pDriver->m_nPedType == PEDTYPE_PLAYER1)
+			//
+			// Couch co-op: both players drive from their own pad, so this is
+			// asked of the driver rather than assumed to be player 1's.  A
+			// remote-controlled car has no driver at the wheel at all and
+			// stays on pad 0, which is the one holding the remote.
+			if(playerRemote)
 				ProcessControlInputs(0);
+			else if(pDriver->IsPlayer())
+				ProcessControlInputs(GetPadIndexFromPlayer((CPlayerPed*)pDriver));
 
 			PruneReferences();
 
@@ -412,7 +432,10 @@ CAutomobile::ProcessControl(void)
 				DoDriveByShootings();
 
 			// Tweak center on mass when driving on two wheels
-			int twoWheelTime = CWorld::Players[CWorld::PlayerInFocus].m_nTimeNotFullyOnGround;
+			// The stunt timer is only kept for player 1 (CPlayerInfo::Process),
+			// so a partner-driven car does not get this tweak rather than
+			// borrowing player 1's.
+			int twoWheelTime = (pDriver == FindPlayerPed()) ? CWorld::Players[CWorld::PlayerInFocus].m_nTimeNotFullyOnGround : 0;
 			if(twoWheelTime > 500 && !IsRealHeli() && !IsRealPlane()){
 				float tweak = Min(twoWheelTime-500, 1000)/500.0f;
 				if(GetUp().z > 0.0f){
@@ -420,7 +443,7 @@ CAutomobile::ProcessControl(void)
 					if(GetRight().z <= 0.0f)
 						tweak *= -1.0f;
 					m_vecCentreOfMass.z = pHandling->CentreOfMass.z +
-						CPad::GetPad(0)->GetSteeringLeftRight()/128.0f *
+						CPad::GetPad(GetPadIndexFromPlayer((CPlayerPed*)pDriver))->GetSteeringLeftRight()/128.0f *
 						CAR_BALANCE_MULT * tweak * colModel->boundingBox.max.z;
 				}
 			}else
@@ -461,7 +484,7 @@ CAutomobile::ProcessControl(void)
 			m_fBrakePedal = 1.0f;
 			m_fGasPedal = 0.0f;
 		}
-		if(CPad::GetPad(0)->CarGunJustDown())
+		if(pDriver != nil && pDriver->IsPlayer() && CPad::GetPad(GetPadIndexFromPlayer((CPlayerPed*)pDriver))->CarGunJustDown())
 			ActivateBomb();
 		break;
 
@@ -648,7 +671,7 @@ CAutomobile::ProcessControl(void)
 			if(GetStatus() == STATUS_PLAYER && m_vecMoveSpeed.MagnitudeSqr() > sq(0.2f) &&
 			// BUG: game checks [0] four times, instead of all wheels
 			   m_aSuspensionSpringRatio[0] < 1.0f &&
-			   CPad::GetPad(0)->HornJustDown()){
+			   CPad::GetPad(GetPadIndexFromPlayer((CPlayerPed*)pDriver))->HornJustDown()){
 
 				DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_HYDRAULIC_1, 0.0f);
 				DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_JUMP, 1.0f);
@@ -3037,7 +3060,7 @@ CAutomobile::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 		bVehicleColProcessed = true;
 
 	if(bUsingSpecialColModel)
-		colModel = &CWorld::Players[CWorld::PlayerInFocus].m_ColModel;
+		colModel = &SpecialColModelOwner(pDriver)->m_ColModel;
 	else
 		colModel = GetColModel();
 
@@ -3411,7 +3434,13 @@ CAutomobile::HydraulicControl(void)
 	CVehicleModelInfo *mi = (CVehicleModelInfo*)CModelInfo::GetModelInfo(GetModelIndex());
 	CColModel *normalColModel = mi->GetColModel();
 	float wheelRadius = 0.5f*mi->m_wheelScale;
-	CPlayerInfo *playerInfo = &CWorld::Players[CWorld::PlayerInFocus];
+	// Couch co-op: a Voodoo's hydraulics belong to whoever is driving, so its
+	// special collision model and its controls come off that player, not
+	// player 1.
+	CPlayerInfo *playerInfo = SpecialColModelOwner(pDriver);
+	CPad *pad = (pDriver != nil && pDriver->IsPlayer())
+		? GetPadFromPlayer((CPlayerPed*)pDriver)
+		: CPad::GetPad(0);
 	CColModel *specialColModel = &playerInfo->m_ColModel;
 
 	if(GetStatus() != STATUS_PLAYER){
@@ -3522,7 +3551,7 @@ CAutomobile::HydraulicControl(void)
 		}
 	}
 
-	if(CPad::GetPad(0)->HornJustDown()){
+	if(pad->HornJustDown()){
 		// Switch between normal and extended
 
 		if(m_hydraulicState < 100)
@@ -3588,9 +3617,9 @@ CAutomobile::HydraulicControl(void)
 	}else{
 		float suspChange[4];
 		float maxDelta = 0.0f;
-		float rear = CPad::GetPad(0)->GetCarGunUpDown()/128.0f;
+		float rear = pad->GetCarGunUpDown()/128.0f;
 		float front = -rear;
-		float right = CPad::GetPad(0)->GetCarGunLeftRight()/128.0f;
+		float right = pad->GetCarGunLeftRight()/128.0f;
 		float left = -right;
 		suspChange[CARWHEEL_FRONT_LEFT] = Max(front+left, 0.0f);
 		suspChange[CARWHEEL_REAR_LEFT] = Max(rear+left, 0.0f);
@@ -3881,6 +3910,10 @@ CAutomobile::DoDriveByShootings(void)
 
 	weapon->Update(pDriver->m_audioEntityId, nil);
 
+	// Couch co-op: a drive-by belongs to whoever is driving, so the side and
+	// the trigger come off that player's pad.
+	CPad *pad = GetPadFromPlayer((CPlayerPed*)pDriver);
+
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	// Which side a drive-by goes out of is normally read off the camera: it is
@@ -3891,9 +3924,9 @@ CAutomobile::DoDriveByShootings(void)
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
 	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP ||
 	   TheCamera.m_bObbeCinematicCarCamOn){
-		if(CPad::GetPad(0)->GetLookLeft())
+		if(pad->GetLookLeft())
 			lookingLeft = true;
-		if(CPad::GetPad(0)->GetLookRight())
+		if(pad->GetLookRight())
 			lookingRight = true;
 	}else{
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingLeft)
@@ -3930,7 +3963,7 @@ CAutomobile::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, lookingLeft, true);
 #ifdef NINTENDO_WII
 				WiiDriveByPaceShot(weapon);

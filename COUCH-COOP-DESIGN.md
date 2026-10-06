@@ -4,8 +4,8 @@ Branch: `couch-coop`, on top of `definitive-qol`.
 
 Target model is the **PS2 GTA: San Andreas co-op** the Wii was built alongside:
 two players, **one shared camera, one screen**, no split-screen. Player 1 stays
-the script driver; player 2 is a real second ped who walks, aims, shoots and
-rides along, but never owns a mission.
+the script driver; player 2 is a real second ped who walks, aims, shoots, drives
+and rides along, but never owns a mission.
 
 This document describes the design **as it is built**. An earlier version of it
 was written before any of the code could be run, and three of the things it
@@ -124,24 +124,33 @@ are still on screen. The help box says so the first time someone reaches it.
 explosion. Past the leash the partner is brought back to player 1 — into the
 passenger seat if player 1 is the one in the car, otherwise beside them.
 
-### Riding along
+### Riding along, and driving
 
-- **Getting in.** The partner presses the enter/exit button (2 on the Wii
-  Remote, Y on a GameCube pad, X on a Classic Controller) within 12 m of the car
-  player 1 is driving or getting into. If it is standing still they walk to the
-  nearest free passenger door and get in the way anyone does; if it is already
-  rolling they are put straight into the seat, since nobody catches a moving car
-  on foot. On a bike they ride pillion, and are always put straight onto it,
-  and only once player 1 is sitting on it: the engine hands a bike to any
-  player who finishes climbing on, so a partner still walking over when
-  player 1 got off again would be left on a bike with no rider, which the
-  bike's own code does not survive.
+- **Getting in with player 1.** The partner presses the enter/exit button (2 on
+  the Wii Remote, Y on a GameCube pad, X on a Classic Controller) within 12 m
+  of the car player 1 is driving or getting into, and there is a free passenger
+  seat. If it is standing still they walk to the nearest free passenger door and
+  get in the way anyone does; if it is already rolling they are put straight
+  into the seat, since nobody catches a moving car on foot. On a bike they ride
+  pillion, and are always put straight onto it, and only once player 1 is
+  sitting on it: the engine hands a bike to any player who finishes climbing on,
+  so a partner still walking over when player 1 got off again would be left on a
+  bike with no rider, which the bike's own code does not survive.
+- **Taking their own car.** With no free seat beside player 1 -- player 1 on
+  foot, in a full car, or in a boat -- the same button takes the nearest car
+  within 10 m that another player is not driving and enters it as its **driver**.
+  It is the same enter-car path player 1 uses, carjacking an occupied car if
+  that is the nearest. Only cars: bikes and boats are deliberately left alone
+  (see "Not done"). The camera turns with the car the partner is driving when
+  player 1 is not in one, so it can be driven rather than felt for.
 - **Being left behind.** If player 1 simply drives off, the leash does the same
   thing at 28 m: the partner appears in a free seat.
 - **No free seat** (a full car, a boat, a train): the partner waits out of the
   world and reappears beside player 1 when they stop or get out.
-- **Riding.** The partner sits. They do not steer and cannot yet shoot from the
-  car. They stay put while player 1 gets out and back in.
+- **Riding and driving.** As a passenger the partner sits, does not steer and
+  cannot yet shoot from the car. As a driver the partner steers, accelerates and
+  brakes from their own pad, and their drive-by works; they still stay put while
+  player 1 gets out and back in.
 - **Getting out.** The same button: stepping out once the car has stopped, or
   rolling out of it at speed. The order is only given when the engine would
   obey it (`CanPedExitCar`, or the roll-out test) — one it refuses is kept,
@@ -154,20 +163,19 @@ passenger seat if player 1 is the one in the car, otherwise beside them.
 - **When it goes wrong.** A car on fire puts the partner out of it by itself. One
   killed in the car, or still in it when it explodes, comes back the usual few
   seconds later. If someone else takes the wheel, the partner is brought back to
-  player 1.
+  player 1. Player 1's own enter button never picks a car another player is
+  driving, so the two cannot carjack each other.
 
-Only ever player 1's car, and only ever as a passenger: the engine makes any
-player who boards a bike or a boat its driver whatever seat they asked for. For
-the same reason the partner is never allowed to finish dragging someone out of a
-seat (`CPed::PedSetInCarCB` makes whoever did the dragging the driver).
-
-The partner never drives. `CAutomobile::ProcessControl` and friends read pad 0
-throughout; that is a separate, larger job.
+On a bike or a boat the partner is only ever a passenger in player 1's, never
+the driver: the engine makes any player who boards one its driver whatever seat
+they asked for, and the control code for both looks the rider up as player 1.
+For the same reason the partner is never allowed to finish dragging someone out
+of a seat (`CPed::PedSetInCarCB` makes whoever did the dragging the driver).
 
 Player 1's **drive-by** still works under the shared camera: the side is taken
 from the look-left/look-right buttons directly, the way the engine already does
 it for its own top-down and cinematic cameras, instead of from which way the car
-camera has swung.
+camera has swung. The partner driving gets the same, from their own pad.
 
 A Rhino's turret and a fire truck's hose are turned with the pad, as in stock Vice
 City. AIM IN CAR otherwise hands them to the car camera that follows the pointer,
@@ -370,11 +378,20 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
-- **Player 2 cannot drive**, and cannot do drive-bys as a passenger. Vehicle
-  control reads pad 0 throughout.
-- **Boats and trains**: the partner waits out of the world.
-- **Pickups** are still player 1's (the partner gets weapons by mirroring).
-  Health, armour and money pickups do nothing for the partner.
+- **Player 2 cannot drive a bike or a boat, and cannot shoot as a car
+  passenger.** Cars they can steal and drive (see "Riding along, and driving").
+  A bike or a boat would need its control code — `CBike::ProcessControl`,
+  `CBoat::ProcessControl` — to find the rider the way `CAutomobile` now does,
+  and both look the rider up as player 1; the partner riding pillion on player
+  1's bike is the one case that already works.
+- **Boats and trains**: the partner waits out of the world. They can still be a
+  passenger in player 1's car or pillion on player 1's bike.
+- **A fire truck's hose and a Rhino's turret do nothing for the partner.** Both
+  are turned only when the vehicle is `FindPlayerVehicle()` (player 1's), so a
+  partner who steals one drives it without them.
+- **Pickups** are still player 1's. Weapons are shared (the partner gets the
+  same guns and the same ammo pool), but health, armour and money pickups do
+  nothing for the partner.
 - **No rumble and no remote speaker for player 2.** The engine sends every shake
   to pad 0, and the speaker code drives one remote.
 - **Player 2 looks exactly like player 1.** The pips are what tells them apart.
@@ -415,6 +432,8 @@ Recorded because each was stated as a verified fact.
 | pull-back per metre apart | `kCoopSeparationGain` | 1.0, beyond 6 m |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
 | leash | `kLeash`, `Coop.cpp` | 28 m |
+| board player 1's car within | `kBoardingRange`, `Coop.cpp` | 12 m |
+| partner's own steal range | `kStealRange`, `Coop.cpp` | 10 m |
 | camera's furthest | `kCoopMaxDistance`, `Cam.cpp` | 40 m |
 | respawn delay | `kRespawnAfterMs` | 3.5 s |
 | join / drop-out delay | `kJoinAfterMs` / `kDropAfterMs` | 0.4 s (then a button) / 6 s |

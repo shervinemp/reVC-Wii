@@ -103,6 +103,10 @@ const float kSlowVehicle = 0.1f;
 // How close the partner has to be to get into player 1's car by pressing the
 // button, rather than being expected to walk to it first.
 const float kBoardingRange = 12.0f;
+// How close a car has to be for the partner to take it as its driver when
+// there is no seat with player 1.  Matches the box CPlayerInfo::Process scans
+// for player 1's own enter/exit button.
+const float kStealRange = 10.0f;
 
 // --- aiming ------------------------------------------------------------------
 // A pointer that has not reported for this long is one nobody is aiming with.
@@ -579,14 +583,47 @@ SessionBlocker(void)
 	return nil;
 }
 
-// --- riding along ------------------------------------------------------------
+// The nearest car the partner could take as its driver.  Only a car: a bike
+// makes whoever climbs on it the rider whatever seat they asked for, and its
+// control code looks the rider up as the player in focus, and a boat is
+// handled as a different problem entirely; neither is worth the risk here.
+// Never one a player is driving -- that would be a carjack of player 1 -- and
+// not a wreck or one in the water, which nobody can enter.
+CVehicle *
+FindCarToSteal(CPlayerPed *partner)
+{
+	CVehicle *best = nil;
+	float bestDist = SQR(kStealRange);
+	const CVector pos = partner->GetPosition();
+	for(int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--){
+		CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
+		if(vehicle == nil || !vehicle->IsCar())
+			continue;
+		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
+			continue;
+		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
+			continue;
+		const float dist = (vehicle->GetPosition() - pos).MagnitudeSqr();
+		if(dist < bestDist){
+			bestDist = dist;
+			best = vehicle;
+		}
+	}
+	return best;
+}
+
+// --- driving and riding along ------------------------------------------------
 // CPlayerInfo::Process is where player 1's enter/exit button is read, and it is
-// only ever run for the player in focus.  This is the partner's share of it:
-// into the car player 1 is driving or getting into, as a passenger, and out
-// again.
+// only ever run for the player in focus.  This is the partner's share of it.
+// On foot the button means one of two things, in this order:
 //
-// Returns true when the partner should be put straight into the seat instead:
-// the car is already moving, and nobody catches a moving car on foot.
+//   * a free seat in whatever player 1 is driving or climbing into -- get in
+//     beside them, which is what it has always meant; or
+//   * failing that, the nearest car within reach -- take it as its driver and
+//     drive it.  That is the partner's own car, not player 1's.
+//
+// Returns true when the partner should be put straight into a seat instead: the
+// car is already moving, and nobody catches a moving car on foot.
 bool
 UpdatePartnerVehicle(CPlayerPed *lead, CPlayerPed *partner, CPad *pad)
 {
@@ -626,40 +663,47 @@ UpdatePartnerVehicle(CPlayerPed *lead, CPlayerPed *partner, CPad *pad)
 
 	if(!pad->ExitVehicleJustDown() || !partner->IsPedInControl())
 		return false;
+
+	// A seat with player 1 first.  The car they are in, or the one they are
+	// climbing into, and only if it is theirs or empty and has room.
 	CVehicle *vehicle = nil;
 	if(lead->bInVehicle)
 		vehicle = lead->m_pMyVehicle;
 	else if(lead->m_nPedState == PED_ENTER_CAR || lead->m_nPedState == PED_CARJACK)
 		vehicle = lead->m_carInObjective;
-	if(vehicle == nil || (vehicle->pDriver != nil && vehicle->pDriver != lead))
-		return false;
-	if(!vehicle->IsCar() && !vehicle->IsBike())
-		return false;
-	if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater)
-		return false;
-	if((vehicle->GetPosition() - partner->GetPosition()).Magnitude() > kBoardingRange)
-		return false;
-	bool seat = false;
-	for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
-		if(vehicle->pPassengers[i] == nil)
-			seat = true;
-	if(!seat)
-		return false;
-	// Standing still, or nearly: walk to a door and get in like anybody else.
-	// Already rolling: straight into the seat.
-	//
-	// Onto a bike it is always straight into the seat, and only once player 1
-	// is sitting on it.  The engine makes a bike the player's to ride when any
-	// player finishes climbing on, whichever seat they asked for -- so a
-	// partner who was still walking over when player 1 got off again would end
-	// up on the back of a bike with nobody on the front, being ridden from
-	// player 1's pad, and the bike's drive-by code looks up its rider without
-	// asking whether there is one.
-	if(vehicle->IsBike())
-		return CanRideAlong(lead, vehicle);
-	if(vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(0.04f) && CanRideAlong(lead, vehicle))
-		return true;
-	partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, vehicle);
+	if(vehicle != nil && (vehicle->pDriver == nil || vehicle->pDriver == lead) &&
+	   (vehicle->IsCar() || vehicle->IsBike()) &&
+	   vehicle->GetStatus() != STATUS_WRECKED && !vehicle->bIsInWater &&
+	   (vehicle->GetPosition() - partner->GetPosition()).Magnitude() <= kBoardingRange){
+		bool seat = false;
+		for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
+			if(vehicle->pPassengers[i] == nil)
+				seat = true;
+		if(seat){
+			// Standing still, or nearly: walk to a door and get in like anybody
+			// else.  Already rolling: straight into the seat.
+			//
+			// Onto a bike it is always straight into the seat, and only once
+			// player 1 is sitting on it.  The engine makes a bike the player's
+			// to ride when any player finishes climbing on, whichever seat they
+			// asked for -- so a partner who was still walking over when player 1
+			// got off again would end up on the back of a bike with nobody on
+			// the front, being ridden from player 1's pad, and the bike's
+			// drive-by code looks up its rider without asking whether there is
+			// one.
+			if(vehicle->IsBike())
+				return CanRideAlong(lead, vehicle);
+			if(vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(0.04f) && CanRideAlong(lead, vehicle))
+				return true;
+			partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, vehicle);
+			return false;
+		}
+	}
+
+	// No seat with player 1.  Take a car of their own instead.
+	CVehicle *steal = FindCarToSteal(partner);
+	if(steal != nil)
+		partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, steal);
 	return false;
 }
 
@@ -671,7 +715,11 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, bool leadTeleported)
 		return "player 1 was moved";
 
 	CVehicle *partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
-	if(partnerVehicle != nil && partnerVehicle->pDriver != nil && partnerVehicle->pDriver != lead)
+	// Someone else at the wheel.  If the partner is driving their own car that
+	// is the partner, not somebody else, and the leash below is what keeps them
+	// near player 1.
+	if(partnerVehicle != nil && partnerVehicle->pDriver != nil &&
+	   partnerVehicle->pDriver != lead && partnerVehicle->pDriver != partner)
 		// Somebody else is at the wheel.  Riding along means with player 1.
 		return "driven off by someone else";
 

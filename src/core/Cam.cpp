@@ -1200,9 +1200,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	CVector target = leadPos;
 	CVector partnerPos = leadPos;
 	float separation = 0.0f;
+	CVehicle *partnerVehicle = nil;
 	CPlayerPed *partner = CCoop::GetPartner();
 	if(partner != nil){
-		CVehicle *partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
+		partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
 		partnerPos = partnerVehicle != nil ? partnerVehicle->GetPosition() : partner->GetPosition();
 		separation = (partnerPos - leadPos).Magnitude();
 		target = (leadPos + partnerPos)*0.5f;
@@ -1220,9 +1221,17 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			s_coopYaw = lead->m_fRotationCur;
 	}
 	float speed = 0.0f;
-	if(leadVehicle != nil && leadVehicle->pDriver == lead){
-		const CVector &move = leadVehicle->GetMoveSpeed();
-		const CVector &ahead = leadVehicle->GetForward();
+	// Which car the view turns with.  Player 1's, or -- when player 1 is on
+	// foot and the partner is driving -- the partner's.  A car the shared
+	// camera does not follow is a car driven blind.
+	CVehicle *driveVehicle = nil;
+	if(leadVehicle != nil && leadVehicle->pDriver == lead)
+		driveVehicle = leadVehicle;
+	else if(partnerVehicle != nil && partnerVehicle->pDriver == partner)
+		driveVehicle = partnerVehicle;
+	if(driveVehicle != nil){
+		const CVector &move = driveVehicle->GetMoveSpeed();
+		const CVector &ahead = driveVehicle->GetForward();
 		speed = move.Magnitude2D();
 		// Forwards only.  Following the nose while reversing out of a parking
 		// space would swing the view through a half turn to show the kerb.

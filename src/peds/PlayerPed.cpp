@@ -51,9 +51,16 @@ CPad*
 GetPadFromPlayer(CPlayerPed *ped)
 {
 	// See PAD_COOP for why the partner is not simply on pad 1.
+	return CPad::GetPad(GetPadIndexFromPlayer(ped));
+}
+
+int32
+GetPadIndexFromPlayer(CPlayerPed *ped)
+{
+	// See PAD_COOP for why the partner is not simply on pad 1.
 	if (ped != nil && ped == CWorld::Players[1].m_pPed)
-		return CPad::GetPad(PAD_COOP);
-	return CPad::GetPad(0);
+		return PAD_COOP;
+	return 0;
 }
 
 CPlayerPed::~CPlayerPed()
