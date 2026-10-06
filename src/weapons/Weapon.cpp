@@ -482,6 +482,12 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 		else
 #endif
 		DMAudio.PlayOneShot(shooter->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+#ifdef NINTENDO_WII
+		// The player's guns crack through the Wiimote from a car as well as on foot
+		// (see Fire).
+		if ( shooter->GetStatus() == STATUS_PLAYER )
+			WiiSpeakerPlayShot();
+#endif
 
 		if ( m_nAmmoInClip > 0 )
 			m_nAmmoInClip--;
