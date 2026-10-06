@@ -36,6 +36,7 @@
 #include "Sprite.h"
 #include "Pickups.h"
 #include "SaveBuf.h"
+#include "AimAssist.h"
 #ifdef NINTENDO_WII
 #include "WiiSpeaker.h"
 #include "WiiPointerAim.h"
@@ -997,6 +998,11 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 #endif
 		{
 			TheCamera.Find3rdPersonCamTargetVector(info->m_fRange, *fireSource, source, target);
+#ifdef AIM_ASSIST
+			// A near-miss on the target the aim assist is holding goes to its chest.  A
+			// shot that was going to land on it anyway is left exactly as it was aimed.
+			CAimAssist::BendShot(source, target);
+#endif
 		}
 
 #ifdef FIX_BUGS

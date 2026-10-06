@@ -5,6 +5,7 @@
 #ifdef AIM_ASSIST
 
 #include "Camera.h"
+#include "Collision.h"
 #include "Draw.h"
 #include "General.h"
 #include "Pad.h"
@@ -15,6 +16,9 @@
 #include "Vehicle.h"
 #include "WeaponInfo.h"
 #include "World.h"
+#ifdef NINTENDO_WII
+#include "WiiPointerAim.h"
+#endif
 
 int8 CAimAssist::bEnabled = true;
 
@@ -61,6 +65,10 @@ const uint32 kSightIntervalMs = 250;
 // Engaged means the crosshair is well inside the target's cone, not merely in it.
 const float kEngagedRatio = 0.6f;
 const uint32 kEngagedHoldMs = 100;
+
+// How near the shot as aimed has to pass to a body for it to count as landing there
+// already, in metres.  Inside this BendShot leaves it alone.
+const float kBodyRadius = 0.25f;
 
 float s_zoom = 1.0f;
 uint32 s_engagedTime = 0;
@@ -226,6 +234,15 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 	alphaOffset *= slow;
 	betaOffset *= slow;
 
+#ifdef NINTENDO_WII
+	// Not with the pointer aiming.  The crosshair is then wherever the player's hand
+	// is, so turning the camera to bring a target under it moves the world beneath a
+	// mark they are holding still.  The shot is bent instead (BendShot); the slower
+	// look above stays, since that only acts while the player is turning anyway.
+	if(WiiPointerAimEnabled)
+		return;
+#endif
+
 	// Ease the crosshair onto the chest, unless the player is pushing away.
 	CVector toChest = bestChest - source;
 	toChest.Normalise();
@@ -245,6 +262,49 @@ CAimAssist::Process(const CVector &source, const CVector &front, const CVector &
 	float pull = Min(1.0f, kPullPerSecond * CTimer::GetTimeStep()/50.0f) * closeness;
 	alphaOffset += errorAlpha*pull;
 	betaOffset += errorBeta*pull;
+}
+
+bool
+CAimAssist::BendShot(const CVector &source, CVector &target)
+{
+#ifdef NINTENDO_WII
+	if(!bEnabled || !WiiPointerAimEnabled || s_targetHandle < 0 || !s_targetVisible)
+		return false;
+	CPed *ped = CPools::GetPedPool()->GetAt(s_targetHandle);
+	if(ped == nil || ped->DyingOrDead())
+		return false;
+
+	CVector shot = target - source;
+	const float range = shot.Magnitude();
+	CVector chest = ChestOf(ped);
+	CVector toChest = chest - source;
+	const float dist = toChest.Magnitude();
+	if(range < 0.5f || dist < 0.5f || dist > range)
+		return false;
+
+	// The same cone, and the same share of it, that turns the crosshair red -- so red
+	// means what it looks like it means: a near-miss from here still lands.
+	const float cosAngle = DotProduct(shot, toChest)/(range*dist);
+	const float cone = Clamp(Atan2(kTargetRadius, dist), kMinCone, kMaxCone);
+	if(cosAngle <= 0.0f || Acos(Min(cosAngle, 1.0f)) >= cone*kEngagedRatio)
+		return false;
+
+	// Already on the body somewhere -- head, chest or legs?  Then it is the player's
+	// own shot and it stays that way.
+	CVector head;
+	ped->m_pedIK.GetComponentPosition(head, PED_HEAD);
+	CVector legs = ped->GetPosition();
+	legs.z -= 0.5f;
+	if(CCollision::DistToLine(&source, &target, &head) < kBodyRadius ||
+	   CCollision::DistToLine(&source, &target, &chest) < kBodyRadius ||
+	   CCollision::DistToLine(&source, &target, &legs) < kBodyRadius)
+		return false;
+
+	target = source + toChest*(range/dist);
+	return true;
+#else
+	return false;
+#endif
 }
 
 #endif
