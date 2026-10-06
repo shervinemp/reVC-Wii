@@ -1381,6 +1381,12 @@ float fMouseAvoidGeomReturnRate = 0.92f;
 // This steers it back, to the resting angle the game itself returns this camera to
 // after a fade (fDefaultAlphaOrient).
 //
+// That angle looks slightly down, and it is kept rather than levelled to the horizon.
+// This camera always looks at the top of the player's head, so with the view level it
+// sits directly behind him and he stands in front of whatever is straight ahead -- which
+// is where a target at his own height is.  Tilted down, it is raised by most of a metre
+// and sees over him.
+//
 // Only when it cannot be mistaken for the player's own doing, which is the whole of
 // doing this properly:
 //   - the player is running or sprinting.  Standing or walking, a held pitch is taken
