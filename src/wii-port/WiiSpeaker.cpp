@@ -103,7 +103,15 @@ constexpr u32 kCallBytesPerMs = 3;			// 3000 bytes a second
 constexpr u32 kCallSlackBytes = 20*kPacketBytes;	// about 130 ms past the stated length
 constexpr u32 kCallMaxBytes = 120*1000*kCallBytesPerMs;
 constexpr u8 kAdpcmSilence = 0x08;			// +1/8 step then -1/8 step, around zero
-constexpr u32 kCallTvDuckPercent = 25;			// TV level in the "both" mode
+// TV level in the "both" mode.  Not a duck: 100 leaves the TV at full and lets the
+// remote carry the line on top, so "both" means both.
+//
+// The alternative -- dropping the TV to a fraction -- is a guess against a level this
+// code cannot read.  libogc only reports whether the remote's speaker is *enabled*,
+// never how loud it actually is, because the player sets that on the remote itself.
+// So a duck that looks reasonable here can still leave a player with a quiet, muted or
+// room-drowned remote unable to follow the call.  Full TV cannot.
+constexpr u32 kCallTvDuckPercent = 100;
 constexpr u32 kWakeLingerMs = 8000;			// keeps the speaker up for a call about to start
 
 struct Call
