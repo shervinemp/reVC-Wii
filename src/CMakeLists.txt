@@ -33,10 +33,16 @@ if(NINTENDO_WII)
                     -DSRC_DIR=${PROJECT_SOURCE_DIR}
                     -P "${PROJECT_SOURCE_DIR}/scripts/write-git-sha.cmake"
         )
+        # Same always-fires target as the stamp below, and the same reason the
+        # generated source is a BYPRODUCT: the SHA only changes when the commit does,
+        # so a timestamp comparison would leave the object one build behind and the
+        # banner would name the previous revision.  The object is dirtied by the
+        # always-fires edge instead, which is cheap -- the file is four lines.
         add_custom_target(reVC_wii_git_sha ALL
             COMMAND ${CMAKE_COMMAND} -DSHA_CPP=${WII_GIT_SHA_SRC}
                     -DSRC_DIR=${PROJECT_SOURCE_DIR}
                     -P "${PROJECT_SOURCE_DIR}/scripts/write-git-sha.cmake"
+            BYPRODUCTS "${WII_GIT_SHA_SRC}"
         )
         set_source_files_properties(${WII_GIT_SHA_SRC} PROPERTIES
             OBJECT_DEPENDS ${WII_GIT_SHA_SRC}
@@ -84,12 +90,19 @@ find_library(WII_MPG123_LIBRARY NAMES mpg123
         execute_process(COMMAND ${CMAKE_COMMAND} -DSTAMP_H=${WII_BUILD_STAMP_HEADER}
                     -P "${PROJECT_SOURCE_DIR}/scripts/write-build-stamp.cmake"
         )
-        # Runs on every build: the stamp target has no OUTPUT, so Ninja's
-        # phony rule always fires; the fresh stamp content recompiles
-        # wii_game.o, refreshing the console banner each time.
+        # Runs on every build: the stamp target declares no OUTPUT of its own, so
+        # the file Ninja is told to produce is never created and its rule always
+        # fires.  The header the rule actually writes is named as a BYPRODUCT, which
+        # is what makes that always-fires edge the producer of the file: Ninja then
+        # dirties the object that includes it every build, instead of stat-ing the
+        # header before the build, finding it older than the object -- it is rewritten
+        # after the object was last compiled -- and skipping the compile.  Without the
+        # byproduct the OBJECT_DEPENDS below only ever forced a rebuild on alternate
+        # builds, so the console banner lagged the build.
         add_custom_target(reVC_wii_build_stamp ALL
             COMMAND ${CMAKE_COMMAND} -DSTAMP_H=${WII_BUILD_STAMP_HEADER}
                     -P "${PROJECT_SOURCE_DIR}/scripts/write-build-stamp.cmake"
+            BYPRODUCTS "${WII_BUILD_STAMP_HEADER}"
         )
         # wii_game.cpp only: it is the one file that includes the stamp.  This used
         # to be set on every game source, and since the stamp changes every second
