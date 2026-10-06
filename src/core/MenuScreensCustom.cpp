@@ -105,27 +105,29 @@
 #endif
 
 #ifdef AIM_ASSIST
-	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	// Centred like the rest of the Enhancements page, which is the only page it is
+	// on now.
+	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 #else
 	#define AIM_ASSIST_TOGGLE
 #endif
 
 #ifdef NINTENDO_WII
-	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
-	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
+	// All of the port's own toggles are centred, because the only page they are on
+	// now is the Enhancements page, whose rows are all centred -- a page has one
+	// alignment, and mixing them leaves some rows sitting out on their own.
+	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_CENTER,
 	// Couch co-op.  A CCFOSelect rather than a hand-rolled toggle so it persists
 	// through the CUSTOM_FRONTEND_OPTIONS loop in SaveINISettings on its own,
 	// with no new menu action to keep in step.  Works with one player present --
 	// the shared camera simply has one ped to frame -- which is the point: the
 	// mode is meant to be judged before a second remote exists.
-	//
-	// Centred, unlike the toggles above it: this row is on the pause page, whose
-	// rows are all centred, so the left alignment it inherited from the Mouse/IR
-	// toggles left it sitting out on its own.
 	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	// Vibration stays left: it is on the gamepad page, which is left-aligned.
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
-	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
-	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -804,12 +806,11 @@ CMenuScreenCustom aScreens[] = {
 
 	// MENUPAGE_MOUSE_CONTROLS = 31
 	{ "FEC_MOU", MENUPAGE_CONTROLLER_PC, nil, nil,
-#ifdef NINTENDO_WII
-		// Nine rows on this page here, so it starts higher to keep Back on the screen.
-		MENUACTION_MOUSESENS,	"FEC_MSH",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 40, 110, MENUALIGN_LEFT,
-#else
+		// The port's toggles used to be on this page, which is why it started
+		// higher to keep Back on screen.  They are on the Enhancements page now, so
+		// this is the plain mouse/IR page again and starts where the non-Wii one
+		// does.
 		MENUACTION_MOUSESENS,	"FEC_MSH",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 40, 170, MENUALIGN_LEFT,
-#endif
 		MENUACTION_INVVERT,		"FEC_IVV",	{nil, SAVESLOT_NONE, MENUPAGE_MOUSE_CONTROLS}, 0, 0, MENUALIGN_LEFT,
 #ifndef GAMEPAD_MENU
 	   INVERT_PAD_SELECTOR
@@ -985,7 +986,10 @@ CMenuScreenCustom aScreens[] = {
 
 	// MENUPAGE_CHEATS
 
-	{ "WII_CHT", MENUPAGE_NONE, nil, nil,
+	// Parent is the Enhancements page, not MENUPAGE_NONE: GetPreviousPageOption
+	// resolves a NONE parent to the pause menu, so Back out of the cheats would
+	// have skipped straight past the page that opened it.
+	{ "WII_CHT", MENUPAGE_ENHANCEMENTS, nil, nil,
 		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_CENTER,
