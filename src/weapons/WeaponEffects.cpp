@@ -65,6 +65,9 @@ CWeaponEffects::ClearCrossHair(void)
 	gCrossHair.m_bActive = false;
 }
 
+// How much larger than stock to draw the crosshair.  See the use in Render().
+static const float kCrossHairScale = 1.6f;
+
 void
 CWeaponEffects::Render(void)
 {
@@ -105,6 +108,21 @@ CWeaponEffects::Render(void)
 		if ( CSprite::CalcScreenCoors(gCrossHair.m_vecPos, &pos, &w, &h, true) )
 		{
 			PUSH_RENDERGROUP("CWeaponEffects::Render");
+
+			// The stock size is a couple of pixels at 480i, which is not something you
+			// can hold a TV at and aim with -- and on this port the crosshair is the
+			// pointer's only aiming reference whenever the player is unarmed.
+			//
+			// Scaling w and h scales the circle as well, because it is drawn at
+			// size*w, size*h, so one factor enlarges both and leaves the dot-to-circle
+			// proportion exactly as it was.  The unarmed case is unaffected in the
+			// other direction: its aCrossHairSize entry is 0.0f, so the circle stays
+			// collapsed and only the dot grows.
+			//
+			// No resolution ceiling to worry about: the source is target256, a 256x256
+			// texture, so this stays sharp well past the factor used here.
+			w *= kCrossHairScale;
+			h *= kCrossHairScale;
 
 			float recipz = 1.0f / pos.z;
 			CSprite::RenderOneXLUSprite_Rotate_Aspect(pos.x, pos.y, pos.z,
