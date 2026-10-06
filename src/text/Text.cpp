@@ -195,41 +195,49 @@ WiiFallbackText(const char *key)
 		{ "WII_CVH", "VEHICLES" },
 		{ "WII_CDB", "DEBUG" },
 
-		// Player.  Money has no typed word in the desktop matcher, so it names the effect
-		// only rather than inventing a code that does not exist.
-		{ "WII_HLT", "ASPIRINE - Health" },
-		{ "WII_ARO", "PRECIOUSPROTECTION - Armour" },
-		{ "WII_MON", "MONEY - $250,000" },
-		{ "WII_WPN", "THUGSTOOLS - Weapons 1" },
-		{ "WII_AWP", "OURGODGIVENRIGHTTOBEARARMS - All Weapons" },
-		{ "WII_WUU", "YOUWONTTAKEMEALIVE - Wanted Up" },
-		{ "WII_WDN", "LEAVEMEALONE - Wanted Down" },
-		{ "WII_CHP", "STILLLIKEDRESSINGUP - Change Player" },
-		{ "WII_GRP", "GRIPISEVERYTHING - Strong Grip" },
+		// Each row names the word the engine's own cheat matcher uses for that handler,
+		// so typing the word does the same thing, and then the official effect from the
+		// game's cheat list -- not a paraphrase.  Money has no typed word in the desktop
+		// matcher, so it names the effect only rather than inventing a code that does
+		// not exist.
+		//
+		// Player: Tommy's own health, armour, money, guns, skin, jump and heat.
+		{ "WII_HLT", "ASPIRINE - Full Health" },
+		{ "WII_ARO", "PRECIOUSPROTECTION - Full Armour" },
+		{ "WII_MON", "MONEY - +$250,000" },
+		{ "WII_WPN", "THUGSTOOLS - Weapon Set 1" },
+		{ "WII_CHP", "STILLLIKEDRESSINGUP - Change Character" },
 		{ "WII_KAN", "KANGAROO - High Jump" },
+		{ "WII_WUU", "YOUWONTTAKEMEALIVE - Raise Wanted Level" },
+		{ "WII_WDN", "LEAVEMEALONE - Lower Wanted Level" },
 
-		// World
+		// World: weather and clock, the pedestrian cheats, then the one that levels the
+		// traffic.  OURGODGIVENRIGHTTOBEARARMS arms the pedestrians, it is not a weapon
+		// give, and GRIPISEVERYTHING is a vehicle change -- both used to sit under Player.
 		{ "WII_SUN", "APLEASANTDAY - Sunny" },
 		{ "WII_CLD", "ABITDRIEG - Cloudy" },
 		{ "WII_RAI", "CATSANDDOGS - Rainy" },
 		{ "WII_FOG", "CANTSEEATHING - Foggy" },
-		{ "WII_FWX", "LIFEISPASSINGMEBY - Fast Weather" },
-		{ "WII_MAY", "FIGHTFIGHTFIGHT - Mayhem" },
-		{ "WII_ATK", "NOBODYLIKESME - Everyone Attacks" },
-		{ "WII_BUP", "BIGBANG - Blow Up Cars" },
-		{ "WII_WCL", "SPIDERCAR - Wall Climbing" },
-		{ "WII_NSB", "SEABEDCHEAT - No Sea Bed" },
+		{ "WII_FWX", "LIFEISPASSINGMEBY - Speed Up Clock" },
+		{ "WII_FTM", "ONSPEED - Fast Motion" },
+		{ "WII_STM", "BOOOOOORING - Slow Motion" },
+		{ "WII_MAY", "FIGHTFIGHTFIGHT - Peds Riot" },
+		{ "WII_ATK", "NOBODYLIKESME - Peds Attack You" },
+		{ "WII_AWP", "OURGODGIVENRIGHTTOBEARARMS - Peds Carry Weapons" },
+		{ "WII_BUP", "BIGBANG - Blow Up All Cars" },
 
-		// Vehicles
-		{ "WII_HEL", "CARSAREHELI - All Cars Heli" },
-		{ "WII_RHI", "PANZER - Rhino" },
-		{ "WII_BLD", "TRAVELINSTYLE - Bloodra" },
-		{ "WII_CCB", "COMEFLYWITHME - Chitty Chitty" },
+		// Vehicles: the spawns, then the ones that change how a car drives.
+		{ "WII_RHI", "PANZER - Rhino Tank" },
+		{ "WII_BLD", "TRAVELINSTYLE - Bloodring Banger" },
+		{ "WII_CCB", "COMEFLYWITHME - Flying Cars" },
+		{ "WII_GRP", "GRIPISEVERYTHING - Better Handling" },
+		{ "WII_WCL", "SPIDERCAR - Cars Climb Walls" },
+		{ "WII_HEL", "CARSAREHELI - Cars Fly" },
 
-		// Debug
-		{ "WII_FTM", "ONSPEED - Fast Time" },
-		{ "WII_STM", "BOOOOOORING - Slow Time" },
-		{ "WII_WHL", "WHEELSAREALLINEED - Wheels Only" },
+		// Debug: the render and debug toggles, including the water ones.  Only
+		// WHEELSAREALLINEED is an original code; the other three are the port's own.
+		{ "WII_WHL", "WHEELSAREALLINEED - Invisible Cars" },
+		{ "WII_NSB", "SEABEDCHEAT - Hide Sea Bed" },
 		{ "WII_WLY", "WATERLAYERSCHEAT - Water Layers" },
 		{ "WII_DBG", "PEDDEBUG - Debug Display" },
 	};

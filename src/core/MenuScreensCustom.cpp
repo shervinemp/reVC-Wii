@@ -982,18 +982,21 @@ CMenuScreenCustom aScreens[] = {
 	},
 
 	// MENUPAGE_CHEATS_PLAYER
+	//
+	// Grouped the way the game's own cheat list groups them: Player, World (weather,
+	// clock and pedestrians), Vehicles, and the port's Debug toggles.  A few rows used
+	// to sit wherever they were first added -- the pedestrians-carry-weapons code was
+	// under Player, and the handling change under nothing vehicle-shaped at all.
 
 	{ "WII_CPL", MENUPAGE_CHEATS, nil, nil,
 		WII_CHEAT_ROW("WII_HLT", WiiCheat_Health)
 		WII_CHEAT_ROW("WII_ARO", WiiCheat_Armour)
 		WII_CHEAT_ROW("WII_MON", WiiCheat_Money)
 		WII_CHEAT_ROW("WII_WPN", WiiCheat_WeaponCheat1)
-		WII_CHEAT_ROW("WII_AWP", WiiCheat_WeaponsForAll)
+		WII_CHEAT_ROW("WII_CHP", WiiCheat_ChangePlayer)
+		WII_CHEAT_ROW("WII_KAN", WiiCheat_Kangaroo)
 		WII_CHEAT_ROW("WII_WUU", WiiCheat_WantedLevelUp)
 		WII_CHEAT_ROW("WII_WDN", WiiCheat_WantedLevelDown)
-		WII_CHEAT_ROW("WII_CHP", WiiCheat_ChangePlayer)
-		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
-		WII_CHEAT_ROW("WII_KAN", WiiCheat_Kangaroo)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
@@ -1005,34 +1008,36 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_RAI", WiiCheat_Rainy)
 		WII_CHEAT_ROW("WII_FOG", WiiCheat_Foggy)
 		WII_CHEAT_ROW("WII_FWX", WiiCheat_FastWeather)
+		WII_CHEAT_ROW("WII_FTM", WiiCheat_FastTime)
+		WII_CHEAT_ROW("WII_STM", WiiCheat_SlowTime)
 		WII_CHEAT_ROW("WII_MAY", WiiCheat_Mayhem)
 		WII_CHEAT_ROW("WII_ATK", WiiCheat_EverybodyAttacksPlayer)
+		WII_CHEAT_ROW("WII_AWP", WiiCheat_WeaponsForAll)
 		WII_CHEAT_ROW("WII_BUP", WiiCheat_BlowUpCars)
-		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
-		WII_CHEAT_ROW("WII_NSB", WiiCheat_NoSeaBed)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_VEHICLES
 
 	{ "WII_CVH", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
 		WII_CHEAT_ROW("WII_RHI", WiiCheat_Rhino)
 		WII_CHEAT_ROW("WII_BLD", WiiCheat_Bloodra)
 		WII_CHEAT_ROW("WII_CCB", WiiCheat_ChittyChittyBangBang)
+		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
+		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
+		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_DEBUG
 	//
-	// The last four are the render and debug toggles the original also exposed as
-	// button sequences.  They are here rather than hidden because on this port they
-	// are the only way to reach anything like a debug view at all.
+	// The render and debug toggles the original also exposed as button sequences.  They
+	// are here rather than hidden because on this port they are the only way to reach
+	// anything like a debug view at all.
 
 	{ "WII_CDB", MENUPAGE_CHEATS, nil, nil,
-		WII_CHEAT_ROW("WII_FTM", WiiCheat_FastTime)
-		WII_CHEAT_ROW("WII_STM", WiiCheat_SlowTime)
 		WII_CHEAT_ROW("WII_WHL", WiiCheat_OnlyRenderWheels)
+		WII_CHEAT_ROW("WII_NSB", WiiCheat_NoSeaBed)
 		WII_CHEAT_ROW("WII_WLY", WiiCheat_RenderWaterLayers)
 		WII_CHEAT_ROW("WII_DBG", WiiCheat_SwitchDebugDisplay)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
