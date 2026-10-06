@@ -21,15 +21,6 @@ uint32 nativeDisplayListBuildCount;
 uint32 nativeDisplayListCallCount;
 uint32 nativeDisplayListFallbackCount;
 
-// A/B switch for the cached display-list path.  At 0 the recording step is
-// skipped, so every mesh keeps displayList == nil and drawNativeMeshSimple
-// takes its immediate path -- nothing reaches the GPU through GX_CallDispList.
-// The question this answers: the freeze is a GPU lock-up at the present, and a
-// display list is the one command stream this port synthesises and hands
-// straight to the GPU.  If disabling it stops the freeze, that path is the
-// culprit.  Set back to 1 to restore the normal path.
-#define GX_DISPLAY_LISTS_ENABLED 0
-
 static uintptr
 align32(uintptr p)
 {
@@ -61,7 +52,6 @@ estimateDisplayListSize(const InstanceDataHeader *header,
 	return align32Size((uint32)bytes);
 }
 
-#if GX_DISPLAY_LISTS_ENABLED
 static bool32
 recordDisplayList(InstanceDataHeader *header, InstanceData *mesh)
 {
@@ -115,7 +105,6 @@ recordDisplayList(InstanceDataHeader *header, InstanceData *mesh)
 	}
 	return 0;
 }
-#endif
 
 void
 freeNativeDisplayLists(InstanceDataHeader *header)
@@ -163,22 +152,11 @@ prepareNativeGeometryForRender(InstanceDataHeader *header)
 		             header->numIndices*sizeof(uint16));
 	header->vertexCacheDirty = 1;
 
-#if GX_DISPLAY_LISTS_ENABLED
 	for(uint32 i = 0; i < header->numMeshes; i++){
 		InstanceData *mesh = &header->meshes[i];
 		if(mesh->displayList == nil)
 			recordDisplayList(header, mesh);
 	}
-#else
-	// Display lists are off for this build, so every mesh draws through the
-	// immediate path in drawNativeMeshSimple.  Report once, so the log says
-	// which mode produced the run rather than leaving it to be inferred.
-	static bool32 displayListDisabledReported;
-	if(!displayListDisabledReported){
-		displayListDisabledReported = 1;
-		SYS_Report("WII GX: display lists DISABLED (A/B, immediate path only)\n");
-	}
-#endif
 }
 
 }
