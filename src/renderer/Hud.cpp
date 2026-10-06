@@ -243,10 +243,11 @@ void CHud::Draw()
 		eWeaponType WeaponType = playerPed->GetWeapon()->m_eWeaponType;
 		int32 Mode = TheCamera.Cams[TheCamera.ActiveCam].Mode;
 
-		// The point the crosshair is at.  The reticle, the first-person sights and the
-		// Wiimote pointer's dot all sit here, so it is worked out once.  The dot used
-		// to compute its own anchor and miss the aspect-ratio correction the reticle
+		// The point the third-person crosshair is at.  The reticle and the Wiimote
+		// pointer's dot both sit here, so it is worked out once.  The dot used to
+		// compute its own anchor and miss the aspect-ratio correction the reticle
 		// applies, which left it a couple of pixels off the middle of the circle.
+		// (The first-person sights are drawn about the centre of the screen instead.)
 		float crosshairX = SCREEN_WIDTH * TheCamera.m_f3rdPersonCHairMultX;
 		float crosshairY = SCREEN_HEIGHT * TheCamera.m_f3rdPersonCHairMultY;
 #ifdef ASPECT_RATIO_SCALE

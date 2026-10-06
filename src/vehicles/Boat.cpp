@@ -1466,7 +1466,11 @@ CBoat::DoDriveByShootings(void)
 		if (!anim || !anim->IsRunning()) {
 			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, lookingLeft, true);
+#ifdef NINTENDO_WII
+				WiiDriveByPaceShot(weapon);
+#else
 				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+#endif
 			}
 		}
 	}else{

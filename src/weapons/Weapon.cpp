@@ -471,6 +471,16 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 
 	if ( FireInstantHitFromCar(shooter, left, right) )
 	{
+#ifdef NINTENDO_WII
+		// The car's own shot sound is always a submachine gun's (the vehicle one-shots
+		// in AudioLogic.cpp pick from the SMG slot), which covers everything stock Vice
+		// City lets out of a window.  A gun the "Drive-By Weapons" option lets through
+		// is heard as itself instead, through the driver's sound, which picks by the
+		// weapon in hand.
+		if ( shooter->pDriver && GetInfo()->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN )
+			DMAudio.PlayOneShot(shooter->pDriver->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+		else
+#endif
 		DMAudio.PlayOneShot(shooter->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 
 		if ( m_nAmmoInClip > 0 )
@@ -497,6 +507,29 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 
 	return true;
 }
+
+#ifdef NINTENDO_WII
+// The drive-by loops (CAutomobile, CBike and CBoat::DoDriveByShootings) follow every
+// FireFromCar with "next shot in 70 ms", written over the weapon's timer -- over the
+// reload FireFromCar has just started, too.  That is a submachine gun's rhythm, the
+// only one stock Vice City ever lets out of a car, and a submachine gun keeps it
+// exactly.  Anything else the "Drive-By Weapons" option lets through keeps its own:
+// its firing rate between shots, never quicker than the 70 ms, and its full reload
+// once the clip is empty.  Without this a sniper rifle or a pump shotgun, one round
+// to a clip, fired from a car about ten times a second, each shot at the drive-by's
+// triple damage.
+void
+WiiDriveByPaceShot(CWeapon *weapon)
+{
+	CWeaponInfo *info = weapon->GetInfo();
+	uint32 now = CTimer::GetTimeInMilliseconds();
+	if ( info->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN )
+		weapon->m_nTimer = now + 70;
+	else if ( weapon->m_eWeaponState != WEAPONSTATE_RELOADING )
+		weapon->m_nTimer = now + Max(info->m_nFiringRate, (uint32)70);
+	// else that shot emptied the clip, and the reload's own end stands
+}
+#endif
 
 bool
 CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
@@ -3299,6 +3332,15 @@ CWeapon::HasWeaponAmmoToBeUsed(void)
 bool
 CPed::IsPedDoingDriveByShooting(void)
 {
+#ifdef NINTENDO_WII
+	// A gun the "Drive-By Weapons" option lets out of the window counts the same as
+	// the submachine gun below -- so, among other things, a ped cannot drag the player
+	// out mid-shot with a pistol in hand any more than with an Uzi.
+	if (FindPlayerPed() == this && WiiDriveByWeaponAllowed(GetWeapon()->m_eWeaponType)) {
+		if (TheCamera.Cams[TheCamera.ActiveCam].LookingLeft || TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
+			return true;
+	}
+#endif
 #ifdef FIX_BUGS
 	if (FindPlayerPed() == this && CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN) {
 #else

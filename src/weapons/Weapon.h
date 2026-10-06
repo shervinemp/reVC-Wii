@@ -90,4 +90,11 @@ VALIDATE_SIZE(CWeapon, 0x18);
 
 void FireOneInstantHitRound(CVector *source, CVector *target, int32 damage);
 
+#ifdef NINTENDO_WII
+// For the drive-by loops, in place of their own "next shot in 70 ms": sets when the
+// weapon may fire again after FireFromCar.  A submachine gun gets the stock 70 ms; a
+// gun the "Drive-By Weapons" option lets through keeps its own rate and reload.
+void WiiDriveByPaceShot(CWeapon *weapon);
+#endif
+
 #endif // __GTA_WEAPON_H__

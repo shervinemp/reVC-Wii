@@ -116,9 +116,11 @@ WiiDriveByWeaponAllowed(eWeaponType weaponType)
 		return false;
 	// Only what FireInstantHitFromCar can actually shoot.  It is a hitscan -- it
 	// traces from the car to the target and lands the hit -- so a launcher, a thrown
-	// weapon or a melee item would go through it as if it were a bullet.  What is
-	// left is every gun Vice City lets you carry, which on foot you may use and from
-	// a car the stock game will not.
+	// weapon or a melee item would go through it as if it were a bullet.  The heavy
+	// slot is left out whole: the rocket launcher and the flamethrower are not
+	// hitscans, and a driver does not hold an M60 or a minigun out of a window.  What
+	// is left is every other gun Vice City lets you carry, which on foot you may use
+	// and from a car the stock game will not.
 	switch(CWeaponInfo::GetWeaponInfo(weaponType)->m_nWeaponSlot){
 	case WEAPONSLOT_HANDGUN:
 	case WEAPONSLOT_SHOTGUN:

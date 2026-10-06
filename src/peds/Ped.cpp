@@ -4747,12 +4747,22 @@ void
 CPed::RemoveWeaponWhenEnteringVehicle(void)
 {
 #ifdef NINTENDO_WII
-	// With the "Drive-By Weapons" option on, a weapon the car can actually fire is
-	// left in hand -- and so is its model, which is why the exit path below has to
-	// know not to re-attach it.  A weapon the option does not cover still falls
-	// through to the stock behaviour.
-	if (IsPlayer() && WiiDriveByWeaponAllowed(GetWeapon()->m_eWeaponType))
-		return;
+	// With the "Drive-By Weapons" option on, a gun the car can fire stays in hand,
+	// model and all, rather than being swapped for the submachine gun or put away.
+	// Not while a mission has drive-bys switched off: the car will not fire it then,
+	// so it is put away below as stock.  A weapon the option does not cover falls
+	// through to the stock behaviour too.
+	//
+	// ReplaceWeaponWhenExitingVehicle needs nothing to match.  A submachine gun there
+	// still gives back whatever was stored for it -- including when it was the stock
+	// path below that switched to it -- and anything else is re-attached, which is
+	// harmless with its model never having left: AddWeaponModel takes the old one off
+	// first.
+	if (IsPlayer() && WiiDriveByWeaponAllowed(GetWeapon()->m_eWeaponType)) {
+		CPlayerInfo *playerInfo = ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed();
+		if (playerInfo == nil || playerInfo->m_bDriveByAllowed)
+			return;
+	}
 #endif
 	if (IsPlayer() && HasWeaponSlot(5) && GetWeapon(5).m_nAmmoTotal > 0 && ((CPlayerPed*)this)->GetPlayerInfoForThisPlayerPed()->m_bDriveByAllowed) {
 		if (m_storedWeapon == WEAPONTYPE_UNIDENTIFIED)
@@ -4767,13 +4777,6 @@ void
 CPed::ReplaceWeaponWhenExitingVehicle(void)
 {
 	eWeaponType weaponType = GetWeapon()->m_eWeaponType;
-
-#ifdef NINTENDO_WII
-	// Kept on entry (see RemoveWeaponWhenEnteringVehicle): its model is still
-	// attached, so there is nothing to restore or re-attach.
-	if (IsPlayer() && WiiDriveByWeaponAllowed(weaponType))
-		return;
-#endif
 
 	// If it's Uzi, we may have stored weapon. Uzi is the only gun we can use in car.
 	if (IsPlayer() && GetWeaponSlot(weaponType) == WEAPONSLOT_SUBMACHINEGUN) {

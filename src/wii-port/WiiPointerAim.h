@@ -26,11 +26,11 @@ extern int8_t WiiPointerBox;
 extern int8_t WiiAimInCar;
 
 // The "Drive-By Weapons" row on the Mouse/IR page, persisted to the INI.  Vice City
-// only lets the driver fire a submachine gun out of a side window.  With this on, any
-// weapon the drive-by fire path can actually shoot -- the handguns, shotguns,
-// submachine guns, rifles and sniper rifles -- can be used from a car, the way the
-// games after Vice City allow.  Off is stock Vice City.  See WiiDriveByWeaponAllowed
-// in WeaponInfo.h.
+// only lets the driver fire a submachine gun out of a side window.  With this on, the
+// handguns, shotguns, rifles and sniper rifles can be used from a car too, the way the
+// games after Vice City allow, each at its own rate of fire and with its own reload.
+// Melee, thrown and heavy weapons stay out.  Off is stock Vice City.  See
+// WiiDriveByWeaponAllowed in WeaponInfo.h and WiiDriveByPaceShot in Weapon.h.
 extern int8_t WiiDriveByAnyWeapon;
 
 // True while that is in force: the Standard method with Pointer Aim and Aim In Car all
