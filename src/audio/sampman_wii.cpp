@@ -12,6 +12,7 @@
 #include "sampman.h"
 #include "AudioManager.h"
 #include "wii-port/WiiLog.h"
+#include "wii-port/WiiSpeaker.h"
 #include "WiiAudioStreaming.h"
 #include "WiiSfxCache.h"
 
@@ -943,6 +944,15 @@ cSampleManager::SetStreamRemoteCall(bool8 on, uint8 stream)
 {
 	ASSERT(stream < MAX_STREAMS);
 	audioStreaming.SetRemoteCall(on != FALSE, stream);
+	if(on){
+		// The remote must be powered before the line's first word, and powering it is
+		// asynchronous.  This is the moment the game says "this stream is a phone
+		// call", which is well before WiiSpeakerBeginCall runs at stream start, so the
+		// speaker is brought up here.  The payphone-pickup path used to be the only
+		// place that ever did this, which is why a mission cellphone call -- which has
+		// no pickup -- never reached the remote at all.
+		WiiSpeakerWake();
+	}
 }
 
 void

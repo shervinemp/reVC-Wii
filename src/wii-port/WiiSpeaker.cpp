@@ -282,7 +282,7 @@ encodeCall(const s16 *samples, u32 count)
 	s_call.encoderFresh = false;
 	s_call.written += pairs/2;
 
-	if(!s_call.started){
+	if(!s_call.started && s_state == STATE_ON){
 		// The first of the line is in place: let libogc start reading.
 		const u64 now = gettime();
 		WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
@@ -361,7 +361,10 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	releaseCallBuffer();
 	// Only a speaker that is already up, and nothing else still streaming: a line
 	// that cannot start at its first word is better left on the TV than joined late.
-	if(s_call.active || s_call.buffer != nullptr || s_state != STATE_ON || gettime() < s_clipEnd)
+	// Waiting for the speaker to finish powering up is allowed: the line is buffered and
+	// starts streaming the moment it is up (see encodeCall).  Refusing a warming speaker
+	// here is what a call arriving during power-up used to hit.
+	if(s_call.active || s_call.buffer != nullptr || s_state == STATE_OFF || gettime() < s_clipEnd)
 		return false;
 	u32 expansion;
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
@@ -472,6 +475,11 @@ WiiSpeakerService(void)
 		}
 		s_state = STATE_ON;
 		s_deadline = now + millisecs_to_ticks(kLingerMs);
+		// A clip that waited out this power-up starts its own age clock now, rather than
+		// being judged against the moment it was asked for.  Enabling the speaker is
+		// allowed to take kWarmupTimeoutMs, which is longer than the ring's whole
+		// tolerance, so a lone ring was always discarded before it could ever play.
+		s_pendingTime = now;
 	}
 
 	// Whatever waited too long, through warm-up or behind another clip, is dropped.

@@ -10263,8 +10263,14 @@ cAudioManager::ProcessMissionAudioSlot(uint8 slot)
 #else
 #ifdef AUDIO_WII
 					// A phone call plays through the Wiimote as well (see WiiSpeaker.h).
-					SampleManager.SetStreamRemoteCall(m_nMissionAudioSampleIndex[slot] >= SFX_MISSION_MOB_01A &&
-						m_nMissionAudioSampleIndex[slot] <= SFX_MISSION_MOB_99A, slot + 1);
+					// The mobile ring (mobring) is a streamed mission sound on the same
+					// path, and it sits just below the MOB range, so the range check alone
+					// left the ring on the TV while the call it introduced went to the
+					// remote.  It is not one of the MOB_xx call lines, so it is named
+					// rather than folded into the range.
+					const int32 phoneAudio = m_nMissionAudioSampleIndex[slot];
+					SampleManager.SetStreamRemoteCall(phoneAudio == SFX_MISSION_MOBR1 ||
+						(phoneAudio >= SFX_MISSION_MOB_01A && phoneAudio <= SFX_MISSION_MOB_99A), slot + 1);
 #endif
 					SampleManager.StartPreloadedStreamedFile(slot + 1);
 #endif
