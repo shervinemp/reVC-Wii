@@ -286,6 +286,13 @@ DrawCoopMarks(void)
 			engaged ? CRGBA(255, 70, 70, 255) : kCoopColours[i],
 			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
 	}
+
+	// DrawRect, under the pips, leaves depth testing on and, for an opaque colour,
+	// vertex alpha off.  Hand the rest of the HUD the same state the single-player
+	// pointer mark does.
+	RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
 }
 
 void CHud::Draw()

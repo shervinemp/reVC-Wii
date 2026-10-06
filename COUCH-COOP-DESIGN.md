@@ -169,6 +169,11 @@ from the look-left/look-right buttons directly, the way the engine already does
 it for its own top-down and cinematic cameras, instead of from which way the car
 camera has swung.
 
+A Rhino's turret and a fire truck's hose are turned with the pad, as in stock Vice
+City. AIM IN CAR otherwise hands them to the car camera that follows the pointer,
+which does not run under the shared one, so `CCamera::UseFreeCarCam` answers no
+while co-op is running.
+
 ### Weapons
 
 Pickups, shops and scripts all hand weapons to `FindPlayerPed()`, and that is

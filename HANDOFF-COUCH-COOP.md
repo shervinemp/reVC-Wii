@@ -8,9 +8,8 @@ beside this file.
 
 | | |
 |---|---|
-| base | rebased onto `definitive-qol` (shipping) at `580381b5` |
-| last commit | `e8779e9f` |
-| on top of that, **uncommitted** | all three gates: the shared camera rebuilt, a second controller, a second ped |
+| base | rebased onto `definitive-qol` (shipping) at `801aaa35` |
+| state | all three gates committed: the shared camera rebuilt, a second controller, a second ped |
 | builds | yes — `build-wii/src/reVC.dol`, clean, libogc 3.1.0 |
 | **run on hardware** | **no. Not once.** Everything below "builds" is unverified. |
 
@@ -177,14 +176,13 @@ NTFS and read-only on the Wii.
 
 ## Traps that will bite you
 
-- **Line endings.** Some files in this tree are LF and some CRLF, and an editor
-  that rewrites a whole file in the other style produces a whole-file diff. Earlier
-  commits on this branch did exactly that to seven files (`Camera.h`,
-  `PlayerInfo.cpp/.h`, `config.h`, `Ped.cpp`, `PedFight.cpp`, `Weapon.cpp`) and left
-  three more mixed; **the working tree now has them back in the endings they have
-  on `definitive-qol`**, so `git diff 580381b5` is readable again and a future
-  rebase should not need `-X ignore-cr-at-eol`. Keep it that way: edit in place,
-  check `git diff --stat` before committing, and **never `git add -A`.**
+- **Line endings.** The tree is stored LF throughout: `definitive-qol` normalised it
+  (`4a7ae058`, with `* text=auto` in `.gitattributes`), and the rebase onto
+  `801aaa35` took the old whole-file CRLF churn out of this branch's own commits,
+  which is why each of them is a small diff now. What a checkout writes to disk
+  still depends on the machine's `core.autocrlf` / `core.eol`, so a script that
+  assumes LF can rewrite a whole file. Edit in place, check `git diff --stat`
+  before committing, and **never `git add -A`.**
 - **Pad 1 is the engine's debug pad.** Do not route a controller into it. The
   partner is on `PAD_COOP`.
 - **`FREE_CAM` is defined.** Code in the `#else` of `#ifdef FREE_CAM` is dead.
