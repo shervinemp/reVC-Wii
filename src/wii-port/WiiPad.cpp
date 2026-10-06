@@ -1379,7 +1379,13 @@ WiiPadScan(void)
 	// frame in half and left debug.log ending mid-file, which is what a crash
 	// looks like.  SYS_RETURNTOMENU needs the IOS to allow it; if it refuses,
 	// main() simply returns to the loader, so HOME always gets you out.
-	if(WPAD_ButtonsDown(WPAD_CHAN_0) & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME)){
+	// Player 1's HOME only.  The launch remote is player 1's when they are on a
+	// Wiimote, but when they are on a GameCube pad channel 0 belongs to the partner,
+	// and a partner who can reset the console mid-mission is not a thing.  With no
+	// remote of their own player 1 still has the pause menu's Quit.
+	const PadDevice &leadDevice = s_devices[PLAYER_ONE];
+	if(leadDevice.kind == PadDevice::WIIMOTE &&
+	   (WPAD_ButtonsDown(leadDevice.channel) & (WPAD_BUTTON_HOME | WPAD_CLASSIC_BUTTON_HOME))){
 		const bool onQuitScreen = FrontEndMenuManager.m_bMenuActive &&
 			FrontEndMenuManager.m_nCurrScreen == MENUPAGE_EXIT;
 		if(FrontEndMenuManager.m_bGameNotLoaded || FrontEndMenuManager.m_bQuitPromptRequested || onQuitScreen){

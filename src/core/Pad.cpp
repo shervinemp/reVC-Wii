@@ -18,7 +18,6 @@
 #include "Camera.h"
 #include "Game.h"
 #include "CutsceneMgr.h"
-#include "Coop.h"
 #include "Font.h"
 #include "Hud.h"
 #include "Text.h"
@@ -122,12 +121,17 @@ FrontEndPad(void)
 	// there is nothing to reset when they unplug, and player 1's pad is the answer
 	// again the moment they stop.
 	//
-	// Only while the partner is actually a player.  A second controller that is
-	// connected but idle -- the launch remote while its owner plays on a GameCube
-	// pad, which is exactly the case the join button exists to ignore -- would
-	// otherwise nudge the menu every time it was set down on a button.
+	// Only while couch co-op is switched on.  Keyed on the toggle and not on the
+	// partner ped, so the partner can still pause during a mission -- co-op is
+	// suspended then and they are out of the world, but their controller is in
+	// someone's hands and the pause menu is a system screen, not a mission one.
+	//
+	// And not on "a second controller is connected" either: the launch remote left
+	// on while its owner plays on a GameCube pad is connected, and with co-op off
+	// it is nobody's -- the exact idle-controller case the join button exists to
+	// ignore -- so it must not be able to nudge the menu.
 #ifdef NINTENDO_WII
-	if(CCoop::GetPartner() != nil && PadJustPressed(CPad::GetPad(PAD_COOP)))
+	if(CCamera::bWiiCoopCamera && PadJustPressed(CPad::GetPad(PAD_COOP)))
 		return CPad::GetPad(PAD_COOP);
 #endif
 	return CPad::GetPad(0);
