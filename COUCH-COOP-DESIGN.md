@@ -185,22 +185,31 @@ while co-op is running.
 ### Weapons
 
 Pickups, shops and scripts all hand weapons to `FindPlayerPed()`, and that is
-left alone. Instead the partner is given whatever player 1 **gains**: a weapon
-player 1 did not have a moment ago, or the ammo player 1's count just went up by.
-One pickup arms both players; the partner's ammo is still their own to spend.
+left alone. Instead the partner is given the same **weapons** player 1 has —
+one pickup arms both — but the two draw from **one shared pool of ammo**, not a
+copy each. Player 1's `m_nAmmoTotal` is the pool and the partner's is kept
+equal to it, so a burst from one empties the other too.
 
-- A partner who is **new, or who died**, gets a copy of everything player 1 is
-  carrying.
-- A partner who was only **moved** (regrouped, seated, set aside for a mission)
-  keeps their own weapons and ammo, plus whatever player 1 gained while they
-  were away.
-- **Swapping a weapon for another in the same slot** (M4 for a Ruger) passes on
-  only the difference, because that slot's ammo carries over from one weapon to
-  the next for the partner just as it did for player 1.
+- **The clip and the reload stay each player's own**, so a reload still takes
+  its own time and a magazine is not shared. The partner's clip is clamped to
+  what the pool has left, so it can never hold rounds the other player has
+  already spent.
+- The partner's own `m_nAmmoTotal` is only a **cache of the pool**, re-synced
+  every frame (`CCoop::SyncSharedAmmo`). This is the whole of the ammo race:
+  both read and write one count, so two players firing the same gun cannot fire
+  the same round twice.
+- The partner **switches weapons independently** — `ProcessWeaponSwitch` is
+  per-ped and reads their own pad — but draws from the pool.
+- A partner who is **new, or who died**, gets a copy of every weapon player 1 is
+  carrying. A partner who was only **moved** (regrouped, seated, set aside for a
+  mission) keeps their own weapons. The ammo behind them is the pool either way.
 - **A rampage's weapon is not shared.** `CDarkel` puts it in one of player 1's
   slots and takes it out afterwards; that slot is ignored while it lasts
   (`CDarkel::GetFrenzyWeaponSlot`). The partner fights the rampage with their
   own.
+- The **HUD** shows player 1's weapon, which *is* the shared count, so it is the
+  partner's too when they hold the same gun. A different gun in the partner's
+  hands has no ammo readout of its own.
 
 ### The camera
 
@@ -416,8 +425,10 @@ Recorded because each was stated as a verified fact.
 - **Pop-in at the top of the screen when the players are far apart.** Pedestrians
   are created about 40 m from player 1, on the understanding that this is off
   screen; pulled all the way back, the low framing sees further than that.
-- **Ammo for player 2 is not shown anywhere.** The engine switches weapon when
-  one runs dry, which is the only notice they get.
+- **Player 2's ammo readout.** The HUD shows player 1's weapon, which is the
+  shared count; it does not show a different gun in the partner's hands, and
+  the engine switching weapon when the pool runs dry is the only notice they
+  get.
 - **Dynamic control ownership** — SA let the players hand "control" back and
   forth, with the camera following whoever had it. Here the camera frames the
   midpoint and player 1 is the anchor. Framing a player's lock target is not

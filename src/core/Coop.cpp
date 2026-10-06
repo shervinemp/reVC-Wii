@@ -200,7 +200,8 @@ Tell(const char *key)
 	CHud::SetHelpMessage(TheText.Get(key), true);
 }
 
-// What a partner who is only being moved, not replaced, keeps.
+// What a partner who is only being moved, not replaced, keeps.  No ammo: the
+// weapons are, and the ammo is the shared pool.
 struct Carry
 {
 	bool valid;
@@ -208,7 +209,6 @@ struct Carry
 	float armour;
 	int8 slot;
 	eWeaponType weapon[TOTAL_WEAPON_SLOTS];
-	uint32 ammo[TOTAL_WEAPON_SLOTS];
 };
 Carry s_carry;
 // The weapon slot the partner should end up holding once it arrives.
@@ -217,32 +217,52 @@ uint32 s_wantSlotUntil;
 
 // --- the partner's weapons ---------------------------------------------------
 // Pickups, shops and scripts all hand weapons to FindPlayerPed(), and that is
-// left exactly as it is.  Instead the partner is given whatever player 1 GAINS:
-// a weapon player 1 did not have a moment ago, or the ammo player 1's count
-// just went up by.  So one pickup arms both of them, nothing has to learn that
-// a second player exists, and the partner's ammo is still their own to spend.
+// left exactly as it is.  The partner is given the same WEAPONS as player 1 --
+// one pickup arms both -- but the two draw from ONE AMMO POOL, not a copy each.
+//
+// The pool is player 1's m_nAmmoTotal and the partner's is kept equal to it.
+// The clip and the reload timer stay each player's own: they are what makes a
+// reload take time, and sharing the clip too would let two magazines of rounds
+// exist against one count.  When the partner fires, their clip drops as usual
+// and the rounds they used are taken out of the pool at the next
+// CCoop::Update (SyncSharedAmmo).  So a pickup arms both, a burst from one
+// empties the other, and neither gets a second copy of the same rounds.
+//
+// This is why the partner's own total is never trusted: it is only a cache of
+// the pool, re-synced every frame.  A magazine is clamped to what the pool has
+// left, so it cannot hold rounds the other player has already spent.
 //
 // What has been seen of player 1's weapons is kept for as long as the game is,
-// not for as long as the partner is.  A partner who is only being moved --
-// back to player 1, into a seat, out of the way of a mission -- takes their
-// own weapons with them (Carry) and is owed just what player 1 gained while
-// they were away.  One who is new, or who died, starts from nothing seen, and
-// so from a copy of everything player 1 has.
+// not for as long as the partner is.  A partner who is only being moved takes
+// their own weapons with them (Carry); one who is new, or who died, starts
+// from nothing seen and so from a copy of everything player 1 has.
 eWeaponType s_seenType[TOTAL_WEAPON_SLOTS];
-uint32 s_seenAmmo[TOTAL_WEAPON_SLOTS];
-// Owed but not yet handed over, because its model is still streaming in.
+// Owed but not yet handed over, because its model is still streaming in.  Given
+// with no ammo: the pool is the ammo.
 eWeaponType s_owedType[TOTAL_WEAPON_SLOTS];
-uint32 s_owedAmmo[TOTAL_WEAPON_SLOTS];
+// The shared pool as of the last sync, per slot.  -1 means this slot is not
+// shared yet (nothing there, or a weapon the partner has not been given).
+int32 s_poolAmmo[TOTAL_WEAPON_SLOTS];
 
 void
 ForgetArsenal(void)
 {
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 		s_seenType[slot] = WEAPONTYPE_UNARMED;
-		s_seenAmmo[slot] = 0;
 		s_owedType[slot] = WEAPONTYPE_UNARMED;
-		s_owedAmmo[slot] = 0;
+		s_poolAmmo[slot] = -1;
 	}
+}
+
+// Forget the synced pools without forgetting the weapons.  For a partner that
+// is being replaced: the new ped's counts are theirs to start, and the first
+// sync takes them from the pool rather than measuring a spend against a stale
+// figure.
+void
+ForgetSharedAmmo(void)
+{
+	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
+		s_poolAmmo[slot] = -1;
 }
 
 bool
@@ -265,35 +285,18 @@ UpdateArsenal(CPlayerPed *lead, CPlayerPed *partner)
 
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 		const eWeaponType type = lead->GetWeapon(slot).m_eWeaponType;
-		const uint32 ammo = lead->GetWeapon(slot).m_nAmmoTotal;
 		if(slot != frenzySlot){
-			if(MirrorsWeapon(type)){
-				if(type != s_seenType[slot]){
-					// New to player 1, so new to the partner.  Also how a
-					// partner who has just arrived gets everything at once:
-					// nothing has been seen yet, so every slot is new.
-					//
-					// How much of it is another matter.  All of it -- unless
-					// it took the place of a different weapon, in a slot whose
-					// ammo passes from one weapon to the next
-					// (CPed::GiveWeapon).  Then most of player 1's count is
-					// what they already had, the partner's own passes along in
-					// the same way, and what is owed is only the difference.
-					s_owedType[slot] = type;
-					if(s_seenType[slot] != WEAPONTYPE_UNARMED && CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))
-						s_owedAmmo[slot] = ammo > s_seenAmmo[slot] ? ammo - s_seenAmmo[slot] : 0;
-					else
-						s_owedAmmo[slot] = ammo;
-				}else if(ammo > s_seenAmmo[slot]){
-					if(s_owedType[slot] != type){
-						s_owedType[slot] = type;
-						s_owedAmmo[slot] = 0;
-					}
-					s_owedAmmo[slot] += ammo - s_seenAmmo[slot];
-				}
+			if(MirrorsWeapon(type) && type != s_seenType[slot]){
+				// New to player 1, so new to the partner.  Also how a partner
+				// who has just arrived gets everything at once: nothing has
+				// been seen yet, so every slot is new.
+				//
+				// The ammo is not handed over with it; the pool is.  The weapon
+				// goes over empty and SyncSharedAmmo fills it from the pool on
+				// the same frame.
+				s_owedType[slot] = type;
 			}
 			s_seenType[slot] = type;
-			s_seenAmmo[slot] = ammo;
 		}
 
 		if(s_owedType[slot] == WEAPONTYPE_UNARMED)
@@ -311,9 +314,10 @@ UpdateArsenal(CPlayerPed *lead, CPlayerPed *partner)
 			CStreaming::RequestModel(model2, STREAMFLAGS_DEPENDENCY);
 		if((model1 == -1 || CStreaming::HasModelLoaded(model1)) &&
 		   (model2 == -1 || CStreaming::HasModelLoaded(model2))){
-			partner->GiveWeapon(s_owedType[slot], s_owedAmmo[slot], true);
+			partner->GiveWeapon(s_owedType[slot], 0, true);
 			s_owedType[slot] = WEAPONTYPE_UNARMED;
-			s_owedAmmo[slot] = 0;
+			// A different weapon in the slot is a different pool for it.
+			s_poolAmmo[slot] = -1;
 		}
 	}
 
@@ -326,6 +330,55 @@ UpdateArsenal(CPlayerPed *lead, CPlayerPed *partner)
 			s_wantSlot = -1;
 		}else if(CTimer::GetTimeInMilliseconds() > s_wantSlotUntil)
 			s_wantSlot = -1;
+	}
+}
+
+// One ammo count per slot, shared by the two players.  Player 1's m_nAmmoTotal
+// is the pool; the partner's is a cache of it.  What the partner spent last
+// frame is measured against the cache here, at the top of the frame, and taken
+// out of the pool -- so a burst from one empties the other too, and the same
+// rounds cannot be fired twice.
+//
+// The clip is each player's own and is clamped to what the pool has left: a
+// magazine cannot hold rounds the other player has already spent.  The reload
+// timer is untouched, so a reload still takes its own time.
+void
+SyncSharedAmmo(CPlayerPed *lead, CPlayerPed *partner)
+{
+	const int frenzySlot = CDarkel::GetFrenzyWeaponSlot();
+
+	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
+		CWeapon &leadWeapon = lead->GetWeapon(slot);
+		CWeapon &partnerWeapon = partner->GetWeapon(slot);
+		// Only a weapon both of them hold, and never the rampage's, which is
+		// player 1's alone and must not arm the partner when it ends.
+		if(slot == frenzySlot || !MirrorsWeapon(leadWeapon.m_eWeaponType) ||
+		   partnerWeapon.m_eWeaponType != leadWeapon.m_eWeaponType){
+			s_poolAmmo[slot] = -1;
+			continue;
+		}
+
+		if(s_poolAmmo[slot] < 0){
+			// First frame both hold this weapon: the partner starts from the
+			// pool rather than from whatever their own count happened to be.
+			s_poolAmmo[slot] = leadWeapon.m_nAmmoTotal;
+		}else{
+			const int32 spent = s_poolAmmo[slot] - partnerWeapon.m_nAmmoTotal;
+			if(spent > 0)
+				leadWeapon.m_nAmmoTotal = Max(0, leadWeapon.m_nAmmoTotal - spent);
+		}
+		partnerWeapon.m_nAmmoTotal = leadWeapon.m_nAmmoTotal;
+		if(leadWeapon.m_nAmmoInClip > leadWeapon.m_nAmmoTotal)
+			leadWeapon.m_nAmmoInClip = leadWeapon.m_nAmmoTotal;
+		if(partnerWeapon.m_nAmmoInClip > partnerWeapon.m_nAmmoTotal)
+			partnerWeapon.m_nAmmoInClip = partnerWeapon.m_nAmmoTotal;
+		// A weapon the partner emptied and left OUT_OF_AMMO comes back to life
+		// when the pool is refilled.  Player 1's own is reset by CPed::GiveWeapon
+		// when the pickup lands; the partner is not given anything, so it has to
+		// be done here or they would never be able to fire it again.
+		if(partnerWeapon.m_eWeaponState == WEAPONSTATE_OUT_OF_AMMO && partnerWeapon.m_nAmmoTotal > 0)
+			partnerWeapon.m_eWeaponState = WEAPONSTATE_READY;
+		s_poolAmmo[slot] = partnerWeapon.m_nAmmoTotal;
 	}
 }
 
@@ -423,10 +476,8 @@ RemovePartner(const char *why, bool carry)
 		s_carry.health = partner->m_fHealth;
 		s_carry.armour = partner->m_fArmour;
 		s_carry.slot = partner->m_nSelectedWepSlot;
-		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
+		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
 			s_carry.weapon[slot] = partner->GetWeapon(slot).m_eWeaponType;
-			s_carry.ammo[slot] = partner->GetWeapon(slot).m_nAmmoTotal;
-		}
 	}
 
 	// The destructor below gives back the one door the ped was using.  Stepping
@@ -521,14 +572,13 @@ SpawnPartner(CPlayerPed *lead)
 		s_wantSlot = s_carry.slot;
 		// Their weapons come back through the same queue player 1's gains do,
 		// on top of anything that was still on its way to them when they went.
+		// Empty, because the ammo is the shared pool, not a count the partner
+		// owns; the first sync fills them from it.
 		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 			if(s_carry.weapon[slot] == WEAPONTYPE_UNARMED)
 				continue;
-			if(s_owedType[slot] == WEAPONTYPE_UNARMED){
+			if(s_owedType[slot] == WEAPONTYPE_UNARMED)
 				s_owedType[slot] = s_carry.weapon[slot];
-				s_owedAmmo[slot] = s_carry.ammo[slot];
-			}else if(s_owedType[slot] == s_carry.weapon[slot] || CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))
-				s_owedAmmo[slot] += s_carry.ammo[slot];
 		}
 	}else{
 		partner->m_fHealth = CWorld::Players[LEAD].m_nMaxHealth;
@@ -537,6 +587,9 @@ SpawnPartner(CPlayerPed *lead)
 		ForgetArsenal();
 	}
 	s_carry.valid = false;
+	// The new ped's ammo counts start from the pool, not from a spend measured
+	// against the last partner's.
+	ForgetSharedAmmo();
 	s_wantSlotUntil = CTimer::GetTimeInMilliseconds() + 4000;
 
 	if(ride != nil && !SeatPartner(partner, ride)){
@@ -1159,6 +1212,8 @@ CCoop::Update(void)
 				UpdateArsenal(lead, partner);
 		}
 		partner = GetPartner();
+		if(partner != nil)
+			SyncSharedAmmo(lead, partner);
 	}
 	if(partner == nil && padPresent && s_joined && now >= s_spawnTime){
 		if(!SpawnPartner(lead))
