@@ -66,7 +66,13 @@ CWeaponEffects::ClearCrossHair(void)
 }
 
 // How much larger than stock to draw the crosshair.  See the use in Render().
-static const float kCrossHairScale = 1.6f;
+//
+// 3.0, from 1.6, which was not enough.  The crosshair is a world-space marker placed by
+// CWeaponEffects::MarkTarget and sized by the view window at the target's depth, so it
+// shrinks as the target gets further away -- the boost compounds at range rather than
+// being a flat offset, which is why a factor that looked reasonable up close still read
+// as too small.
+static const float kCrossHairScale = 3.0f;
 
 void
 CWeaponEffects::Render(void)
@@ -120,7 +126,10 @@ CWeaponEffects::Render(void)
 			// collapsed and only the dot grows.
 			//
 			// No resolution ceiling to worry about: the source is target256, a 256x256
-			// texture, so this stays sharp well past the factor used here.
+			// texture, and the sprite is drawn far smaller than that, so even at 3x it
+			// is magnifying well inside the source's own resolution.  Raising this much
+			// further is what would eventually soften it -- the asset is not modified,
+			// so there is no higher-resolution source to fall back on.
 			w *= kCrossHairScale;
 			h *= kCrossHairScale;
 
