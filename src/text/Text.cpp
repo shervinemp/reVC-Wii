@@ -175,12 +175,18 @@ WiiFallbackText(const char *key)
 		// The cheat menu.  Audited the same way as the rows above: every key referenced
 		// by the MENUPAGE_CHEATS pages has an entry here, because on an untouched card
 		// none of them exist in the runtime .gxt and an absent key renders as the key
-		// name followed by "missing" -- which for a menu of 28 rows means 28 rows of
-		// noise rather than one obvious fault.
+		// name followed by "missing".
+		//
+		// Each row is "<official cheat word> - <what it does>".  The words are the ones
+		// the desktop build types -- taken from the matcher in Pad.cpp, which records
+		// them as comments beside each handler ("ASPIRINE", "THUGSTOOLS", ...) -- so the
+		// menu says something the player can match against any written cheat list.
 		//
 		// Page titles.  WII_CPL/WII_CWH/WII_CVH/WII_CDB are used twice on purpose, as
 		// the hub's row label and as the sub-page's own title, which is how the options
-		// pages already do it.
+		// pages already do it.  WII_CHP is the Change Player row and is deliberately NOT
+		// WII_CPL: that key belongs to the Player page, and sharing it made the row
+		// render as the word "PLAYER".
 		{ "WII_CHE", "CHEATS" },
 		{ "WII_CHT", "CHEATS" },
 		{ "WII_CPL", "PLAYER" },
@@ -188,41 +194,43 @@ WiiFallbackText(const char *key)
 		{ "WII_CVH", "VEHICLES" },
 		{ "WII_CDB", "DEBUG" },
 
-		// Player
-		{ "WII_HLT", "Health" },
-		{ "WII_ARO", "Armour" },
-		{ "WII_MON", "Money" },
-		{ "WII_WPN", "Weapon" },
-		{ "WII_AWP", "All Weapons" },
-		{ "WII_WUU", "Wanted Level Up" },
-		{ "WII_WDN", "Wanted Level Down" },
-		{ "WII_GRP", "Strong Grip" },
-		{ "WII_KAN", "Kangaroo" },
+		// Player.  Money has no typed word in the desktop matcher, so it names the effect
+		// only rather than inventing a code that does not exist.
+		{ "WII_HLT", "ASPIRINE - Health" },
+		{ "WII_ARO", "PRECIOUSPROTECTION - Armour" },
+		{ "WII_MON", "MONEY - $250,000" },
+		{ "WII_WPN", "THUGSTOOLS - Weapons 1" },
+		{ "WII_AWP", "OURGODGIVENRIGHTTOBEARARMS - All Weapons" },
+		{ "WII_WUU", "YOUWONTTAKEMEALIVE - Wanted Up" },
+		{ "WII_WDN", "LEAVEMEALONE - Wanted Down" },
+		{ "WII_CHP", "STILLLIKEDRESSINGUP - Change Player" },
+		{ "WII_GRP", "GRIPISEVERYTHING - Strong Grip" },
+		{ "WII_KAN", "KANGAROO - High Jump" },
 
 		// World
-		{ "WII_SUN", "Sunny" },
-		{ "WII_CLD", "Cloudy" },
-		{ "WII_RAI", "Rainy" },
-		{ "WII_FOG", "Foggy" },
-		{ "WII_FWX", "Fast Weather" },
-		{ "WII_MAY", "Mayhem" },
-		{ "WII_ATK", "Everybody Attacks Player" },
-		{ "WII_BUP", "Blow Up Cars" },
-		{ "WII_WCL", "Wall Climbing" },
-		{ "WII_NSB", "No Sea Bed" },
+		{ "WII_SUN", "APLEASANTDAY - Sunny" },
+		{ "WII_CLD", "ABITDRIEG - Cloudy" },
+		{ "WII_RAI", "CATSANDDOGS - Rainy" },
+		{ "WII_FOG", "CANTSEEATHING - Foggy" },
+		{ "WII_FWX", "LIFEISPASSINGMEBY - Fast Weather" },
+		{ "WII_MAY", "FIGHTFIGHTFIGHT - Mayhem" },
+		{ "WII_ATK", "NOBODYLIKESME - Everyone Attacks" },
+		{ "WII_BUP", "BIGBANG - Blow Up Cars" },
+		{ "WII_WCL", "SPIDERCAR - Wall Climbing" },
+		{ "WII_NSB", "SEABEDCHEAT - No Sea Bed" },
 
 		// Vehicles
-		{ "WII_HEL", "All Cars Heli" },
-		{ "WII_RHI", "Rhino" },
-		{ "WII_BLD", "Bloodra" },
-		{ "WII_CCB", "Chitty Chitty Bang Bang" },
+		{ "WII_HEL", "CARSAREHELI - All Cars Heli" },
+		{ "WII_RHI", "PANZER - Rhino" },
+		{ "WII_BLD", "TRAVELINSTYLE - Bloodra" },
+		{ "WII_CCB", "COMEFLYWITHME - Chitty Chitty" },
 
 		// Debug
-		{ "WII_FTM", "Fast Time" },
-		{ "WII_STM", "Slow Time" },
-		{ "WII_WHL", "Wheels Only" },
-		{ "WII_WLY", "Water Layers" },
-		{ "WII_DBG", "Debug Display" },
+		{ "WII_FTM", "ONSPEED - Fast Time" },
+		{ "WII_STM", "BOOOOOORING - Slow Time" },
+		{ "WII_WHL", "WHEELSAREALLINEED - Wheels Only" },
+		{ "WII_WLY", "WATERLAYERSCHEAT - Water Layers" },
+		{ "WII_DBG", "PEDDEBUG - Debug Display" },
 	};
 	static wchar converted[ARRAY_SIZE(fallbacks)][96];
 

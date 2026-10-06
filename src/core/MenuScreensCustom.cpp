@@ -983,7 +983,7 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_AWP", 210, WiiCheat_WeaponsForAll)
 		WII_CHEAT_ROW("WII_WUU", 230, WiiCheat_WantedLevelUp)
 		WII_CHEAT_ROW("WII_WDN", 250, WiiCheat_WantedLevelDown)
-		WII_CHEAT_ROW("WII_CPL", 270, WiiCheat_ChangePlayer)
+		WII_CHEAT_ROW("WII_CHP", 270, WiiCheat_ChangePlayer)
 		WII_CHEAT_ROW("WII_GRP", 290, WiiCheat_StrongGrip)
 		WII_CHEAT_ROW("WII_KAN", 310, WiiCheat_Kangaroo)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 330, MENUALIGN_CENTER,
