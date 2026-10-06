@@ -61,19 +61,38 @@ bool CVehicle::m_bDisableMouseSteering = true;
 // twenty degrees off the car's own line.
 static const float kDriveBySideMin = 0.35f;
 
+// The drive-by loops call this once they know the player has a gun the car can
+// fire, which also makes it the one place that sees every drive-by, however its
+// side was picked: the look buttons, or the view.  So it notes the frame, for
+// WiiPlayerLeaningOut.
+static uint32 s_leaningOutFrame;
+static bool s_leaningOutSeen;
+
 void
 CVehicle::PickDriveBySideFromView(bool &left, bool &right)
 {
-	if(left || right || !WiiPointerAimInCar() || !CPad::GetPad(0)->GetCarGunFired())
-		return;
-	const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
-	if(cam.Mode != CCam::MODE_CAM_ON_A_STRING && cam.Mode != CCam::MODE_BEHINDBOAT)
-		return;
-	const float side = DotProduct(cam.Front, GetRight());
-	if(side < -kDriveBySideMin)
-		left = true;
-	else if(side > kDriveBySideMin)
-		right = true;
+	if(!left && !right && WiiPointerAimInCar() && CPad::GetPad(0)->GetCarGunFired()){
+		const CCam &cam = TheCamera.Cams[TheCamera.ActiveCam];
+		if(cam.Mode == CCam::MODE_CAM_ON_A_STRING || cam.Mode == CCam::MODE_BEHINDBOAT){
+			const float side = DotProduct(cam.Front, GetRight());
+			if(side < -kDriveBySideMin)
+				left = true;
+			else if(side > kDriveBySideMin)
+				right = true;
+		}
+	}
+	if(left || right){
+		s_leaningOutFrame = CTimer::GetFrameCounter();
+		s_leaningOutSeen = true;
+	}
+}
+
+// This frame or the last, because a ped asking may be processed before the
+// player's vehicle has had its turn this frame.
+bool
+CVehicle::WiiPlayerLeaningOut(void)
+{
+	return s_leaningOutSeen && CTimer::GetFrameCounter() - s_leaningOutFrame <= 1;
 }
 #endif
 bool CVehicle::bDisableRemoteDetonation;

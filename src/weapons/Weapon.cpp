@@ -3339,13 +3339,15 @@ bool
 CPed::IsPedDoingDriveByShooting(void)
 {
 #ifdef NINTENDO_WII
-	// A gun the "Drive-By Weapons" option lets out of the window counts the same as
-	// the submachine gun below -- so, among other things, a ped cannot drag the player
-	// out mid-shot with a pistol in hand any more than with an Uzi.
-	if (FindPlayerPed() == this && WiiDriveByWeaponAllowed(GetWeapon()->m_eWeaponType)) {
-		if (TheCamera.Cams[TheCamera.ActiveCam].LookingLeft || TheCamera.Cams[TheCamera.ActiveCam].LookingRight)
-			return true;
-	}
+	// Asked of the drive-by loops themselves rather than of the camera.  The test
+	// below only knows the look buttons, which swing the car camera round; a
+	// drive-by aimed with the pointer (AIM IN CAR) never sets those flags, so a
+	// ped could drag the player out in the middle of a burst that the look
+	// buttons would have protected.  The loops
+	// also only get that far with a gun the car can fire, which covers the
+	// "Drive-By Weapons" option's guns as well as the submachine gun.
+	if (FindPlayerPed() == this)
+		return bInVehicle && CVehicle::WiiPlayerLeaningOut();
 #endif
 #ifdef FIX_BUGS
 	if (FindPlayerPed() == this && CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN) {

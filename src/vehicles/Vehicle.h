@@ -328,7 +328,11 @@ public:
 	bool IsBike(void) { return m_vehType == VEHICLE_TYPE_BIKE; }
 #ifdef NINTENDO_WII
 	// AIM IN CAR: lets the view pick the side a drive-by goes out of.  See Vehicle.cpp.
+	// Also notes, whichever way the side was picked, that the player is leaning out.
 	void PickDriveBySideFromView(bool &left, bool &right);
+	// Whether the player was leaning out of a window to shoot this frame or the last.
+	// See CPed::IsPedDoingDriveByShooting.
+	static bool WiiPlayerLeaningOut(void);
 #endif
 
 	void FlyingControl(eFlightModel flightModel);
