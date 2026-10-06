@@ -12,6 +12,9 @@ THANKS GARYODERNICHTS FOR YOUR WIIU VICE CITY PORT (every endian change from him
 ### Requirements
 
 - [devkitPro](https://devkitpro.org/wiki/Getting_Started) with `wii-dev` and `ppc-mpg123`
+- **libogc >= 3.1.0** — required. Older libogc (3.0.4, which shipped with devkitPPC r49.2)
+  has a GX FIFO interrupt bug that freezes the game at the frame present. Update with
+  `pacman -S libogc`. See [WII-LIBOGC-FREEZE.md](WII-LIBOGC-FREEZE.md).
 - Git
 - A legal copy of GTA Vice City PC assets
 - [Dolphin Emulator](https://dolphin-emu.org/) (recommended — load `reVC.dol` directly)
