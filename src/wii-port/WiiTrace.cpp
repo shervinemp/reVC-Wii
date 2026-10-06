@@ -66,6 +66,7 @@ volatile const char *s_zone = "none";
 volatile unsigned int s_zoneSerial;
 volatile int s_streamPending = -1;
 volatile int s_streamLoaded;
+volatile unsigned int s_residentK;
 volatile int s_textures = -1;
 volatile int s_rasters = -1;
 volatile int s_colBytes;
@@ -298,9 +299,10 @@ unsigned int stalledSeconds = 0;
 			continue;
 		stalledSeconds = 0;
 		WiiTraceReport("WII watchdog: no frame for %us, stuck in [%s] zone#%u,"
-		               " streaming %d pending / %d loaded, last log [%s]\n",
+		               " streaming %d pending / %d loaded, resident %uKB,"
+		               " last log [%s]\n",
 		               kStallSeconds, s_zone, s_zoneSerial,
-		               s_streamPending, s_streamLoaded, s_step);
+		               s_streamPending, s_streamLoaded, s_residentK, s_step);
 		// Sampled here, on the way out, rather than on a timer while healthy.  A
 		// hang is exactly when the heap is worth having, and this is the one moment
 		WiiTraceHeap("watchdog");
@@ -324,6 +326,12 @@ WiiTraceSetStreamingState(int pending, int loaded)
 {
 	s_streamLoaded = loaded;
 	s_streamPending = pending;
+}
+
+void
+WiiTraceSetResidentBytes(unsigned int bytes)
+{
+	s_residentK = bytes / 1024;
 }
 
 void

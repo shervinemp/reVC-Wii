@@ -1214,6 +1214,8 @@ main(int argc, char **argv)
 		// that reports zero has nothing to do with streaming at all.
 		WiiTraceSetStreamingState(CStreaming::ms_numModelsRequested,
 		                          CStreaming::ms_numPedsLoaded);
+		// Also on the watchdog line, because that is the only line a hard freeze writes.
+		WiiTraceSetResidentBytes((uint32)CStreaming::ms_memoryUsed);
 		// librw already maintains both of these, so this costs two reads and tells us
 		// whether the arena drain is textures and rasters accumulating -- the leak the
 		// code comment in the camera work names outright -- or something else entirely.

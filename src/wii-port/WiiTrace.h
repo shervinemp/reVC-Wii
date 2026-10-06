@@ -93,6 +93,18 @@ void WiiTraceSetStep(const char *zone);
 // request set is not involved at all.
 void WiiTraceSetStreamingState(int pending, int loaded);
 
+// Bytes the streaming system counts against its own budget -- CStreaming::
+// ms_memoryUsed, which is CD bytes rather than resident memory.
+//
+// On the watchdog line and not only on the stall line, because the stall line needs a
+// frame that completes slowly and a hard freeze completes no frame at all.  In the run
+// that produced the 6.6MB freeze the last stall line was 69 seconds before the freeze,
+// so the budget figure at the moment it mattered was never written down.
+// unsigned int rather than uint32 because this header deliberately does not include
+// common.h, to stay independent of the game; the rest of the file casts to unsigned int
+// for the same reason.
+void WiiTraceSetResidentBytes(unsigned int bytes);
+
 // Publishes librw's live texture and raster counts for the watchdog to report.
 // Passed in for the same reason as the streaming state: this file deliberately has
 // no librw dependency, and the frame loop can read both counters for free.
