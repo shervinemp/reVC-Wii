@@ -1734,6 +1734,13 @@ Idle(void *arg)
 #endif
 
 		tbStartTimer(0, "RenderScene");
+#ifdef NINTENDO_WII
+		// Sub-zones inside "scene draw".  One marker cannot localise a hang across
+		// RenderScene, the env map, the effects, the droplets, motion blur and the 2D
+		// pass -- and "scene draw" is where every hang so far has landed, so it is the
+		// one label that has told us nothing.  A pointer store each, no logging.
+		WiiTraceSetStep("draw:world");
+#endif
 		RenderScene();
 #ifdef NINTENDO_WII
 		if(wiiIdleFrame <= 8)
@@ -1742,9 +1749,15 @@ Idle(void *arg)
 		tbEndTimer("RenderScene");
 
 #ifdef EXTENDED_PIPELINES
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("draw:envmap");
+#endif
 		CustomPipes::EnvMapRender();
 #endif
 
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("draw:effects");
+#endif
 		RenderDebugShit();
 		RenderEffects();
 
@@ -1753,16 +1766,25 @@ Idle(void *arg)
 		        TheCamera.SetMotionBlurAlpha(150);
 
 #ifdef SCREEN_DROPLETS
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("draw:droplets");
+#endif
 		CPostFX::GetBackBuffer(Scene.camera);
 		ScreenDroplets::Process();
 		ScreenDroplets::Render();
 #endif
 
 		tbStartTimer(0, "RenderMotionBlur");
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("draw:blur");
+#endif
 		TheCamera.RenderMotionBlur();
 		tbEndTimer("RenderMotionBlur");
 
 		tbStartTimer(0, "Render2dStuff");
+#ifdef NINTENDO_WII
+		WiiTraceSetStep("draw:hud");
+#endif
 		Render2dStuff();
 		tbEndTimer("Render2dStuff");
 	}else{
