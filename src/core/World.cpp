@@ -2177,7 +2177,7 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 					    vecDistance * (fPower * pEntity->m_fMass / 1400.0f * fDamageMultiplier /
 					                   Max(fMagnitude, 0.01f));
 					vecForceDir.z = Max(vecForceDir.z, 0.0f);
-					if(pEntity == FindPlayerPed()) vecForceDir.z = Min(vecForceDir.z, 1.0f);
+					if(IsAnyPlayerPed(pEntity)) vecForceDir.z = Min(vecForceDir.z, 1.0f);
 					pEntity->ApplyMoveForce(vecForceDir);
 					if(!pEntity->bPedPhysics) {
 						float fBoundRadius = pEntity->GetBoundRadius();

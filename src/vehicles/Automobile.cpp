@@ -432,11 +432,18 @@ CAutomobile::ProcessControl(void)
 			if(GetStatus() == STATUS_PLAYER && !CRecordDataForChase::IsRecording())
 				DoDriveByShootings();
 
-			// Tweak center on mass when driving on two wheels
-			// The stunt timer is only kept for player 1 (CPlayerInfo::Process),
-			// so a partner-driven car does not get this tweak rather than
-			// borrowing player 1's.
-			int twoWheelTime = (pDriver == FindPlayerPed()) ? CWorld::Players[CWorld::PlayerInFocus].m_nTimeNotFullyOnGround : 0;
+			// Tweak center on mass when driving on two wheels.  The timer is
+			// the driver's own, kept here because CPlayerInfo::Process only
+			// runs for the player in focus; with one player this is the same
+			// accumulation Process used to do.
+			CPlayerInfo *driverInfo = pDriver != nil && pDriver->IsPlayer() ? ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed() : nil;
+			if(driverInfo != nil){
+				if(m_nWheelsOnGround < 3)
+					driverInfo->m_nTimeNotFullyOnGround += CTimer::GetTimeStepInMilliseconds();
+				else
+					driverInfo->m_nTimeNotFullyOnGround = 0;
+			}
+			int twoWheelTime = driverInfo != nil ? driverInfo->m_nTimeNotFullyOnGround : 0;
 			if(twoWheelTime > 500 && !IsRealHeli() && !IsRealPlane()){
 				float tweak = Min(twoWheelTime-500, 1000)/500.0f;
 				if(GetUp().z > 0.0f){

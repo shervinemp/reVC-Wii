@@ -1957,6 +1957,14 @@ CVehicle::SetDriver(CPed *driver)
 		}
 	}
 
+	// A fresh stint behind the wheel starts the two-wheel balance timer over,
+	// the same way standing on the pavement does.
+	if(driver != nil && driver->IsPlayer()){
+		CPlayerInfo *info = ((CPlayerPed*)driver)->GetPlayerInfoForThisPlayerPed();
+		if(info != nil)
+			info->m_nTimeNotFullyOnGround = 0;
+	}
+
 	if(IsBike())
 		ApplyMoveForce(-0.02f*driver->m_fMass * GetUp());
 	else

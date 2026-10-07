@@ -130,10 +130,10 @@ CPlayerInfo::Process(void)
 	} else if (m_pPed->m_pMyVehicle->IsCar()) {
 		CAutomobile *car = (CAutomobile*)m_pPed->m_pMyVehicle;
 
-		if (car->m_nWheelsOnGround < 3)
-			m_nTimeNotFullyOnGround += CTimer::GetTimeStepInMilliseconds();
-		else
-			m_nTimeNotFullyOnGround = 0;
+		// m_nTimeNotFullyOnGround is kept per driver in
+		// CAutomobile::ProcessControl, where the balance tweak also reads it:
+		// Process only runs for the player in focus, and a partner's car has
+		// to balance the same way.
 
 		if (car->m_aSuspensionSpringRatioPrev[2] == 1.f && car->m_aSuspensionSpringRatioPrev[3] == 1.f) {
 			if (car->m_aSuspensionSpringRatioPrev[0] < 1.0f && car->m_aSuspensionSpringRatioPrev[1] < 1.0f && car->m_fDamageImpulse == 0.0f) {
