@@ -137,11 +137,12 @@ passenger seat if player 1 is the one in the car, otherwise beside them.
   so a partner still walking over when player 1 got off again would be left on a
   bike with no rider, which the bike's own code does not survive.
 - **Taking their own car.** With no free seat beside player 1 -- player 1 on
-  foot, in a full car, or in a boat -- the same button takes the nearest car
-  within 10 m that another player is not driving and enters it as its **driver**.
-  It is the same enter-car path player 1 uses, carjacking an occupied car if
-  that is the nearest. Only cars: bikes and boats are deliberately left alone
-  (see "Not done"). The camera turns with the car the partner is driving when
+  foot, in a full car, or in a boat -- the same button takes the nearest car or
+  bike within 10 m that another player is not driving and enters it as its
+  **driver**. It is the same enter-car path player 1 uses, carjacking an
+  occupied car if that is the nearest. Boats are deliberately left alone (see
+  "Not done"); a bike is not, because its controls and drive-by come off the
+  rider's own pad now. The camera turns with the car the partner is driving when
   player 1 is not in one, so it can be driven rather than felt for.
 - **Being left behind.** If player 1 simply drives off, the leash does the same
   thing at 28 m: the partner appears in a free seat.
@@ -163,24 +164,31 @@ passenger seat if player 1 is the one in the car, otherwise beside them.
 - **When it goes wrong.** A car on fire puts the partner out of it by itself. One
   killed in the car, or still in it when it explodes, comes back the usual few
   seconds later. If someone else takes the wheel, the partner is brought back to
-  player 1. Player 1's own enter button never picks a car another player is
-  driving, so the two cannot carjack each other.
+  player 1. Player 1's own enter button treats a car the partner is driving as a
+  passenger seat rather than a carjack, and the partner's button never picks a
+  car player 1 is driving, so the two cannot take each other's wheel.
 
-On a bike or a boat the partner is only ever a passenger in player 1's, never
-the driver: the engine makes any player who boards one its driver whatever seat
-they asked for, and the control code for both looks the rider up as player 1.
-For the same reason the partner is never allowed to finish dragging someone out
-of a seat (`CPed::PedSetInCarCB` makes whoever did the dragging the driver).
+A boat is the one vehicle the partner is only ever a passenger in: the engine
+makes any player who boards one its driver whatever seat they asked for, and its
+control code still looks the rider up as player 1. The partner is never allowed
+to finish dragging someone out of a seat (`CPed::PedSetInCarCB` makes whoever
+did the dragging the driver).
 
-Player 1's **drive-by** still works under the shared camera: the side is taken
-from the look-left/look-right buttons directly, the way the engine already does
-it for its own top-down and cinematic cameras, instead of from which way the car
-camera has swung. The partner driving gets the same, from their own pad.
+A **drive-by** under the shared camera works for whoever is driving: the side is
+taken from the look-left/look-right buttons directly, the way the engine already
+does it for its own top-down and cinematic cameras, instead of from which way
+the car camera has swung. With a reticle up -- either player's -- the side comes
+from which side of the car it is on instead, and the shot itself goes where the
+reticle is, within the cone the single-player pointer correction uses; outside
+it the stock window direction stays, because nobody shoots across their own car.
 
-A Rhino's turret and a fire truck's hose are turned with the pad, as in stock Vice
-City. AIM IN CAR otherwise hands them to the car camera that follows the pointer,
-which does not run under the shared one, so `CCamera::UseFreeCarCam` answers no
-while co-op is running.
+A Rhino's turret and a fire truck's hose are turned with the pad, as in stock
+Vice City, and a Rhino's belongs to both players: `TankControl` takes the driver
+from the vehicle, with their own pad. A Wiimote and Nunchuk have no right stick,
+so on that controller the Nunchuk's lean stands in for it in a heli and a tank
+(see the input layer). AIM IN CAR otherwise hands them to the car camera that
+follows the pointer, which does not run under the shared one, so
+`CCamera::UseFreeCarCam` answers no while co-op is running.
 
 ### Weapons
 
@@ -219,8 +227,10 @@ in a car, the lock-on and scope cameras) and stands aside for everything the gam
 points on purpose: garages, the arrest and death cameras, trains, anything a
 script directs.
 
-- Fixed pitch. Only the distance changes: further back as the players separate
-  and as the car speeds up.
+- The pitch is fixed on foot and drops 14° while a moving car is being followed,
+  so driving looks down the road rather than at the roof. The distance comes in
+  when the players are close together, and goes back out as they separate and as
+  the car speeds up.
 - Fixed heading on foot — whatever way the view was facing when it took over.
   It follows a car player 1 is driving, because a camera pitched down from behind
   sees four times as far ahead as behind and driving toward it is driving blind.
@@ -261,9 +271,10 @@ script directs.
   | 2 high | 60° | 26 m |
   | 3 overhead | 78° | 28 m |
 
-  The pitch has been argued both ways on paper more than once and settled
-  neither time; it has to be chosen by looking at it. That is what the button is
-  for.
+  The distances are what the camera stands at six metres apart (the point the
+  view starts backing off); closer together it comes in. The pitch has been
+  argued both ways on paper more than once and settled neither time; it has to
+  be chosen by looking at it. That is what the button is for.
 
   The fourth is there for a different reason. The camera does not turn on
   foot, so a tall building on its side of the street is between it and anyone
@@ -387,24 +398,28 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
-- **Player 2 cannot drive a bike or a boat, and cannot shoot as a car
-  passenger.** Cars they can steal and drive (see "Riding along, and driving").
-  A bike or a boat would need its control code — `CBike::ProcessControl`,
-  `CBoat::ProcessControl` — to find the rider the way `CAutomobile` now does,
-  and both look the rider up as player 1; the partner riding pillion on player
-  1's bike is the one case that already works.
+- **Player 2 cannot drive a boat, and cannot shoot as a car passenger.** Cars
+  and bikes they can steal and drive (see "Riding along, and driving"); a boat
+  would need `CBoat::ProcessControl` to find the rider the way `CAutomobile` and
+  `CBike` now do, and it still looks the rider up as player 1. There is no
+  passenger drive-by in Vice City at all, so a passenger rides and does not
+  shoot, whichever player they are.
 - **Boats and trains**: the partner waits out of the world. They can still be a
-  passenger in player 1's car or pillion on player 1's bike.
-- **A fire truck's hose and a Rhino's turret do nothing for the partner.** Both
-  are turned only when the vehicle is `FindPlayerVehicle()` (player 1's), so a
-  partner who steals one drives it without them.
-- **Pickups** are still player 1's. Weapons are shared (the partner gets the
-  same guns and the same ammo pool), but health, armour and money pickups do
-  nothing for the partner.
-- **No rumble and no remote speaker for player 2.** The engine sends every shake
-  to pad 0, and the speaker code drives one remote.
-- **Player 2 looks exactly like player 1.** The pips are what tells them apart.
-  A different model needs a model slot scripts will not reuse.
+  passenger in player 1's car, pillion on player 1's bike, or riding in a boat.
+- **A fire truck's hose does nothing for the partner.** It is turned only when
+  the vehicle is `FindPlayerVehicle()` (player 1's), so a partner who steals one
+  drives it without it. (The Rhino's turret works for both.)
+- **The wallet and the arsenal are player 1's.** Both players collect pickups
+  now, but weapons and ammo, money, packages and property are credited to player
+  1 -- the partner gets the weapon back through the usual mirror -- so a money
+  pickup the partner walks over is really player 1's. Health, armour, adrenaline
+  and a bribe stay with whoever walked over them.
+- **No remote speaker for player 2.** The speaker code drives one remote, and
+  the partner's would need its own stream. Rumble works for both (gunfire,
+  explosions, the car or bike they are in).
+- **The partner's skin is a choice, not the player's.** The co-op page's Partner
+  Skin picks from the special-character models; the default is player 1's model,
+  which means player 1's skin texture too (`RenderPlayerCB` applies slot 0's).
 - **Indoors** the camera ends up close under low ceilings. It works; it is not
   pretty.
 - **A camera that tilts up by itself near walls.** The honest fix for tall
