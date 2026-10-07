@@ -2638,7 +2638,12 @@ CPed::ProcessControl(void)
 				Wait();
 
 #ifdef CANCELLABLE_CAR_ENTER
-			static bool cancelJack = false;
+			// One per player.  It is a latch set while a quick-jack is playing and
+			// read again a few frames later, and a single shared one let either
+			// player's latch cancel the other's entry.  Only ever touched by a ped
+			// that answers IsPlayer(), so the index is one of the two.
+			static bool cancelJack[2];
+			struct JackSlot { static int Of(CPed *ped) { return CWorld::Players[1].m_pPed == ped ? 1 : 0; } };
 			if (IsPlayer()) {
 				if (EnteringCar() && m_pVehicleAnim) {
 					CPad *pad = GetPadFromPlayer((CPlayerPed*)this);
@@ -2653,29 +2658,29 @@ CPed::ProcessControl(void)
 								vehAnim == ANIM_STD_VAN_OPEN_DOOR_REAR_LHS || vehAnim == ANIM_STD_VAN_OPEN_DOOR_REAR_RHS) {
 
 								if (!m_pMyVehicle->pDriver) {
-									cancelJack = false;
+									cancelJack[JackSlot::Of(this)] = false;
 									bCancelEnteringCar = true;
 								} else
-									cancelJack = true;
+									cancelJack[JackSlot::Of(this)] = true;
 							} else if (vehAnim == ANIM_STD_QUICKJACK && m_pVehicleAnim->GetTimeLeft() > 0.75f) {
-								cancelJack = true;
+								cancelJack[JackSlot::Of(this)] = true;
 							} else if (vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_RHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_RHS) {
 								bCancelEnteringCar = true;
-								cancelJack = false;
+								cancelJack[JackSlot::Of(this)] = false;
 							}
 						}
-						if (cancelJack && vehAnim == ANIM_STD_QUICKJACK && m_pVehicleAnim->GetTimeLeft() > 0.75f && m_pVehicleAnim->GetTimeLeft() < 0.78f) {
-							cancelJack = false;
+						if (cancelJack[JackSlot::Of(this)] && vehAnim == ANIM_STD_QUICKJACK && m_pVehicleAnim->GetTimeLeft() > 0.75f && m_pVehicleAnim->GetTimeLeft() < 0.78f) {
+							cancelJack[JackSlot::Of(this)] = false;
 							QuitEnteringCar();
 							RestorePreviousObjective();
 						}
-						if (cancelJack && (vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_RHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_RHS)) {
-							cancelJack = false;
+						if (cancelJack[JackSlot::Of(this)] && (vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_LHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_LO_RHS || vehAnim == ANIM_STD_CAR_PULL_OUT_PED_RHS)) {
+							cancelJack[JackSlot::Of(this)] = false;
 							bCancelEnteringCar = true;
 						}
 					}
 				} else
-					cancelJack = false;
+					cancelJack[JackSlot::Of(this)] = false;
 			}
 #endif
 
