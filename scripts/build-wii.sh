@@ -25,7 +25,11 @@ fi
 JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 
 echo "Using cmake: ${CMAKE_BIN}"
-"${CMAKE_BIN}" -S "${ROOT}" -B "${BUILD_DIR}" \
+# Ninja, not the default make: this tree reconfigures itself whenever the git
+# sha changes (it is what the banner shows), and GNU make on MSYS chokes on the
+# drive-letter paths in the regenerated compiler_depend.make -- "multiple target
+# patterns" -- which turns every second build into a wipe and reconfigure.
+"${CMAKE_BIN}" -S "${ROOT}" -B "${BUILD_DIR}" -G Ninja \
 	-DREVC_VENDORED_LIBRW=ON \
 	-DWII_GAME_BOOT=ON
 cmake --build "${BUILD_DIR}" -j"${JOBS}"
