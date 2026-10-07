@@ -2722,7 +2722,9 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool l
 	// Couch co-op: a player's drive-by goes where their reticle is, the same
 	// way an on-foot shot does.  The stock direction is square out of the
 	// window, and the cone keeps it for a reticle that is nowhere near it --
-	// a driver cannot shoot across their own car.
+	// a driver cannot shoot across their own car.  A helicopter's cabin is
+	// open, so its passenger's reticle is not coned: they lean out of
+	// whichever side they point at and the shot follows.
 	if ( CCoop::UsesReticleAim() && shooterPed != nil && shooterPed->IsPlayer() )
 	{
 		CPlayerPed *shooterPlayer = shooterPed;
@@ -2732,7 +2734,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool l
 			stock.Normalise();
 			const float heading = CCoop::GetAimHeading(shooterPlayer);
 			CVector aimed(-Sin(heading), Cos(heading), 0.0f);
-			if ( DotProduct(aimed, stock) > kDriveByAimCone )
+			if ( shooter->IsRealHeli() || DotProduct(aimed, stock) > kDriveByAimCone )
 				target = source + info->m_fRange * aimed;
 		}
 	}

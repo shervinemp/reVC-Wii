@@ -3966,6 +3966,22 @@ DoPassengerDriveBy(CVehicle *vehicle, CPlayerPed *passenger, int seat)
 	// CPed::PedSetInCarCB.
 	bool lookingLeft = seat == 1;
 	bool lookingRight = seat != 1;
+	// An open cabin has no window to belong to, so a helicopter passenger
+	// fires out of whichever side they are aiming at, the same way a driver
+	// does; a car's side is the seat's and no other.  A reticle straight
+	// ahead leaves the side to the seat.
+	if(vehicle->IsRealHeli() && CCoop::UsesReticleAim() && CCoop::HasAim(passenger)){
+		const float aimHeading = CCoop::GetAimHeading(passenger);
+		const CVector aimDir(-Sin(aimHeading), Cos(aimHeading), 0.0f);
+		const float side = DotProduct(aimDir, vehicle->GetRight());
+		if(side < -0.3f){
+			lookingLeft = true;
+			lookingRight = false;
+		}else if(side > 0.3f){
+			lookingRight = true;
+			lookingLeft = false;
+		}
+	}
 	CPad *pad = GetPadFromPlayer(passenger);
 
 	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
