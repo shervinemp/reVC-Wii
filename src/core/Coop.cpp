@@ -1384,6 +1384,10 @@ CCoop::Update(void)
 	if(padGone){
 		s_joined = false;
 		s_joinTold = false;
+		// The camera focus was this partner's choice for their drive.  Their
+		// pad is gone, so it goes with them: a partner who joins later gets
+		// player 1's car, not a camera that prefers someone else's.
+		ms_bPartnerFocus = false;
 	}else if(padPresent && !s_joined){
 		const CControllerState &held = partnerPad->NewState;
 		if(held.Cross || held.Circle || held.Square || held.Triangle ||
