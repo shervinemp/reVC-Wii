@@ -1728,7 +1728,7 @@ CAutomobile::ProcessControl(void)
 		if(Abs(m_vecMoveSpeed.x) < 0.005f &&
 		   Abs(m_vecMoveSpeed.y) < 0.005f &&
 		   Abs(m_vecMoveSpeed.z) < 0.005f &&
-		   !(m_fDamageImpulse > 0.0f && m_pDamageEntity == FindPlayerPed()) &&
+		   !(m_fDamageImpulse > 0.0f && IsAnyPlayerAttack(m_pDamageEntity)) &&
 		   (m_aSuspensionSpringRatioPrev[0] < 1.0f || m_aSuspensionSpringRatioPrev[1] < 1.0f ||
 		    m_aSuspensionSpringRatioPrev[2] < 1.0f || m_aSuspensionSpringRatioPrev[3] < 1.0f)){
 			m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
@@ -4373,11 +4373,8 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			shakePad->StartShake(40000/freq, freq);
 		}
 
-		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer){
-			if(m_pDamageEntity != FindPlayerPed() &&
-			   m_pDamageEntity != FindPlayerVehicle())
-				return;
-		}
+		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && !IsAnyPlayerAttack(m_pDamageEntity))
+			return;
 
 		if(m_pDamageEntity && m_pDamageEntity->IsVehicle()){
 			m_nLastWeaponDamage = WEAPONTYPE_RAMMEDBYCAR;
@@ -5042,7 +5039,7 @@ CAutomobile::BlowUpCar(CEntity *culprit)
 	if(!bCanBeDamaged)
 		return;
 
-	if(culprit == FindPlayerPed() || culprit == FindPlayerVehicle()){
+	if(IsAnyPlayerAttack(culprit)){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 20;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 10.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumber()%6000 + 4000;

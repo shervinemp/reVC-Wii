@@ -736,6 +736,24 @@ IsAnyPlayerPed(CEntity *e)
 	return false;
 }
 
+bool
+IsAnyPlayerAttack(CEntity *e)
+{
+	if(e == nil)
+		return false;
+	if(e->IsPed())
+		return ((CPed*)e)->IsPlayer();
+	if(e->IsVehicle()){
+		CVehicle *vehicle = (CVehicle*)e;
+		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
+			return true;
+		for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
+			if(vehicle->pPassengers[i] != nil && vehicle->pPassengers[i]->IsPlayer())
+				return true;
+	}
+	return false;
+}
+
 const CVector &
 FindPlayerCentreOfWorld(int32 player)
 {

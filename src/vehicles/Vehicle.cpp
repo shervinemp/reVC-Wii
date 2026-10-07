@@ -1199,10 +1199,10 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		return;
 	if(GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f)
 		damage *= 0.5f;
-	if (GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && (damagedBy != FindPlayerPed() && damagedBy != FindPlayerVehicle()))
+	if (GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && !IsAnyPlayerAttack(damagedBy))
 		return;
 
-	if(damage > 10.0f && (damagedBy == FindPlayerPed() || damagedBy == FindPlayerVehicle()) && GetStatus() != STATUS_WRECKED){
+	if(damage > 10.0f && IsAnyPlayerAttack(damagedBy) && GetStatus() != STATUS_WRECKED){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 2;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 1.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumberInRange(5, 25);
@@ -1388,10 +1388,12 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 				BlowUpCar(damagedBy);
 		}
 	}
+	// Any player's shots on a police car are the party's crime; the wanted
+	// level lives on player 1, whom the law reads.
 #ifdef FIX_BUGS // removing dumb case when shooting police car in player's own garage gives wanted level
-	if (GetModelIndex() == MI_POLICE && damagedBy == FindPlayerPed() && damagedBy != nil && !bHasBeenOwnedByPlayer)
+	if (GetModelIndex() == MI_POLICE && damagedBy != nil && damagedBy->IsPed() && ((CPed*)damagedBy)->IsPlayer() && !bHasBeenOwnedByPlayer)
 #else
-	if (GetModelIndex() == MI_POLICE && damagedBy == FindPlayerPed())
+	if (GetModelIndex() == MI_POLICE && damagedBy != nil && damagedBy->IsPed() && ((CPed*)damagedBy)->IsPlayer())
 #endif
 		FindPlayerPed()->SetWantedLevelNoDrop(1);
 }

@@ -434,7 +434,9 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				m_eWeaponState = WEAPONSTATE_RELOADING;
 				m_nTimer = CTimer::GetTimeInMilliseconds() + GetInfo()->m_nReload;
 
-				if (shooter == FindPlayerPed())
+				// The fast reload cheat is the profile's, like the weapons and
+				// the ammo: it speeds up every player's reload.
+				if (IsAnyPlayerPed(shooter))
 				{
 					if (CWorld::Players[CWorld::PlayerInFocus].m_bFastReload)
 						m_nTimer = CTimer::GetTimeInMilliseconds() + GetInfo()->m_nReload / 4;
@@ -813,7 +815,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 	{
 		CAutomobile *nearCar = (CAutomobile*)nearVeh;
 		m_eWeaponState = WEAPONSTATE_MELEE_MADECONTACT;
-		if (shooterPed == FindPlayerPed())
+		if (IsAnyPlayerPed(shooterPed))
 		{
 			if (nearCar->IsLawEnforcementVehicle())
 			{
@@ -981,22 +983,25 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 			target *= info->m_fRange / distToTarget;
 			target += *fireSource;
 
-			if (shooter == FindPlayerPed() && inaccuracy != 0.f)
+			// The aim settles as fire is held -- for every player, off their
+			// own attack counter.
+			if (IsAnyPlayerPed(shooter) && inaccuracy != 0.f)
 			{
-				float newInaccuracy = fPlayerAimScale * FindPlayerPed()->m_fAttackButtonCounter * (inaccuracy * Min(1.f, fPlayerAimScaleDist / distToTarget));
-				if (FindPlayerPed()->bIsDucking)
+				CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
+				float newInaccuracy = fPlayerAimScale * shooterPlayer->m_fAttackButtonCounter * (inaccuracy * Min(1.f, fPlayerAimScaleDist / distToTarget));
+				if (shooterPlayer->bIsDucking)
 					newInaccuracy *= 0.4f;
 
 				target.x += CGeneral::GetRandomNumberInRange(-0.15f, 0.15f) * newInaccuracy;
 				target.y += CGeneral::GetRandomNumberInRange(-0.15f, 0.15f) * newInaccuracy;
 				target.z += CGeneral::GetRandomNumberInRange(-0.2f, 0.2f) * newInaccuracy;
-				FindPlayerPed()->m_fAttackButtonCounter += info->m_nDamage * 0.04f;
+				shooterPlayer->m_fAttackButtonCounter += info->m_nDamage * 0.04f;
 			}
 			else if (inaccuracy > 0.f)
 			{
-				if (threatAttack == FindPlayerPed())
+				if (IsAnyPlayerPed(threatAttack))
 				{
-					float speed = Min(0.33f, FindPlayerPed()->m_vecMoveSpeed.Magnitude());
+					float speed = Min(0.33f, threatAttack->m_vecMoveSpeed.Magnitude());
 					inaccuracy *= (0.3f * speed * 100.f / 33.f + 0.8f);
 				}
 				target.x += CGeneral::GetRandomNumberInRange(-0.2f, 0.2f) * inaccuracy;
@@ -1004,7 +1009,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 				target.z += CGeneral::GetRandomNumberInRange(-0.1f, 0.1f) * inaccuracy;
 			}
 
-			if (shooter == FindPlayerPed())
+			if (IsAnyPlayerPed(shooter))
 				CWorld::bIncludeDeadPeds = true;
 
 			CWorld::bIncludeBikers = true;
@@ -1197,7 +1202,7 @@ CWeapon::FireInstantHit(CEntity *shooter, CVector *fireSource)
 	else if (shooter->IsVehicle() && ((CVehicle*)shooter)->pDriver)
 		CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, ((CVehicle*)shooter)->pDriver, 1000);
 
-	if ( shooter == FindPlayerPed() )
+	if ( IsAnyPlayerPed(shooter) )
 	{
 		if ( !(CTimer::GetFrameCounter() & 3) )
 			MakePedsJumpAtShot((CPhysical*)shooter, fireSource, &target);
@@ -1901,7 +1906,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 					target.z += info->m_fRange / distToTarget * (pos.z - target.z);
 				}
 			}
-			if (shooter == FindPlayerPed())
+			if (IsAnyPlayerPed(shooter))
 				CWorld::bIncludeDeadPeds = true;
 
 			CWorld::bIncludeBikers = true;

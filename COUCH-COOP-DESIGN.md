@@ -260,7 +260,7 @@ kept equal to it, so a burst from one empties the others too.
 - **A rampage's weapon is not shared.** `CDarkel` puts it in one of player 1's
   slots and takes it out afterwards; that slot is ignored while it lasts
   (`CDarkel::GetFrenzyWeaponSlot`). The partners fight the rampage with their
-  own.
+  own, and their kills count toward it.
 - The **HUD** shows player 1's weapon, which *is* the shared count, so it is
   everyone's when they hold the same gun. Each partner's own readout is the
   ammo line under their pip (see "Marks on screen").
@@ -420,6 +420,13 @@ nothing.
   player keeps their own record — but a partner's rise is still put on player
   1, because every cop in the city reads player 1's wanted level and nobody
   else's; without that a partner's crime would call nobody.
+- **What counts as a player's.** One profile: a partner's kills count toward
+  the rampage (and the victim blames the actual killer) and into the stats,
+  havoc and media attention are the party's, a script-set "only damaged by
+  player" yields to any player, a partner shooting a police car raises the
+  shared wanted level, and the fast-reload cheat speeds up everyone's reload.
+  The AI and the law still read player 1 alone, by design: they chase and
+  target the anchor.
 - **Notices.** The help box says when a partner joins or leaves — by name, one
   line per partner — when co-op is paused for a mission, and which framing the
   camera button picked.

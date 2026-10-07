@@ -131,6 +131,13 @@ CPlayerPed *FindPlayerPed(void);
 // starts covering player 2 the moment that slot is filled, with no call site
 // needing to change.
 bool IsAnyPlayerPed(CEntity *e);
+
+// Whether an entity is a player's attack: a player ped, or a vehicle a player
+// is in -- driving or riding.  The "who did this" question for stats, for the
+// reactions of what was hit, and for script-set bOnlyDamagedByPlayer.  With one
+// player it is exactly what `== FindPlayerPed() || == FindPlayerVehicle()`
+// answered, and it covers the partners the moment they are in the world.
+bool IsAnyPlayerAttack(CEntity *e);
 CVehicle *FindPlayerVehicle(void);
 CVehicle *FindPlayerTrain(void);
 CEntity *FindPlayerEntity(void);

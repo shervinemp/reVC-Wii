@@ -2528,7 +2528,7 @@ CBike::BlowUpCar(CEntity *culprit)
 
 #ifdef FIX_BUGS
 	// taken from CAutomobile. maybe tweak values?
-	if(culprit == FindPlayerPed() || culprit == FindPlayerVehicle()){
+	if(IsAnyPlayerAttack(culprit)){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 20;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 10.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumber()%6000 + 4000;

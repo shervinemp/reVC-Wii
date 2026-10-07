@@ -37,6 +37,20 @@ PlayerComboSlot(CPed *ped)
 	const int slot = CCoop::GetPlayerIndex(ped);
 	return slot >= 0 ? slot : 0;
 }
+
+// The ped behind an attack: the ped itself, or the driver of the vehicle that
+// dealt it.
+static CPed*
+AttackCulprit(CEntity *damagedBy)
+{
+	if(damagedBy == nil)
+		return nil;
+	if(damagedBy->IsPed())
+		return (CPed*)damagedBy;
+	if(damagedBy->IsVehicle())
+		return ((CVehicle*)damagedBy)->pDriver;
+	return nil;
+}
 RpClump* flyingClumpTemp;
 
 FightMove tFightMoves[NUM_FIGHTMOVES] =
@@ -2695,7 +2709,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	bool willLinger = false;
 	int random;
 
-	if (damagedBy == FindPlayerPed() && damagedBy != this && damage > 3.0f)
+	if (IsAnyPlayerAttack(damagedBy) && damagedBy != this && damage > 3.0f)
 		++CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel;
 
 	if (player == this) {
@@ -2720,7 +2734,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	if (!bUsesCollision && (!bInVehicle || m_nPedState != PED_DRIVING) && method != WEAPONTYPE_DROWNING)
 		return false;
 
-	if (bOnlyDamagedByPlayer && damagedBy != player && damagedBy != FindPlayerVehicle() &&
+	if (bOnlyDamagedByPlayer && !IsAnyPlayerAttack(damagedBy) &&
 		method != WEAPONTYPE_DROWNING && method != WEAPONTYPE_EXPLOSION)
 		return false;
 
@@ -3162,7 +3176,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 						}
 						SetDie(dieAnim, dieDelta, dieSpeed);
 
-						if (damagedBy == FindPlayerPed() && damagedBy != this) {
+						if (IsAnyPlayerAttack(damagedBy) && damagedBy != this) {
 							CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 10;
 							CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 5.f;
 						}
@@ -3178,9 +3192,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 				if (driverOfVeh && driverOfVeh != this && damagedBy)
 					driverOfVeh->ReactToAttack(damagedBy);
 
-				if (damagedBy == FindPlayerPed() || damagedBy && damagedBy == FindPlayerVehicle()) {
+				if (IsAnyPlayerAttack(damagedBy)) {
 					CDarkel::RegisterKillByPlayer(this, method, headShot);
-					m_threatEntity = FindPlayerPed();
+					CPed *culprit = AttackCulprit(damagedBy);
+					m_threatEntity = culprit != nil && culprit->IsPlayer() ? culprit : FindPlayerPed();
 				} else {
 					CDarkel::RegisterKillNotByPlayer(this, method);
 				}
@@ -3200,11 +3215,12 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		m_fHealth = 0.0f;
 		SetDie(dieAnim, dieDelta, dieSpeed);
 
-		if (damagedBy == player || damagedBy && damagedBy == FindPlayerVehicle()) {
+		if (IsAnyPlayerAttack(damagedBy)) {
 			CDarkel::RegisterKillByPlayer(this, method, headShot);
 			CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 10;
 			CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 5.f;
-			m_threatEntity = player;
+			CPed *culprit = AttackCulprit(damagedBy);
+			m_threatEntity = culprit != nil && culprit->IsPlayer() ? culprit : player;
 		} else {
 			CDarkel::RegisterKillNotByPlayer(this, method);
 		}
@@ -3687,7 +3703,14 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 		killMethod = WEAPONTYPE_RAMMEDBYCAR;
 		uint8 randVal = CGeneral::GetRandomNumber() & 3;
 
-		if (car == FindPlayerVehicle()) {
+		// The thump goes to whoever is driving.  Player 1's car keeps its shake
+		// even when they are only riding in it, as it always has.
+		CPad *shakePad = nil;
+		if (car->pDriver != nil && car->pDriver->IsPlayer())
+			shakePad = GetPadFromPlayer((CPlayerPed*)car->pDriver);
+		else if (car == FindPlayerVehicle())
+			shakePad = CPad::GetPad(0);
+		if (shakePad != nil) {
 			float carSpeed = car->m_vecMoveSpeed.Magnitude();
 			uint8 shakeFreq;
 			if (100.0f * carSpeed * 2000.0f / car->m_fMass + 80.0f <= 250.0f) {
@@ -3695,7 +3718,7 @@ CPed::KillPedWithCar(CVehicle *car, float impulse)
 			} else {
 				shakeFreq = 250.0f;
 			}
-			CPad::GetPad(0)->StartShake(40000 / shakeFreq, shakeFreq);
+			shakePad->StartShake(40000 / shakeFreq, shakeFreq);
 		}
 		bIsStanding = false;
 		damageDir = GetLocalDirection(-m_vecMoveSpeed);
