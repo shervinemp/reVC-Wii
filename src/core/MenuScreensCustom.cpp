@@ -159,7 +159,11 @@ const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
 // the models a script will not reuse for a mission, which is what makes them safe
 // to put on a second player ped -- and they are the same ones the
 // STILLLIKEDRESSINGUP chain dresses player 1 in.
-const char *coopSkins[] = { "SAME AS PLAYER 1", "CANDY", "KEN", "LANCE", "PHIL", "DIAZ", "MERCEDES" };
+// Text keys, not the words: the menu looks a select's right-hand value up in the
+// text tables like every other label on the screen, so a literal here renders as
+// "<word> missing" on a card carrying the user's own GXT.  The words are in
+// Text.cpp's fallback table with the rest of the port's.
+const char *coopSkins[] = { "WII_SK0", "WII_SK1", "WII_SK2", "WII_SK3", "WII_SK4", "WII_SK5", "WII_SK6" };
 const char *coopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
 const int COOP_NUM_SKINS = ARRAY_SIZE(coopSkins);
 
