@@ -1478,7 +1478,9 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 			shooter = ((CVehicle*)shooter)->pDriver;
 
 		if ( victim->IsPed() && shooter->IsPed() &&
-			(((CPed*)shooter)->m_nPedType != ((CPed*)victim)->m_nPedType || ((CPed*)shooter)->m_nPedType == PEDTYPE_PLAYER2 ||
+			// IsPlayer covers every co-op slot; the PEDTYPE_PLAYER2 test this
+			// replaces would have left partners two and three out.
+			(((CPed*)shooter)->m_nPedType != ((CPed*)victim)->m_nPedType || ((CPed*)shooter)->IsPlayer() ||
 				!((CPed*)shooter)->IsGangMember() && ((CPed*)shooter)->m_nPedType != PEDTYPE_COP))
 		{
 			CPed *victimPed = (CPed *)victim;

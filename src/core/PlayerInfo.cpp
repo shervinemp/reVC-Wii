@@ -4,6 +4,7 @@
 #include "Bridge.h"
 #include "Camera.h"
 #include "CarCtrl.h"
+#include "Coop.h"
 #include "Cranes.h"
 #include "Darkel.h"
 #include "Explosion.h"
@@ -603,12 +604,12 @@ CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, 
 				continue;
 
 			car->m_scanCode = CWorld::GetCurrentScanCode();
-			// Couch co-op: the partner's car is a candidate now -- player 1 can
-			// ride along in it -- but any other player-driven car is still not.
-			// The enter button means the driver's seat, and aiming it at another
-			// player's car would take the wheel from them.
+			// Couch co-op: any partner's car is a candidate now -- player 1 can
+			// ride along in it -- but a car driven by anybody else is still
+			// not.  The enter button means the driver's seat, and aiming it at
+			// another player's car would take the wheel from them.
 			if (car->pDriver != nil && car->pDriver->IsPlayer() && car->pDriver != ped &&
-			    car->pDriver != CWorld::Players[1].m_pPed)
+			    CCoop::GetPlayerIndex(car->pDriver) < 1)
 				continue;
 			if (car->GetStatus() != STATUS_WRECKED && car->GetStatus() != STATUS_TRAIN_MOVING
 				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->m_vehType == VEHICLE_TYPE_BIKE))) {

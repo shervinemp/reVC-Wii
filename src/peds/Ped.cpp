@@ -2641,9 +2641,14 @@ CPed::ProcessControl(void)
 			// One per player.  It is a latch set while a quick-jack is playing and
 			// read again a few frames later, and a single shared one let either
 			// player's latch cancel the other's entry.  Only ever touched by a ped
-			// that answers IsPlayer(), so the index is one of the two.
-			static bool cancelJack[2];
-			struct JackSlot { static int Of(CPed *ped) { return CWorld::Players[1].m_pPed == ped ? 1 : 0; } };
+			// that answers IsPlayer(), so the index is a player slot.
+			static bool cancelJack[NUMPLAYERS];
+			struct JackSlot { static int Of(CPed *ped) {
+				for(int i = 0; i < NUMPLAYERS; i++)
+					if(CWorld::Players[i].m_pPed == ped)
+						return i;
+				return 0;
+			} };
 			if (IsPlayer()) {
 				if (EnteringCar() && m_pVehicleAnim) {
 					CPad *pad = GetPadFromPlayer((CPlayerPed*)this);

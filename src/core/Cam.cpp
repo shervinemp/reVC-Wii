@@ -1210,8 +1210,12 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		TheCamera.pTargetEntity->RegisterReference(&TheCamera.pTargetEntity);
 	}
 
-	// Where to look: the midpoint of the players, so the view stays on the line
-	// between them and can never end up somewhere neither of them is.
+	// Where to look: the midpoint of player 1 and the partner furthest from
+	// them, so the view stays on the line between the two it can see least far
+	// across and can never end up somewhere nobody is.  With one partner that
+	// is exactly the old framing; the stage that gives the camera its four
+	// player shape (see COOP-4-PLAN.md) replaces this with the centroid and
+	// the widest pair.
 	// Player 1 is wherever the game says the player is: in a car that is the
 	// car, and while they stand holding the remote for an RC one it is that.
 	CVehicle *leadVehicle = lead->bInVehicle ? lead->m_pMyVehicle : nil;
@@ -1222,13 +1226,23 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	CVector partnerPos = leadPos;
 	float separation = 0.0f;
 	CVehicle *partnerVehicle = nil;
-	CPlayerPed *partner = CCoop::GetPartner();
-	if(partner != nil){
-		partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
-		partnerPos = partnerVehicle != nil ? partnerVehicle->GetPosition() : partner->GetPosition();
-		separation = (partnerPos - leadPos).Magnitude();
-		target = (leadPos + partnerPos)*0.5f;
+	CPlayerPed *partner = nil;
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *other = CWorld::Players[i].m_pPed;
+		if(other == nil)
+			continue;
+		CVehicle *vehicle = other->bInVehicle ? other->m_pMyVehicle : nil;
+		const CVector pos = vehicle != nil ? vehicle->GetPosition() : other->GetPosition();
+		const float dist = (pos - leadPos).Magnitude();
+		if(partner == nil || dist > separation){
+			partner = other;
+			partnerVehicle = vehicle;
+			partnerPos = pos;
+			separation = dist;
+		}
 	}
+	if(partner != nil)
+		target = (leadPos + partnerPos)*0.5f;
 
 	const float dt = CTimer::GetTimeStepInSeconds();
 

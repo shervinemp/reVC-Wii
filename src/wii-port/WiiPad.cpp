@@ -581,13 +581,9 @@ CPlayerPed *
 padPlayer(int padID)
 {
 	const int player = playerForPad(padID);
-	if(player == PLAYER_ONE)
-		return FindPlayerPed();
-	if(player == PLAYER_TWO)
-		return CCoop::GetPartner();
-	// Partners two and three arrive with the co-op layer's own four player
-	// loops (stage 3 of the four player work).
-	return nil;
+	if(player < 0)
+		return nil;
+	return CCoop::GetPlayerPed(player);
 }
 
 bool
@@ -1316,8 +1312,15 @@ static bool s_returnToMenu;
 bool
 WiiPadRemoteIsPartners(void)
 {
-	return CCoop::GetPartner() != nullptr && s_devices[PLAYER_TWO].kind == PadDevice::WIIMOTE &&
-		s_devices[PLAYER_TWO].channel == WPAD_CHAN_0;
+	// The speaker drives the first remote, so player 1's shots are silent
+	// through it while that remote is in a partner's hands.
+	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
+		if(CCoop::GetPlayerPed(player) != nullptr &&
+		   s_devices[player].kind == PadDevice::WIIMOTE &&
+		   s_devices[player].channel == WPAD_CHAN_0)
+			return true;
+	}
+	return false;
 }
 
 // --- the Nunchuk's lean ------------------------------------------------------

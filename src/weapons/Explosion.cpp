@@ -353,11 +353,12 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		TheCamera.CamShake(0.2f, pos.x, pos.y, pos.z);
 	} else {
 		TheCamera.CamShake(0.6f, pos.x, pos.y, pos.z);
-		// Both pads.  StartShake_Distance measures from the shared camera, so this
-		// is already a "near the players" test rather than a "near player 1" one;
-		// the pad was the only part of it that was player 1's alone.
+		// Every pad.  StartShake_Distance measures from the shared camera, so
+		// this is already a "near the players" test rather than a "near player
+		// 1" one; the pad was the only part of it that was player 1's alone.
 		CPad::GetPad(0)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
-		CPad::GetPad(PAD_COOP)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
+		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
+			CPad::GetPad(coop)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
 	}
 	return true;
 }

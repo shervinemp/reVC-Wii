@@ -67,15 +67,19 @@ static const float kDriveBySideMin = 0.35f;
 // WiiPlayerLeaningOut -- per player, so one player leaning out does not vouch
 // for the other.
 //
-// Which of the two a ped is: the partner is slot 1, everyone else 0.
+// Which player a ped is: their slot in CWorld::Players.  The caller only ever
+// passes a player, and 0 (player 1) is the safe answer for anything else.
 static int
 LeaningSlot(CPed *ped)
 {
-	return ped != nil && ped == CWorld::Players[1].m_pPed ? 1 : 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(ped != nil && ped == CWorld::Players[i].m_pPed)
+			return i;
+	return 0;
 }
 
-static uint32 s_leaningOutFrame[2];
-static bool s_leaningOutSeen[2];
+static uint32 s_leaningOutFrame[NUMPLAYERS];
+static bool s_leaningOutSeen[NUMPLAYERS];
 
 void
 CVehicle::PickDriveBySideFromView(CPlayerPed *ped, bool &left, bool &right)

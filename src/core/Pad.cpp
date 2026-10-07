@@ -115,24 +115,28 @@ PadJustPressed(CPad *pad)
 CPad *
 FrontEndPad(void)
 {
-	// The pause menu is player 1's pad by default.  Couch co-op's partner has a pad
-	// of their own and may open and drive the menu too, so on the frame the partner
-	// presses a button the menu follows their pad instead.  Stateless on purpose:
-	// there is nothing to reset when they unplug, and player 1's pad is the answer
-	// again the moment they stop.
+	// The pause menu is player 1's pad by default.  Couch co-op's partners
+	// have pads of their own and may open and drive the menu too, so on the
+	// frame a partner presses a button the menu follows their pad instead.
+	// Stateless on purpose: there is nothing to reset when they unplug, and
+	// player 1's pad is the answer again the moment they stop.
 	//
-	// Only while couch co-op is switched on.  Keyed on the toggle and not on the
-	// partner ped, so the partner can still pause during a mission -- co-op is
-	// suspended then and they are out of the world, but their controller is in
-	// someone's hands and the pause menu is a system screen, not a mission one.
+	// Only while couch co-op is switched on.  Keyed on the toggle and not on
+	// the partner ped, so a partner can still pause during a mission -- co-op
+	// is suspended then and they are out of the world, but their controller is
+	// in someone's hands and the pause menu is a system screen, not a mission
+	// one.
 	//
-	// And not on "a second controller is connected" either: the launch remote left
-	// on while its owner plays on a GameCube pad is connected, and with co-op off
-	// it is nobody's -- the exact idle-controller case the join button exists to
-	// ignore -- so it must not be able to nudge the menu.
+	// And not on "a second controller is connected" either: the launch remote
+	// left on while its owner plays on a GameCube pad is connected, and with
+	// co-op off it is nobody's -- the exact idle-controller case the join
+	// button exists to ignore -- so it must not be able to nudge the menu.
 #ifdef NINTENDO_WII
-	if(CCamera::bWiiCoopCamera && PadJustPressed(CPad::GetPad(PAD_COOP)))
-		return CPad::GetPad(PAD_COOP);
+	if(CCamera::bWiiCoopCamera){
+		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
+			if(PadJustPressed(CPad::GetPad(coop)))
+				return CPad::GetPad(coop);
+	}
 #endif
 	return CPad::GetPad(0);
 }

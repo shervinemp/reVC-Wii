@@ -66,9 +66,13 @@ GetPadFromPlayer(CPlayerPed *ped)
 int32
 GetPadIndexFromPlayer(CPlayerPed *ped)
 {
-	// See PAD_COOP for why the partner is not simply on pad 1.
-	if (ped != nil && ped == CWorld::Players[1].m_pPed)
-		return PAD_COOP;
+	// See PAD_COOP for why the partners are not simply on pads 1..3.  Slots
+	// 1..3 of CWorld::Players map to PAD_COOP..PAD_COOP3 in order, which is
+	// also how the pad layer assigns the devices.
+	for (int i = 1; i < NUMPLAYERS; i++) {
+		if (ped != nil && ped == CWorld::Players[i].m_pPed)
+			return PAD_COOP + (i - 1);
+	}
 	return 0;
 }
 

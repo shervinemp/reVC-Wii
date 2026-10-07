@@ -7,10 +7,10 @@ class CPlayerPed;
 class CVector;
 class CVector2D;
 
-// Couch co-op: a second player on the same screen, GTA: San Andreas PS2 style.
-// The design, and the reasoning behind every rule below, is in
+// Couch co-op: up to three partners on the same screen, GTA: San Andreas PS2
+// style.  The design, and the reasoning behind every rule below, is in
 // COUCH-COOP-DESIGN.md.  This class is the session: when co-op is in charge,
-// who the second player is, and where each player is aiming.
+// who the partners are, and where each player is aiming.
 //
 // Three things it deliberately does NOT do, because the rest of the engine
 // relies on them:
@@ -20,14 +20,16 @@ class CVector2D;
 //   on talking to the player they have always talked to.
 //
 //   It never runs during a mission.  The session is off for as long as
-//   CTheScripts::IsPlayerOnAMission() is true, and the partner is taken out of
-//   the world for that time rather than left standing in a scripted scene.
+//   CTheScripts::IsPlayerOnAMission() is true, and the partners are taken out
+//   of the world for that time rather than left standing in a scripted scene.
 //
-//   It never trusts its own pointer to the partner.  The ped lives in
-//   CWorld::Players[1].m_pPed as a registered reference, which the engine nils
-//   the moment the ped is deleted -- and the engine may delete it, for instance
-//   along with a vehicle it was sitting in.  Everything here re-reads that slot
-//   and treats nil as "bring them back", so there is nothing to dangle.
+//   It never trusts its own pointers to the partners.  A partner's ped lives
+//   in its CWorld::Players slot as a registered reference, which the engine
+//   nils the moment the ped is deleted -- and the engine may delete it, for
+//   instance along with a vehicle it was sitting in.  Everything here re-reads
+//   those slots and treats nil as "bring them back", so there is nothing to
+//   dangle.  The partners are slots 1..NUMPLAYERS-1, in PEDTYPE_PLAYER2..4;
+//   slot 0 is player 1.
 //
 // The co-op options that are not pad settings: whether a player's shots can
 // hurt the other, and whether the pair shares one wanted level.  With sharing
@@ -49,17 +51,25 @@ public:
 	// themselves once whatever asked for this is over.
 	static void Suspend(const char *why);
 
-	// Whether the second player is actually in it.  The session is on from the
-	// moment the menu row is set -- the pads are watched and the join is
-	// offered -- but until somebody presses a button on the partner's pad
+	// Whether the shared-view half of the session is on.  The session is on
+	// from the moment the menu row is set -- the pads are watched and the join
+	// is offered -- but until somebody presses a button on a partner's pad
 	// there is one player, and the game is the ordinary game: the follow
 	// camera and its own crosshair, the scopes, the drive-bys.  Everything
-	// that only exists because the view or the pair is shared asks this,
+	// that only exists because the view or the party is shared asks this,
 	// never the menu toggle.
 	static bool PairActive(void);
-	// Player 2's ped, or nil when there is none in the world right now.
+	// The first partner's ped (player 2's), or nil when there is none in the
+	// world right now.  For the callers that still speak of one partner --
+	// the shared camera and the Wiimote speaker; see GetPlayerPed for the
+	// general case.
 	static CPlayerPed *GetPartner(void);
-	// 0 for player 1, 1 for the partner, -1 for anything else.
+	// A player's ped by slot: 0 is player 1, 1..3 the partners.  Nil when that
+	// player is not in the world.  Slots 1..3 are the co-op slots: they hold
+	// a ped only while that partner's controller is there and they have
+	// joined, and are nil otherwise.
+	static CPlayerPed *GetPlayerPed(int player);
+	// 0..3 for a co-op player, -1 for anything else.
 	static int GetPlayerIndex(const CEntity *entity);
 	// Whether damage from one player to another is switched off.  With friendly
 	// fire off, a hit that lands on a player from a player -- or from a car one
@@ -78,9 +88,9 @@ public:
 	// --- from the platform layer --------------------------------------------
 	// Whether a controller for a partner is connected.  Reported every frame;
 	// a partner joins when one has been there a moment and drops out when it
-	// has been gone a while.  The partner index is 0 for the first partner;
-	// only that one is listened to until the co-op layer grows its own four
-	// player loops (stage 3 of the four player work).
+	// has been gone a while.  The partner index is 0 for the first partner,
+	// 1 and 2 for the second and third; that is the pad layer's numbering,
+	// and slot = index + 1 is the player's.
 	static void ReportPartnerPad(int partner, bool present);
 	// Where a player's pointer is on the screen, as fractions of it.  Only
 	// reported while a pointer is actually driving that player's reticle.

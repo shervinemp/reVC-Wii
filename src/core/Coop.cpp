@@ -61,27 +61,31 @@ namespace
 
 enum
 {
+	// Player slots in CWorld::Players: 0 is player 1, 1..NUMPLAYERS-1 are the
+	// partners.  A partner's pad is PAD_COOP + (slot - 1); the pad layer
+	// numbers partners 0..kNumPartners-1, which is its "partner index".
 	LEAD = 0,
 	PARTNER = 1,
+	kNumPartners = NUMPLAYERS - 1,
 };
 
-// --- when the partner comes and goes ---------------------------------------
-// A second controller being connected is not a second player.  A remote is
-// connected whenever it is switched on, and the one that started the game is
-// still switched on while its owner plays on a GameCube pad: taking that for
-// a partner would stand an idle Tommy beside everyone who plays that way.  So
-// the partner arrives when somebody presses a button on it.
+// --- when a partner comes and goes ------------------------------------------
+// A controller being connected is not a player.  A remote is connected
+// whenever it is switched on, and the one that started the game is still
+// switched on while its owner plays on a GameCube pad: taking that for a
+// partner would stand an idle Tommy beside everyone who plays that way.  So a
+// partner arrives when somebody presses a button on their controller.
 //
 // It has to have been there this long before a button counts.  A Wiimote
 // reports its Nunchuk a few frames after it reports itself, and until then it
 // is not yet the controller its player is holding.
 const uint32 kJoinAfterMs = 400;
 // And gone this long before they leave.  Long, because a remote drops out for a
-// second or two whenever its batteries sag or someone sits on it, and losing
-// the partner to that would read as the game throwing them out.
+// second or two whenever its batteries sag or someone sits on it, and losing a
+// partner to that would read as the game throwing them out.
 const uint32 kDropAfterMs = 6000;
 // How long a downed partner is left where they fell before coming back beside
-// player 1.  Long enough for the other player to reach them -- which is what
+// player 1.  Long enough for another player to reach them -- which is what
 // brings them back where they are instead -- and short enough not to sit out.
 const uint32 kDownedBleedMs = 10000;
 // How close another player has to be to a downed partner to bring them back,
@@ -95,20 +99,21 @@ const uint32 kRetryMs = 400;
 // --- staying together --------------------------------------------------------
 // There is one screen, and the world only exists around player 1 -- collision,
 // the map and the traffic are all streamed in around FindPlayerCoors() -- so
-// the two players are kept within reach of each other, in two ways.
+// the party is kept within reach of player 1, in two ways.
 //
-// On foot it is a wall.  Past kTetherStart a player walking away from the
-// other is slowed, and at kTetherMax they are stopped: neither can leave the
-// other behind, and both have to mean to go somewhere to get there.  It holds
-// each of them equally; see CCoop::LimitSeparation.
+// On foot it is a wall.  Past kTetherStart a partner walking away from player
+// 1 is slowed, and at kTetherMax they are stopped; player 1 is held to each
+// partner the same way, so no one can leave the others behind and everyone
+// has to mean to go somewhere to get there.  See CCoop::LimitSeparation.
 //
 // The wall only works on someone walking.  A car driving off, a fall, the
 // blast from an explosion all get past it, and for those there is kLeash: the
-// partner is brought back to player 1 -- into the passenger seat, if player 1
-// is the one in the car.
+// partner is brought back to player 1 -- into a passenger seat, if there is
+// one going.
 //
-// kCoopMaxDistance in Cam.cpp is sized to keep both players on screen out to
-// the wall, in the direction the camera sees least far.
+// kCoopMaxDistance in Cam.cpp is sized to keep two players on screen out to
+// the wall, in the direction the camera sees least far; with more players the
+// tether is the lever, not the zoom (see COOP-4-PLAN.md).
 const float kTetherStart = 18.0f;
 const float kTetherMax = 24.0f;
 const float kLeash = 28.0f;
@@ -134,11 +139,11 @@ const float kTeleportStep = 12.0f;
 // A vehicle slower than this (world units per game step, about 5 m/s) is
 // near enough to stopped for someone to be put down beside it.
 const float kSlowVehicle = 0.1f;
-// How close the partner has to be to get into player 1's car by pressing the
-// button, rather than being expected to walk to it first.
+// How close a partner has to be to get into another player's car by pressing
+// the button, rather than being expected to walk to it first.
 const float kBoardingRange = 12.0f;
-// How close a car has to be for the partner to take it as its driver when
-// there is no seat with player 1.  Matches the box CPlayerInfo::Process scans
+// How close a car has to be for a partner to take it as its driver when there
+// is no seat with another player.  Matches the box CPlayerInfo::Process scans
 // for player 1's own enter/exit button.
 const float kStealRange = 10.0f;
 
@@ -199,43 +204,44 @@ struct CoopAim
 	uint32 assistSightTime;
 	bool assistVisible;
 };
-CoopAim s_aim[2];
+CoopAim s_aim[NUMPLAYERS];
 
-// The partner's controller: whether it is there now, since when, and when it
-// was last there.
-bool s_padHere;
-uint32 s_padSince;
-uint32 s_padLast;
-bool s_padEver;
+// The partners' controllers, one row per partner: whether it is there now,
+// since when, and when it was last there.  Indexed the way the pad layer
+// reports them (0 is the first partner); the player slot is index + 1.
+bool s_padHere[kNumPartners];
+uint32 s_padSince[kNumPartners];
+uint32 s_padLast[kNumPartners];
+bool s_padEver[kNumPartners];
 // Whether somebody has pressed a button on it since it turned up, and whether
 // they have been told that is what it takes.
-bool s_joined;
-bool s_joinTold;
-// When the partner may next be put into the world.
-uint32 s_spawnTime;
+bool s_joined[kNumPartners];
+bool s_joinTold[kNumPartners];
+// When each partner may next be put into the world.
+uint32 s_spawnTime[NUMPLAYERS];
 // When the regroup line was last written.  It is a signal, not a tick: a car
 // being yanked every second must not write it every second too.
 uint32 s_regroupLogTime;
-// When the partner was first seen down -- dead, or out of health in a car with
+// When a partner was first seen down -- dead, or out of health in a car with
 // an order to die on the pavement -- or 0.  Arrested counts too: that is the
-// one of the three nobody can be brought back from.
-uint32 s_downTime;
+// one of the three nobody can be brought back from.  Per partner.
+uint32 s_downTime[NUMPLAYERS];
 // Since when another player has been close enough to revive them, or 0.  A
 // revive needs the hold, so walking past a body does not do it.
-uint32 s_reviveTime;
+uint32 s_reviveTime[NUMPLAYERS];
 // Where a revived partner is put back: where they fell, not beside player 1.
 // Consumed by the next SpawnPartner, and dropped if the session goes down
 // first.
-CVector s_reviveAt;
-bool s_reviveValid;
+CVector s_reviveAt[NUMPLAYERS];
+bool s_reviveValid[NUMPLAYERS];
 // Where player 1 was last frame, to notice a teleport.
 CVector s_leadPos;
 bool s_leadPosValid;
 // Whether the players have been told about the wall yet.
 bool s_tetherTold;
-// Whether the partner's next arrival is news.  Coming back from the dead or
+// Whether a partner's next arrival is news.  Coming back from the dead or
 // from the far end of the street is not; a controller being picked up is.
-bool s_announceJoin;
+bool s_announceJoin[NUMPLAYERS];
 
 // A line in the help box, for the few things that happen with nothing on screen
 // to show for them: a second controller being noticed, the partner going
@@ -247,6 +253,15 @@ Tell(const char *key)
 	CHud::SetHelpMessage(TheText.Get(key), true);
 }
 
+// One help line per partner, so a line about player 3 says player 3.  The
+// words are in Text.cpp's fallback table, since the user's own GXT files are
+// never rewritten.
+const char *const kJoinKeys[kNumPartners] = { "WII_P2J", "WII_P3J", "WII_P4J" };
+const char *const kJoinedKeys[kNumPartners] = { "WII_P2I", "WII_P3I", "WII_P4I" };
+const char *const kLeftKeys[kNumPartners] = { "WII_P2O", "WII_P3O", "WII_P4O" };
+const char *const kDownKeys[kNumPartners] = { "WII_P2D", "WII_P3D", "WII_P4D" };
+const char *const kBackKeys[kNumPartners] = { "WII_P2R", "WII_P3R", "WII_P4R" };
+
 // What a partner who is only being moved, not replaced, keeps.  No ammo: the
 // weapons are, and the ammo is the shared pool.
 struct Carry
@@ -257,103 +272,129 @@ struct Carry
 	int8 slot;
 	eWeaponType weapon[TOTAL_WEAPON_SLOTS];
 };
-Carry s_carry;
-// The weapon slot the partner should end up holding once it arrives.
-int8 s_wantSlot = -1;
-uint32 s_wantSlotUntil;
+Carry s_carry[NUMPLAYERS];
+// The weapon slot each partner should end up holding once it arrives.
+int8 s_wantSlot[NUMPLAYERS];
+uint32 s_wantSlotUntil[NUMPLAYERS];
 
-// --- the partner's weapons ---------------------------------------------------
+// --- the partners' weapons ---------------------------------------------------
 // Pickups, shops and scripts all hand weapons to FindPlayerPed(), and that is
-// left exactly as it is.  The partner is given the same WEAPONS as player 1 --
-// one pickup arms both -- but the two draw from ONE AMMO POOL, not a copy each.
+// left exactly as it is.  Every partner is given the same WEAPONS as player 1
+// -- one pickup arms the party -- but they all draw from ONE AMMO POOL, not a
+// copy each.
 //
-// The pool is player 1's m_nAmmoTotal and the partner's is kept equal to it.
+// The pool is player 1's m_nAmmoTotal and each partner's is kept equal to it.
 // The clip and the reload timer stay each player's own: they are what makes a
-// reload take time, and sharing the clip too would let two magazines of rounds
-// exist against one count.  When the partner fires, their clip drops as usual
-// and the rounds they used are taken out of the pool at the next
-// CCoop::Update (SyncSharedAmmo).  So a pickup arms both, a burst from one
-// empties the other, and neither gets a second copy of the same rounds.
+// reload take time, and sharing the clip too would let several magazines of
+// rounds exist against one count.  When a partner fires, their clip drops as
+// usual and the rounds they used are taken out of the pool at the next
+// CCoop::Update (SyncSharedAmmo).  So a pickup arms the party, a burst from
+// one empties the others, and nobody gets a second copy of the same rounds.
 //
-// This is why the partner's own total is never trusted: it is only a cache of
+// This is why a partner's own total is never trusted: it is only a cache of
 // the pool, re-synced every frame.  A magazine is clamped to what the pool has
-// left, so it cannot hold rounds the other player has already spent.
+// left, so it cannot hold rounds the others have already spent.
 //
 // What has been seen of player 1's weapons is kept for as long as the game is,
-// not for as long as the partner is.  A partner who is only being moved takes
-// their own weapons with them (Carry); one who is new, or who died, starts
-// from nothing seen and so from a copy of everything player 1 has.
+// not for as long as the partners are.  A partner who is only being moved
+// takes their own weapons with them (Carry); one who is new, or who died,
+// starts from a copy of everything player 1 has.
 eWeaponType s_seenType[TOTAL_WEAPON_SLOTS];
-// Owed but not yet handed over, because its model is still streaming in.  Given
-// with no ammo: the pool is the ammo.
-eWeaponType s_owedType[TOTAL_WEAPON_SLOTS];
-// The shared pool as of the last sync, per slot.  -1 means this slot is not
-// shared yet (nothing there, or a weapon the partner has not been given).
-int32 s_poolAmmo[TOTAL_WEAPON_SLOTS];
+// Owed to each partner but not yet handed over, because its model is still
+// streaming in.  Given with no ammo: the pool is the ammo.  One row per
+// player slot; a partner's row survives their being moved (Carry) and is
+// cleared when they are replaced from nothing.
+eWeaponType s_owedType[NUMPLAYERS][TOTAL_WEAPON_SLOTS];
+// The shared pool as of the last sync, per partner per slot.  -1 means this
+// slot is not shared yet for that partner (nothing there, or a weapon they
+// have not been given).
+int32 s_poolAmmo[NUMPLAYERS][TOTAL_WEAPON_SLOTS];
 
 // --- the wanted level ---------------------------------------------------------
-// One heat for the pair, in the direction that matters: a crime by either is
-// the pair's crime, so when either player's level rises both go to the higher
-// of the two -- and the stars on the HUD, player 1's, are the ones the pair is
-// judged by.  Drops are left alone: each level decays on its own, and holding
-// both at the higher of the two every frame would keep the pair wanted for
-// good.
+// One heat for the party, in the direction that matters: a crime by anyone is
+// the party's crime, so when any player's level rises everyone goes to the
+// highest of them -- and the stars on the HUD, player 1's, are the ones the
+// party is judged by.  Drops are left alone: each level decays on its own, and
+// holding everyone at the highest level every frame would keep the party
+// wanted for good.
 //
 // The one cost is a statistic: SetWantedLevel is also what counts
-// CStats::WantedStarsAttained and WantedStarsEvaded, so the pair's crimes and
-// evasions count those twice.  Nothing reads them but the stats screen.
-int32 s_leadWanted;
-int32 s_partnerWanted;
+// CStats::WantedStarsAttained and WantedStarsEvaded, so the party's crimes and
+// evasions count those once per player.  Nothing reads them but the stats
+// screen.
+int32 s_wanted[NUMPLAYERS];
 
 void
-ShareWantedLevel(CPlayerPed *lead, CPlayerPed *partner)
+ShareWantedLevel(void)
 {
-	if(lead->m_pWanted == nil || partner->m_pWanted == nil)
+	CPlayerPed *lead = CWorld::Players[LEAD].m_pPed;
+	if(lead == nil || lead->m_pWanted == nil)
 		return;
 	const int32 leadLevel = lead->m_pWanted->GetWantedLevel();
-	const int32 partnerLevel = partner->m_pWanted->GetWantedLevel();
+	int32 highest = leadLevel;
+	bool rose = leadLevel > s_wanted[LEAD];
+	int32 highestRise = 0;
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *partner = CWorld::Players[i].m_pPed;
+		if(partner == nil || partner->m_pWanted == nil)
+			continue;
+		const int32 level = partner->m_pWanted->GetWantedLevel();
+		if(level > highest)
+			highest = level;
+		if(level > s_wanted[i]){
+			rose = true;
+			if(level > highestRise)
+				highestRise = level;
+		}
+	}
 	if(CoopSharedWanted){
-		if(leadLevel > s_leadWanted || partnerLevel > s_partnerWanted){
-			const int32 level = Max(leadLevel, partnerLevel);
-			if(leadLevel != level)
-				lead->m_pWanted->SetWantedLevel(level);
-			if(partnerLevel != level)
-				partner->m_pWanted->SetWantedLevel(level);
+		if(rose){
+			for(int i = 0; i < NUMPLAYERS; i++){
+				CPlayerPed *ped = CWorld::Players[i].m_pPed;
+				if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() != highest)
+					ped->m_pWanted->SetWantedLevel(highest);
+			}
 		}
 	}else{
-		// With the option off the pair does not share one level: player 1's
-		// crimes are not the partner's, and the partner's record is their own.
-		// But the law is still the pair's problem.  Every cop in the city reads
-		// player 1's wanted level and nobody else's, so a partner's crime the
-		// police never hear about is a crime with no consequence at all.  A
-		// rise of theirs is therefore put on player 1 -- the stars and the
-		// chase both follow -- while a rise of his is not put on them.
-		if(partnerLevel > s_partnerWanted && partnerLevel > leadLevel)
-			lead->m_pWanted->SetWantedLevel(partnerLevel);
+		// With the option off the party does not share one level: player 1's
+		// crimes are not the partners', and each partner's record is their
+		// own.  But the law is still the party's problem.  Every cop in the
+		// city reads player 1's wanted level and nobody else's, so a
+		// partner's crime the police never hear about is a crime with no
+		// consequence at all.  A rise of theirs is therefore put on player 1
+		// -- the stars and the chase both follow -- while a rise of his is
+		// not put on them.
+		if(highestRise > leadLevel)
+			lead->m_pWanted->SetWantedLevel(highestRise);
 	}
-	s_leadWanted = lead->m_pWanted->GetWantedLevel();
-	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if(ped != nil && ped->m_pWanted != nil)
+			s_wanted[i] = ped->m_pWanted->GetWantedLevel();
+	}
+}
+
+// Forget one partner's synced pool without forgetting the weapons.  For a
+// partner that is being replaced: the new ped's counts are theirs to start,
+// and the first sync takes them from the pool rather than measuring a spend
+// against a stale figure.
+void
+ForgetSharedAmmo(int player)
+{
+	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
+		s_poolAmmo[player][slot] = -1;
 }
 
 void
 ForgetArsenal(void)
 {
-	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
-		s_seenType[slot] = WEAPONTYPE_UNARMED;
-		s_owedType[slot] = WEAPONTYPE_UNARMED;
-		s_poolAmmo[slot] = -1;
-	}
-}
-
-// Forget the synced pools without forgetting the weapons.  For a partner that
-// is being replaced: the new ped's counts are theirs to start, and the first
-// sync takes them from the pool rather than measuring a spend against a stale
-// figure.
-void
-ForgetSharedAmmo(void)
-{
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
-		s_poolAmmo[slot] = -1;
+		s_seenType[slot] = WEAPONTYPE_UNARMED;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
+			s_owedType[i][slot] = WEAPONTYPE_UNARMED;
+		ForgetSharedAmmo(i);
+	}
 }
 
 bool
@@ -364,112 +405,175 @@ MirrorsWeapon(eWeaponType type)
 	return type != WEAPONTYPE_UNARMED && type != WEAPONTYPE_DETONATOR && type != WEAPONTYPE_CAMERA;
 }
 
+// Forget what one partner is owed and how their ammo counted, without
+// touching anybody else: for a partner being replaced from nothing.
 void
-UpdateArsenal(CPlayerPed *lead, CPlayerPed *partner)
+ClearArsenalFor(int player)
+{
+	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
+		s_owedType[player][slot] = WEAPONTYPE_UNARMED;
+	ForgetSharedAmmo(player);
+}
+
+// Queue player 1's whole arsenal for one partner: how a partner who has just
+// arrived -- or just been replaced from nothing -- gets everything at once.
+// Handed over empty; the ammo is the shared pool.
+void
+QueueArsenalFor(int player)
+{
+	CPlayerPed *lead = CWorld::Players[LEAD].m_pPed;
+	if(lead == nil)
+		return;
+	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
+		const eWeaponType type = lead->GetWeapon(slot).m_eWeaponType;
+		if(MirrorsWeapon(type))
+			s_owedType[player][slot] = type;
+	}
+}
+
+void
+UpdateArsenal(CPlayerPed *lead)
 {
 	// A rampage puts its own weapon into one of player 1's slots and takes it
 	// out again when it ends.  That slot is not looked at while it lasts:
-	// copying it would leave the partner holding a minigun with thirty thousand
-	// rounds once it was over, and noting it would make player 1's own weapon
-	// coming back afterwards look like a new one.
+	// copying it would leave the partners holding a minigun with thirty
+	// thousand rounds once it was over, and noting it would make player 1's
+	// own weapon coming back afterwards look like a new one.
 	const int frenzySlot = CDarkel::GetFrenzyWeaponSlot();
 
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 		const eWeaponType type = lead->GetWeapon(slot).m_eWeaponType;
 		if(slot != frenzySlot){
 			if(MirrorsWeapon(type) && type != s_seenType[slot]){
-				// New to player 1, so new to the partner.  Also how a partner
-				// who has just arrived gets everything at once: nothing has
-				// been seen yet, so every slot is new.
-				//
-				// The ammo is not handed over with it; the pool is.  The weapon
-				// goes over empty and SyncSharedAmmo fills it from the pool on
-				// the same frame.
-				s_owedType[slot] = type;
+				// New to player 1, so owed to every partner -- including one
+				// who is out of the world for a moment, so whoever replaces
+				// them still gets it.  The drain below skips a partner who
+				// already holds it.
+				for(int i = 1; i < NUMPLAYERS; i++)
+					s_owedType[i][slot] = type;
 			}
 			s_seenType[slot] = type;
 		}
-
-		if(s_owedType[slot] == WEAPONTYPE_UNARMED)
-			continue;
-		// The same wait CPed::RequestDelayedWeapon does, and for the same reason:
-		// a weapon given before its model has loaded is a weapon with nothing to
-		// draw.  Player 1's current gun is always in memory; the rest of what
-		// they carry may not be.
-		const CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(s_owedType[slot]);
-		const int32 model1 = info->m_nModelId;
-		const int32 model2 = info->m_nModel2Id;
-		if(model1 != -1)
-			CStreaming::RequestModel(model1, STREAMFLAGS_DEPENDENCY);
-		if(model2 != -1)
-			CStreaming::RequestModel(model2, STREAMFLAGS_DEPENDENCY);
-		if((model1 == -1 || CStreaming::HasModelLoaded(model1)) &&
-		   (model2 == -1 || CStreaming::HasModelLoaded(model2))){
-			partner->GiveWeapon(s_owedType[slot], 0, true);
-			s_owedType[slot] = WEAPONTYPE_UNARMED;
-			// A different weapon in the slot is a different pool for it.
-			s_poolAmmo[slot] = -1;
-		}
 	}
 
-	// Draw the weapon they were holding, or failing that the one player 1 is,
-	// as soon as it has arrived.  Asked for the way a pickup asks: by naming the
-	// slot and letting CPlayerPed::ProcessWeaponSwitch make the change.
-	if(s_wantSlot >= 0){
-		if(s_wantSlot == WEAPONSLOT_UNARMED || partner->HasWeaponSlot(s_wantSlot)){
-			partner->m_nSelectedWepSlot = s_wantSlot;
-			s_wantSlot = -1;
-		}else if(CTimer::GetTimeInMilliseconds() > s_wantSlotUntil)
-			s_wantSlot = -1;
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *partner = CWorld::Players[i].m_pPed;
+		if(partner == nil)
+			continue;
+		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
+			if(s_owedType[i][slot] == WEAPONTYPE_UNARMED)
+				continue;
+			// The same wait CPed::RequestDelayedWeapon does, and for the same
+			// reason: a weapon given before its model has loaded is a weapon
+			// with nothing to draw.  Player 1's current gun is always in
+			// memory; the rest of what they carry may not be.
+			const CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(s_owedType[i][slot]);
+			const int32 model1 = info->m_nModelId;
+			const int32 model2 = info->m_nModel2Id;
+			if(model1 != -1)
+				CStreaming::RequestModel(model1, STREAMFLAGS_DEPENDENCY);
+			if(model2 != -1)
+				CStreaming::RequestModel(model2, STREAMFLAGS_DEPENDENCY);
+			if((model1 == -1 || CStreaming::HasModelLoaded(model1)) &&
+			   (model2 == -1 || CStreaming::HasModelLoaded(model2))){
+				if(partner->GetWeapon(slot).m_eWeaponType == s_owedType[i][slot]){
+					// Queued while they were out of the world and they already
+					// hold it -- a weapon player 1 lost and picked up again.
+					// Nothing to hand over.
+					s_owedType[i][slot] = WEAPONTYPE_UNARMED;
+				}else{
+					partner->GiveWeapon(s_owedType[i][slot], 0, true);
+					s_owedType[i][slot] = WEAPONTYPE_UNARMED;
+					// A different weapon in the slot is a different pool for it.
+					s_poolAmmo[i][slot] = -1;
+				}
+			}
+		}
+
+		// Draw the weapon they were holding, or failing that the one player 1
+		// is, as soon as it has arrived.  Asked for the way a pickup asks: by
+		// naming the slot and letting CPlayerPed::ProcessWeaponSwitch make
+		// the change.
+		if(s_wantSlot[i] >= 0){
+			if(s_wantSlot[i] == WEAPONSLOT_UNARMED || partner->HasWeaponSlot(s_wantSlot[i])){
+				partner->m_nSelectedWepSlot = s_wantSlot[i];
+				s_wantSlot[i] = -1;
+			}else if(CTimer::GetTimeInMilliseconds() > s_wantSlotUntil[i])
+				s_wantSlot[i] = -1;
+		}
 	}
 }
 
-// One ammo count per slot, shared by the two players.  Player 1's m_nAmmoTotal
-// is the pool; the partner's is a cache of it.  What the partner spent last
-// frame is measured against the cache here, at the top of the frame, and taken
-// out of the pool -- so a burst from one empties the other too, and the same
-// rounds cannot be fired twice.
+// One ammo count per slot, shared by the whole party.  Player 1's m_nAmmoTotal
+// is the pool; each partner's is a cache of it.  What every partner spent last
+// frame is measured against their cache here, at the top of the frame, summed
+// and taken out of the pool -- so a burst from one empties the others too, and
+// the same rounds cannot be fired twice.
 //
 // The clip is each player's own and is clamped to what the pool has left: a
-// magazine cannot hold rounds the other player has already spent.  The reload
+// magazine cannot hold rounds the others have already spent.  The reload
 // timer is untouched, so a reload still takes its own time.
 void
-SyncSharedAmmo(CPlayerPed *lead, CPlayerPed *partner)
+SyncSharedAmmo(CPlayerPed *lead)
 {
 	const int frenzySlot = CDarkel::GetFrenzyWeaponSlot();
 
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 		CWeapon &leadWeapon = lead->GetWeapon(slot);
-		CWeapon &partnerWeapon = partner->GetWeapon(slot);
-		// Only a weapon both of them hold, and never the rampage's, which is
-		// player 1's alone and must not arm the partner when it ends.
-		if(slot == frenzySlot || !MirrorsWeapon(leadWeapon.m_eWeaponType) ||
-		   partnerWeapon.m_eWeaponType != leadWeapon.m_eWeaponType){
-			s_poolAmmo[slot] = -1;
+		const eWeaponType leadType = leadWeapon.m_eWeaponType;
+		// Only a weapon the party holds, and never the rampage's, which is
+		// player 1's alone and must not arm the partners when it ends.
+		if(slot == frenzySlot || !MirrorsWeapon(leadType)){
+			for(int i = 1; i < NUMPLAYERS; i++)
+				s_poolAmmo[i][slot] = -1;
 			continue;
 		}
 
-		if(s_poolAmmo[slot] < 0){
-			// First frame both hold this weapon: the partner starts from the
-			// pool rather than from whatever their own count happened to be.
-			s_poolAmmo[slot] = leadWeapon.m_nAmmoTotal;
-		}else{
-			const int32 spent = s_poolAmmo[slot] - partnerWeapon.m_nAmmoTotal;
-			if(spent > 0)
-				leadWeapon.m_nAmmoTotal = Max(0, leadWeapon.m_nAmmoTotal - spent);
+		int32 spent = 0;
+		for(int i = 1; i < NUMPLAYERS; i++){
+			CPlayerPed *partner = CWorld::Players[i].m_pPed;
+			if(partner == nil)
+				continue;
+			CWeapon &partnerWeapon = partner->GetWeapon(slot);
+			if(partnerWeapon.m_eWeaponType != leadType){
+				s_poolAmmo[i][slot] = -1;
+				continue;
+			}
+			if(s_poolAmmo[i][slot] < 0){
+				// First frame this partner holds it: they start from the
+				// pool rather than from whatever their own count happened to
+				// be.
+				s_poolAmmo[i][slot] = leadWeapon.m_nAmmoTotal;
+			}else{
+				const int32 used = s_poolAmmo[i][slot] - partnerWeapon.m_nAmmoTotal;
+				if(used > 0)
+					spent += used;
+			}
 		}
-		partnerWeapon.m_nAmmoTotal = leadWeapon.m_nAmmoTotal;
-		if(leadWeapon.m_nAmmoInClip > leadWeapon.m_nAmmoTotal)
-			leadWeapon.m_nAmmoInClip = leadWeapon.m_nAmmoTotal;
-		if(partnerWeapon.m_nAmmoInClip > partnerWeapon.m_nAmmoTotal)
-			partnerWeapon.m_nAmmoInClip = partnerWeapon.m_nAmmoTotal;
-		// A weapon the partner emptied and left OUT_OF_AMMO comes back to life
-		// when the pool is refilled.  Player 1's own is reset by CPed::GiveWeapon
-		// when the pickup lands; the partner is not given anything, so it has to
-		// be done here or they would never be able to fire it again.
-		if(partnerWeapon.m_eWeaponState == WEAPONSTATE_OUT_OF_AMMO && partnerWeapon.m_nAmmoTotal > 0)
-			partnerWeapon.m_eWeaponState = WEAPONSTATE_READY;
-		s_poolAmmo[slot] = partnerWeapon.m_nAmmoTotal;
+		if(spent > 0)
+			leadWeapon.m_nAmmoTotal = Max(0, leadWeapon.m_nAmmoTotal - spent);
+
+		for(int i = 1; i < NUMPLAYERS; i++){
+			CPlayerPed *partner = CWorld::Players[i].m_pPed;
+			if(partner == nil)
+				continue;
+			CWeapon &partnerWeapon = partner->GetWeapon(slot);
+			if(partnerWeapon.m_eWeaponType != leadType)
+				continue;
+			partnerWeapon.m_nAmmoTotal = leadWeapon.m_nAmmoTotal;
+			if(leadWeapon.m_nAmmoInClip > leadWeapon.m_nAmmoTotal)
+				leadWeapon.m_nAmmoInClip = leadWeapon.m_nAmmoTotal;
+			if(partnerWeapon.m_nAmmoInClip > partnerWeapon.m_nAmmoTotal)
+				partnerWeapon.m_nAmmoInClip = partnerWeapon.m_nAmmoTotal;
+			// A weapon a partner emptied and left OUT_OF_AMMO comes back to
+			// life when the pool is refilled.  Player 1's own is reset by
+			// CPed::GiveWeapon when the pickup lands; the partners are not
+			// given anything, so it has to be done here or they would never
+			// be able to fire it again.
+			if(partnerWeapon.m_eWeaponState == WEAPONSTATE_OUT_OF_AMMO && partnerWeapon.m_nAmmoTotal > 0)
+				partnerWeapon.m_eWeaponState = WEAPONSTATE_READY;
+			s_poolAmmo[i][slot] = partnerWeapon.m_nAmmoTotal;
+		}
 	}
 }
 
@@ -504,7 +608,10 @@ FindSpotBeside(const CVector &base, const CVector &right, const CVector &forward
 			continue;
 		if(!CWorld::GetIsLineOfSightClear(base, pos, true, false, false, true, false, false, false))
 			continue;
-		if(CWorld::TestSphereAgainstWorld(pos, 0.35f, nil, true, true, false, true, false, false) != nil)
+		// Peds count too, unlike the usual object-only test: partners
+		// arriving together are kept from standing in each other, and from
+		// standing in whoever is already there.
+		if(CWorld::TestSphereAgainstWorld(pos, 0.35f, nil, true, true, true, true, false, false) != nil)
 			continue;
 		out = pos;
 		return true;
@@ -512,16 +619,23 @@ FindSpotBeside(const CVector &base, const CVector &right, const CVector &forward
 	return false;
 }
 
-// Whether the partner can sit in this vehicle while player 1 drives it.  Only
-// ever a vehicle player 1 is driving: the engine makes any player who gets onto
-// a bike or into a boat its driver whatever seat they asked for, and a car with
-// a player in it and nobody at the wheel is not one the traffic code expects.
+// Which vehicle a partner who is hopping straight into a seat asked for, one
+// row per player.  It only lives from the frame the enter button is read to
+// the spawn a moment later, and it is a registered reference so a car that is
+// gone by then reads as nil rather than dangling.
+CVehicle *s_rideInto[NUMPLAYERS];
+
+// Whether a player can sit in this vehicle while another player drives it.
+// Only ever a vehicle a player is driving: the engine makes any player who
+// gets onto a bike or into a boat its driver whatever seat they asked for,
+// and a car with a player in it and nobody at the wheel is not one the
+// traffic code expects.
 bool
-CanRideAlong(CPlayerPed *lead, CVehicle *vehicle)
+CanRideAlong(CPlayerPed *driver, CVehicle *vehicle)
 {
-	if(vehicle == nil || vehicle->pDriver != lead)
+	if(vehicle == nil || vehicle->pDriver != driver)
 		return false;
-	if(lead->m_nPedState != PED_DRIVING || lead->m_objective == OBJECTIVE_LEAVE_CAR)
+	if(driver->m_nPedState != PED_DRIVING || driver->m_objective == OBJECTIVE_LEAVE_CAR)
 		return false;
 	if(!vehicle->IsCar() && !vehicle->IsBike())
 		return false;
@@ -531,6 +645,15 @@ CanRideAlong(CPlayerPed *lead, CVehicle *vehicle)
 		if(vehicle->pPassengers[i] == nil)
 			return true;
 	return false;
+}
+
+// Whether a player can sit in this vehicle while a player drives it, however
+// that driver is found.
+bool
+CanRideAlongAnyPlayer(CVehicle *vehicle)
+{
+	return vehicle != nil && vehicle->pDriver != nil && vehicle->pDriver->IsPlayer() &&
+		CanRideAlong((CPlayerPed*)vehicle->pDriver, vehicle);
 }
 
 // Straight into a seat, the way COMMAND_CREATE_CHAR_AS_PASSENGER seats a ped
@@ -553,28 +676,32 @@ SeatPartner(CPlayerPed *partner, CVehicle *vehicle)
 }
 
 void
-RemovePartner(const char *why, bool carry)
+RemovePartner(int player, const char *why, bool carry)
 {
-	CPlayerPed *partner = CWorld::Players[PARTNER].m_pPed;
-	s_downTime = 0;
-	s_reviveTime = 0;
+	CPlayerPed *partner = CWorld::Players[player].m_pPed;
+	s_downTime[player] = 0;
+	s_reviveTime[player] = 0;
 	// A revive that has not spawned yet dies with the partner: the next arrival
 	// is beside player 1 again, not at a body that is no longer there.  This is
 	// what keeps a session pause -- a mission, player 1 going down -- between
 	// the revive and the spawn from leaving the position behind.
-	s_reviveValid = false;
-	s_aim[PARTNER].active = false;
-	s_aim[PARTNER].drawReticle = false;
+	s_reviveValid[player] = false;
+	s_aim[player].active = false;
+	s_aim[player].drawReticle = false;
+	// A hop-in that has not spawned yet goes with them too.
+	if(s_rideInto[player] != nil)
+		s_rideInto[player]->CleanUpOldReference((CEntity**)&s_rideInto[player]);
+	s_rideInto[player] = nil;
 	if(partner == nil)
 		return;
 
-	s_carry.valid = carry && !partner->DyingOrDead();
-	if(s_carry.valid){
-		s_carry.health = partner->m_fHealth;
-		s_carry.armour = partner->m_fArmour;
-		s_carry.slot = partner->m_nSelectedWepSlot;
+	s_carry[player].valid = carry && !partner->DyingOrDead();
+	if(s_carry[player].valid){
+		s_carry[player].health = partner->m_fHealth;
+		s_carry[player].armour = partner->m_fArmour;
+		s_carry[player].slot = partner->m_nSelectedWepSlot;
 		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
-			s_carry.weapon[slot] = partner->GetWeapon(slot).m_eWeaponType;
+			s_carry[player].weapon[slot] = partner->GetWeapon(slot).m_eWeaponType;
 	}
 
 	// The destructor below gives back the one door the ped was using.  Stepping
@@ -583,14 +710,14 @@ RemovePartner(const char *why, bool carry)
 	if(partner->m_nPedState == PED_EXIT_CAR && partner->m_pMyVehicle != nil && partner->m_pMyVehicle->IsBike())
 		partner->m_pMyVehicle->m_nGettingOutFlags &= ~(CAR_DOOR_FLAG_LR | CAR_DOOR_FLAG_RR);
 
-	COOP_LOG("WII coop: player 2 out (%s)\n", why);
+	COOP_LOG("WII coop: player %d out (%s)\n", player + 1, why);
 	// The destructor does the rest: out of the world, out of whatever seat or
 	// doorway they were in, fire out, weapons freed.  It is the same path the
 	// engine takes for any ped it removes, which is the point of deleting rather
 	// than hiding -- there is no half-present player for a pool scan to find.
 	CWorld::RemoveReferencesToDeletedObject(partner);
 	delete partner;
-	CWorld::Players[PARTNER].m_pPed = nil;
+	CWorld::Players[player].m_pPed = nil;
 }
 
 // Whether another player is close enough to a downed partner to bring them
@@ -613,8 +740,18 @@ SomeoneCanRevive(CPlayerPed *partner)
 	return false;
 }
 
+// Whether any partner is in the world right now.
 bool
-SpawnPartner(CPlayerPed *lead)
+AnyPartner(void)
+{
+	for(int i = 1; i < NUMPLAYERS; i++)
+		if(CWorld::Players[i].m_pPed != nil)
+			return true;
+	return false;
+}
+
+bool
+SpawnPartner(CPlayerPed *lead, int player)
 {
 	// Leave the ped pool some room: the population code starts deleting
 	// pedestrians when fewer than eight slots are free.
@@ -628,27 +765,41 @@ SpawnPartner(CPlayerPed *lead)
 
 	CVehicle *ride = nil;
 	CVector pos;
-	if(s_reviveValid){
+	if(s_reviveValid[player]){
 		// Brought back where they fell, not beside player 1 and not into their
 		// car: the ground the fight was on is the point of a revive.
-		pos = s_reviveAt;
-		s_reviveValid = false;
-	}else if(lead->bInVehicle && lead->m_pMyVehicle){
-		CVehicle *vehicle = lead->m_pMyVehicle;
-		if(CanRideAlong(lead, vehicle)){
-			ride = vehicle;
-			pos = vehicle->GetPosition();
+		pos = s_reviveAt[player];
+		s_reviveValid[player] = false;
+	}else{
+		// A car this partner asked to hop into a frame or two ago -- any
+		// player's, not just player 1's.  A registered reference, so one that
+		// has gone away since is simply nil.
+		ride = s_rideInto[player];
+		if(ride != nil){
+			ride->CleanUpOldReference((CEntity**)&s_rideInto[player]);
+			s_rideInto[player] = nil;
+			if(!CanRideAlongAnyPlayer(ride))
+				ride = nil;
+		}
+		if(ride != nil){
+			pos = ride->GetPosition();
+		}else if(lead->bInVehicle && lead->m_pMyVehicle){
+			CVehicle *vehicle = lead->m_pMyVehicle;
+			if(CanRideAlong(lead, vehicle)){
+				ride = vehicle;
+				pos = vehicle->GetPosition();
+			}else{
+				// No seat.  Beside it if it is standing still, and otherwise not
+				// yet: they join when player 1 stops or gets out.
+				if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle))
+					return false;
+				if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 3.0f, pos))
+					return false;
+			}
 		}else{
-			// No seat.  Beside it if it is standing still, and otherwise not
-			// yet: they join when player 1 stops or gets out.
-			if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle))
-				return false;
-			if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 3.0f, pos))
+			if(!FindSpotBeside(lead->GetPosition(), lead->GetRight(), lead->GetForward(), 1.6f, pos))
 				return false;
 		}
-	}else{
-		if(!FindSpotBeside(lead->GetPosition(), lead->GetRight(), lead->GetForward(), 1.6f, pos))
-			return false;
 	}
 
 	// Making a player ped resets the things that were only ever reset when THE
@@ -698,7 +849,7 @@ SpawnPartner(CPlayerPed *lead)
 	// CPools::SavePedPool picks what to write by exactly that type, and
 	// LoadPedPool would hand a second one to CWorld::Players[0].  It still
 	// answers true to IsPlayer(), which is what the rest of the engine asks.
-	partner->m_nPedType = PEDTYPE_PLAYER2;
+	partner->m_nPedType = PEDTYPE_PLAYER2 + (player - 1);
 	// What COMMAND_CREATE_PLAYER does for player 1, and what protects them: a
 	// RANDOM_CHAR is fair game for CPopulation::RemovePedsIfThePoolGetsFull, and
 	// a vehicle with only RANDOM_CHARs aboard is one the engine may delete.
@@ -711,8 +862,8 @@ SpawnPartner(CPlayerPed *lead)
 	// to get past.
 	partner->bDontDragMeOutCar = true;
 
-	CWorld::Players[PARTNER].m_pPed = partner;
-	partner->RegisterReference((CEntity**)&CWorld::Players[PARTNER].m_pPed);
+	CWorld::Players[player].m_pPed = partner;
+	partner->RegisterReference((CEntity**)&CWorld::Players[player].m_pPed);
 
 	partner->SetOrientation(0.0f, 0.0f, 0.0f);
 	partner->SetPosition(pos);
@@ -724,53 +875,53 @@ SpawnPartner(CPlayerPed *lead)
 	CWorld::Add(partner);
 	partner->m_wepAccuracy = 100;
 
-	if(s_carry.valid){
-		partner->m_fHealth = s_carry.health;
-		partner->m_fArmour = s_carry.armour;
-		s_wantSlot = s_carry.slot;
+	if(s_carry[player].valid){
+		partner->m_fHealth = s_carry[player].health;
+		partner->m_fArmour = s_carry[player].armour;
+		s_wantSlot[player] = s_carry[player].slot;
 		// Their weapons come back through the same queue player 1's gains do,
 		// on top of anything that was still on its way to them when they went.
 		// Empty, because the ammo is the shared pool, not a count the partner
 		// owns; the first sync fills them from it.
 		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
-			if(s_carry.weapon[slot] == WEAPONTYPE_UNARMED)
+			if(s_carry[player].weapon[slot] == WEAPONTYPE_UNARMED)
 				continue;
-			if(s_owedType[slot] == WEAPONTYPE_UNARMED)
-				s_owedType[slot] = s_carry.weapon[slot];
+			if(s_owedType[player][slot] == WEAPONTYPE_UNARMED)
+				s_owedType[player][slot] = s_carry[player].weapon[slot];
 		}
 	}else{
 		partner->m_fHealth = CWorld::Players[LEAD].m_nMaxHealth;
 		partner->m_fArmour = lead->m_fArmour;
-		s_wantSlot = lead->m_currentWeapon;
-		ForgetArsenal();
+		s_wantSlot[player] = lead->m_currentWeapon;
+		ClearArsenalFor(player);
+		QueueArsenalFor(player);
 	}
-	s_carry.valid = false;
+	s_carry[player].valid = false;
 	// The new ped's ammo counts start from the pool, not from a spend measured
-	// against the last partner's.
-	ForgetSharedAmmo();
-	// The pair shares its heat: a partner who arrives while player 1 is wanted
-	// is wanted too, and the mirror starts from there.  With the option off
-	// they arrive clean and keep their own.
-	if(CoopSharedWanted){
+	// against the last ped to hold this slot.
+	ForgetSharedAmmo(player);
+	// The party shares its heat: a partner who arrives while player 1 is
+	// wanted is wanted too, and the mirror starts from there.  With the option
+	// off they arrive clean and keep their own.
+	if(CoopSharedWanted)
 		partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
-		s_leadWanted = lead->m_pWanted->GetWantedLevel();
-		s_partnerWanted = partner->m_pWanted->GetWantedLevel();
-	}
-	s_wantSlotUntil = CTimer::GetTimeInMilliseconds() + 4000;
+	s_wanted[LEAD] = lead->m_pWanted->GetWantedLevel();
+	s_wanted[player] = partner->m_pWanted->GetWantedLevel();
+	s_wantSlotUntil[player] = CTimer::GetTimeInMilliseconds() + 4000;
 
 	if(ride != nil && !SeatPartner(partner, ride)){
 		// CanRideAlong found a seat a moment ago, so this cannot happen; if it
 		// ever does, a player standing inside a car is not the way to find out.
-		RemovePartner("no seat after all", false);
+		RemovePartner(player, "no seat after all", false);
 		return false;
 	}
 
-	s_aim[PARTNER].facing = false;
-	s_aim[PARTNER].assistHandle = -1;
-	COOP_LOG("WII coop: player 2 in%s\n", ride != nil ? " (riding with player 1)" : "");
-	if(s_announceJoin){
-		s_announceJoin = false;
-		Tell("WII_P2I");
+	s_aim[player].facing = false;
+	s_aim[player].assistHandle = -1;
+	COOP_LOG("WII coop: player %d in%s\n", player + 1, ride != nil ? " (riding with player 1)" : "");
+	if(s_announceJoin[player]){
+		s_announceJoin[player] = false;
+		Tell(kJoinedKeys[player - 1]);
 	}
 	return true;
 }
@@ -806,10 +957,10 @@ SessionBlocker(void)
 // three come off the driver's own pad now; a bike makes whoever climbs on it
 // the rider, and a boat makes whoever boards it the driver, which is what the
 // partner wants in every case.  Never one a player is driving -- that would be
-// a carjack of player 1 -- and not one player 1 is already walking to, a wreck
-// or one on its roof, which nobody can enter.
+// a carjack of another player -- and not one a player is already walking to, a
+// wreck or one on its roof, which nobody can enter.
 CVehicle *
-FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
+FindCarToSteal(CPlayerPed *partner)
 {
 	CVehicle *best = nil;
 	float bestDist = SQR(kStealRange);
@@ -825,15 +976,22 @@ FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 			continue;
 		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
 			continue;
-		// The one player 1 is entering: two players finishing the same car's
+		// The one a player is entering: two players finishing the same car's
 		// enter as its driver would leave one of them in the seat with the
 		// other's ped as the car's driver.  Tested on the state, not on
 		// m_carInObjective alone: the field is left pointing at the last car
-		// player 1 entered -- the game clears it only through ClearObjective,
+		// a player entered -- the game clears it only through ClearObjective,
 		// which the player's own enter never goes through -- so a car they had
-		// driven once could never be taken by the partner again.
-		if((lead->m_nPedState == PED_ENTER_CAR || lead->m_nPedState == PED_CARJACK) &&
-		   vehicle == lead->m_carInObjective)
+		// driven once could never be taken by a partner again.
+		bool beingEntered = false;
+		for(int i = 0; i < NUMPLAYERS && !beingEntered; i++){
+			CPlayerPed *other = CWorld::Players[i].m_pPed;
+			if(other != nil && other != partner &&
+			   (other->m_nPedState == PED_ENTER_CAR || other->m_nPedState == PED_CARJACK) &&
+			   vehicle == other->m_carInObjective)
+				beingEntered = true;
+		}
+		if(beingEntered)
 			continue;
 		const float dist = (vehicle->GetPosition() - pos).MagnitudeSqr();
 		if(dist < bestDist){
@@ -846,19 +1004,22 @@ FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 
 // --- driving and riding along ------------------------------------------------
 // CPlayerInfo::Process is where player 1's enter/exit button is read, and it is
-// only ever run for the player in focus.  This is the partner's share of it.
+// only ever run for the player in focus.  This is a partner's share of it.
 // On foot the button means one of two things, in this order:
 //
-//   * a free seat in whatever player 1 is driving or climbing into -- get in
-//     beside them, which is what it has always meant; or
+//   * a free seat in whatever another player is driving or climbing into --
+//     get in beside them, which is what it has always meant; or
 //   * failing that, the nearest car within reach -- take it as its driver and
-//     drive it.  That is the partner's own car, not player 1's.
+//     drive it.  That is the partner's own car, not anyone else's.
 //
 // Returns true when the partner should be put straight into a seat instead: the
-// car is already moving, and nobody catches a moving car on foot.
+// car is already moving, and nobody catches a moving car on foot.  rideInto is
+// then the seat's vehicle -- it may be any player's, so the caller cannot work
+// it out from player 1's car.
 bool
-UpdatePartnerVehicle(CPlayerPed *lead, CPlayerPed *partner, CPad *pad)
+UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&rideInto)
 {
+	rideInto = nil;
 	if(partner->bInVehicle){
 		CVehicle *vehicle = partner->m_pMyVehicle;
 		if(vehicle == nil || partner->m_nPedState != PED_DRIVING)
@@ -896,44 +1057,59 @@ UpdatePartnerVehicle(CPlayerPed *lead, CPlayerPed *partner, CPad *pad)
 	if(!pad->ExitVehicleJustDown() || !partner->IsPedInControl())
 		return false;
 
-	// A seat with player 1 first.  The car they are in, or the one they are
-	// climbing into, and only if it is theirs or empty and has room.
-	CVehicle *vehicle = nil;
-	if(lead->bInVehicle)
-		vehicle = lead->m_pMyVehicle;
-	else if(lead->m_nPedState == PED_ENTER_CAR || lead->m_nPedState == PED_CARJACK)
-		vehicle = lead->m_carInObjective;
-	if(vehicle != nil && (vehicle->pDriver == nil || vehicle->pDriver == lead) &&
-	   (vehicle->IsCar() || vehicle->IsBike()) &&
-	   vehicle->GetStatus() != STATUS_WRECKED && !vehicle->bIsInWater &&
-	   (vehicle->GetPosition() - partner->GetPosition()).Magnitude() <= kBoardingRange){
+	// A seat with another player first -- player 1's car ahead of the rest,
+	// because that is the car the pair has always shared.  The car they are
+	// in, or the one they are climbing into, and only if it is theirs or
+	// empty and has room.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(i == player)
+			continue;
+		CPlayerPed *other = CWorld::Players[i].m_pPed;
+		if(other == nil)
+			continue;
+		CVehicle *vehicle = nil;
+		if(other->bInVehicle)
+			vehicle = other->m_pMyVehicle;
+		else if(other->m_nPedState == PED_ENTER_CAR || other->m_nPedState == PED_CARJACK)
+			vehicle = other->m_carInObjective;
+		if(vehicle == nil || (vehicle->pDriver != nil && vehicle->pDriver != other) ||
+		   (!vehicle->IsCar() && !vehicle->IsBike()) ||
+		   vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater ||
+		   (vehicle->GetPosition() - partner->GetPosition()).Magnitude() > kBoardingRange)
+			continue;
 		bool seat = false;
-		for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
-			if(vehicle->pPassengers[i] == nil)
+		for(int s = 0; s < vehicle->m_nNumMaxPassengers; s++)
+			if(vehicle->pPassengers[s] == nil)
 				seat = true;
-		if(seat){
-			// Standing still, or nearly: walk to a door and get in like anybody
-			// else.  Already rolling: straight into the seat.
-			//
-			// Onto a bike it is always straight into the seat, and only once
-			// player 1 is sitting on it.  The engine makes a bike the player's
-			// to ride when any player finishes climbing on, whichever seat they
-			// asked for -- so a partner who was still walking over when player 1
-			// got off again would end up on the back of a bike with nobody on
-			// the front, being ridden from player 1's pad, and the bike's
-			// drive-by code looks up its rider without asking whether there is
-			// one.
-			if(vehicle->IsBike())
-				return CanRideAlong(lead, vehicle);
-			if(vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(0.04f) && CanRideAlong(lead, vehicle))
-				return true;
-			partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, vehicle);
-			return false;
+		if(!seat)
+			continue;
+		// Standing still, or nearly: walk to a door and get in like anybody
+		// else.  Already rolling: straight into the seat.
+		//
+		// Onto a bike it is always straight into the seat, and only once its
+		// rider is sitting on it.  The engine makes a bike the player's to
+		// ride when any player finishes climbing on, whichever seat they
+		// asked for -- so a partner who was still walking over when the rider
+		// got off again would end up on the back of a bike with nobody on the
+		// front, being ridden from the other player's pad, and the bike's
+		// drive-by code looks up its rider without asking whether there is
+		// one.
+		if(vehicle->IsBike()){
+			if(!CanRideAlong(other, vehicle))
+				return false;
+			rideInto = vehicle;
+			return true;
 		}
+		if(vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(0.04f) && CanRideAlong(other, vehicle)){
+			rideInto = vehicle;
+			return true;
+		}
+		partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, vehicle);
+		return false;
 	}
 
-	// No seat with player 1.  Take a car of their own instead.
-	CVehicle *steal = FindCarToSteal(lead, partner);
+	// No seat with another player.  Take a car of their own instead.
+	CVehicle *steal = FindCarToSteal(partner);
 	if(steal != nil)
 		partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, steal);
 	return false;
@@ -947,12 +1123,12 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, bool leadTeleported)
 		return "player 1 was moved";
 
 	CVehicle *partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
-	// Someone else at the wheel.  If the partner is driving their own car that
-	// is the partner, not somebody else, and the leash below is what keeps them
-	// near player 1.
+	// An NPC at the wheel: a partner being driven away by the traffic is
+	// brought back, since the party cannot follow.  A car any player is
+	// driving -- the lead's or another partner's -- is part of the party, and
+	// the leash below is what keeps it near player 1.
 	if(partnerVehicle != nil && partnerVehicle->pDriver != nil &&
-	   partnerVehicle->pDriver != lead && partnerVehicle->pDriver != partner)
-		// Somebody else is at the wheel.  Riding along means with player 1.
+	   !partnerVehicle->pDriver->IsPlayer())
 		return "driven off by someone else";
 
 	const CVector leadPos = (lead->bInVehicle && lead->m_pMyVehicle) ? lead->m_pMyVehicle->GetPosition() : lead->GetPosition();
@@ -1204,26 +1380,19 @@ CCoop::Init(void)
 	// CWorld::Players before the world is emptied, and the world frees every
 	// ped in it.
 	ms_bRunning = false;
-	s_padHere = false;
-	s_padEver = false;
-	s_joined = false;
-	s_joinTold = false;
-	s_padSince = 0;
-	s_padLast = 0;
-	s_spawnTime = 0;
 	s_regroupLogTime = 0;
-	s_downTime = 0;
 	s_leadPosValid = false;
 	s_tetherTold = false;
-	s_announceJoin = true;
-	s_carry.valid = false;
-	s_wantSlot = -1;
 	ForgetArsenal();
-	s_leadWanted = 0;
-	s_partnerWanted = 0;
-	s_reviveTime = 0;
-	s_reviveValid = false;
-	for(int i = 0; i < 2; i++){
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_spawnTime[i] = 0;
+		s_downTime[i] = 0;
+		s_reviveTime[i] = 0;
+		s_reviveValid[i] = false;
+		s_announceJoin[i] = true;
+		s_carry[i].valid = false;
+		s_wantSlot[i] = -1;
+		s_wanted[i] = 0;
 		s_aim[i].pointerSeen = false;
 		s_aim[i].stickSeen = false;
 		s_aim[i].active = false;
@@ -1235,6 +1404,19 @@ CCoop::Init(void)
 		s_aim[i].rawHeading = 0.0f;
 		s_aim[i].assistHandle = -1;
 	}
+	for(int partner = 0; partner < kNumPartners; partner++){
+		s_padHere[partner] = false;
+		s_padEver[partner] = false;
+		s_joined[partner] = false;
+		s_joinTold[partner] = false;
+		s_padSince[partner] = 0;
+		s_padLast[partner] = 0;
+	}
+	for(int player = 0; player < NUMPLAYERS; player++){
+		if(s_rideInto[player] != nil)
+			s_rideInto[player]->CleanUpOldReference((CEntity**)&s_rideInto[player]);
+		s_rideInto[player] = nil;
+	}
 }
 
 CPlayerPed *
@@ -1243,10 +1425,23 @@ CCoop::GetPartner(void)
 	return CWorld::Players[PARTNER].m_pPed;
 }
 
+CPlayerPed *
+CCoop::GetPlayerPed(int player)
+{
+	if(player < 0 || player >= NUMPLAYERS)
+		return nil;
+	return CWorld::Players[player].m_pPed;
+}
+
 bool
 CCoop::PairActive(void)
 {
-	return ms_bRunning && s_joined;
+	if(!ms_bRunning)
+		return false;
+	for(int partner = 0; partner < kNumPartners; partner++)
+		if(s_joined[partner])
+			return true;
+	return false;
 }
 
 int
@@ -1254,10 +1449,10 @@ CCoop::GetPlayerIndex(const CEntity *entity)
 {
 	if(entity == nil)
 		return -1;
-	if(entity == CWorld::Players[LEAD].m_pPed)
-		return LEAD;
-	if(entity == CWorld::Players[PARTNER].m_pPed)
-		return PARTNER;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(entity == CWorld::Players[i].m_pPed)
+			return i;
+	}
 	return -1;
 }
 
@@ -1279,29 +1474,25 @@ CCoop::FriendlyFireBlocked(CEntity *attacker, CEntity *victim)
 void
 CCoop::ReportPartnerPad(int partner, bool present)
 {
-	// Only the first partner is listened to until the co-op layer grows its own
-	// four player loops (stage 3 of the four player work).  The pad layer already
-	// reports every partner slot, so that stage is a change of this guard and
-	// not of the pads.
-	if(partner != 0)
+	if(partner < 0 || partner >= kNumPartners)
 		return;
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	if(!present){
-		s_padHere = false;
+		s_padHere[partner] = false;
 		return;
 	}
-	if(!s_padHere){
-		s_padHere = true;
-		s_padSince = now;
+	if(!s_padHere[partner]){
+		s_padHere[partner] = true;
+		s_padSince[partner] = now;
 	}
-	s_padLast = now;
-	s_padEver = true;
+	s_padLast[partner] = now;
+	s_padEver[partner] = true;
 }
 
 void
 CCoop::ReportPointer(int player, float x, float y)
 {
-	if(player < 0 || player > PARTNER)
+	if(player < 0 || player >= NUMPLAYERS)
 		return;
 	s_aim[player].pointerX = Clamp(x, 0.0f, 1.0f);
 	s_aim[player].pointerY = Clamp(y, 0.0f, 1.0f);
@@ -1312,8 +1503,11 @@ CCoop::ReportPointer(int player, float x, float y)
 void
 CCoop::Suspend(const char *why)
 {
-	RemovePartner(why, true);
-	s_spawnTime = CTimer::GetTimeInMilliseconds() + 1500;
+	const uint32 until = CTimer::GetTimeInMilliseconds() + 1500;
+	for(int player = 1; player < NUMPLAYERS; player++){
+		RemovePartner(player, why, true);
+		s_spawnTime[player] = until;
+	}
 }
 
 void
@@ -1325,14 +1519,15 @@ CCoop::Update(void)
 	if(allowed != ms_bRunning){
 		ms_bRunning = allowed;
 		COOP_LOG("WII coop: session %s%s\n", allowed ? "on" : "off: ", allowed ? "" : blocker);
-		s_spawnTime = now;
+		for(int player = 1; player < NUMPLAYERS; player++)
+			s_spawnTime[player] = now;
 		s_leadPosValid = false;
 		// Someone who was playing a moment ago is owed a word about where
 		// they went.  Only for a mission: a cutscene explains itself, and the
 		// menu toggle was their own doing.  And only into an empty help box:
 		// the scripts have already run this frame, and a mission that opened
 		// with a hint of its own said something more useful than this.
-		if(!allowed && GetPartner() != nil && CTheScripts::IsPlayerOnAMission() &&
+		if(!allowed && AnyPartner() && CTheScripts::IsPlayerOnAMission() &&
 		   CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
 			Tell("WII_CCM");
 	}
@@ -1340,30 +1535,31 @@ CCoop::Update(void)
 		// A partner never outlives the session.  That is what "off during
 		// missions" comes to in practice: by the time a mission's first scene
 		// starts there is one player ped in the world, as its script assumes.
-		if(GetPartner() != nil){
-			// Player 1's own wasted or busted resets the pair: the engine clears
-			// his weapons at the hospital or the station, and the partner's
-			// arsenal is his -- so the partner comes back to whatever player 1
-			// has, which after that is nothing.  Every other way a session ends
-			// is a pause, not a reset, and the partner keeps what they carry.
-			const bool reset = blocker != nil && strcmp(blocker, "player 1 down") == 0;
-			RemovePartner(blocker, !reset);
-		}
+		// Player 1's own wasted or busted resets the party: the engine clears
+		// his weapons at the hospital or the station, and the partners'
+		// arsenal is his -- so they come back to whatever player 1 has, which
+		// after that is nothing.  Every other way a session ends is a pause,
+		// not a reset, and the partners keep what they carry.
+		const bool reset = blocker != nil && strcmp(blocker, "player 1 down") == 0;
+		for(int player = 1; player < NUMPLAYERS; player++)
+			RemovePartner(player, blocker, !reset);
 		s_aim[LEAD].active = false;
 		s_aim[LEAD].drawReticle = false;
-		// A focus the partner chose for a drive does not outlive the session.
+		// A focus a partner chose for a drive does not outlive the session.
 		ms_bPartnerFocus = false;
 		return;
 	}
 
 	CPlayerPed *lead = CWorld::Players[LEAD].m_pPed;
 	CPad *leadPad = CPad::GetPad(0);
-	CPad *partnerPad = CPad::GetPad(PAD_COOP);
 
-	// Whatever takes player 1's controls away takes the partner's with them,
-	// and the two pads read their buttons the same way.
-	partnerPad->Mode = leadPad->Mode;
-	partnerPad->DisablePlayerControls = leadPad->DisablePlayerControls;
+	// Whatever takes player 1's controls away takes the partners' with them,
+	// and every pad reads its buttons the same way.
+	for(int partner = 0; partner < kNumPartners; partner++){
+		CPad *pad = CPad::GetPad(PAD_COOP + partner);
+		pad->Mode = leadPad->Mode;
+		pad->DisablePlayerControls = leadPad->DisablePlayerControls;
+	}
 
 	// Player 1's camera button picks a framing, since the modes it normally
 	// steps through are not on offer while the view is shared.
@@ -1376,12 +1572,13 @@ CCoop::Update(void)
 		Tell(kFramingKeys[ms_nFraming]);
 	}
 
-	// The partner's camera button hands the shared camera's turn to their car.
-	// The camera can only follow one nose, and following player 1's leaves a
-	// partner in their own car driving half blind whenever player 1 turns.  Only
-	// the partner has this button free: player 1's camera button is the framing
-	// cycle above.
-	if(PairActive() && partnerPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
+	// The first partner's camera button hands the shared camera's turn to
+	// their car.  The camera can only follow one nose, and following player
+	// 1's leaves a partner in their own car driving half blind whenever
+	// player 1 turns.  Only a partner has this button free: player 1's camera
+	// button is the framing cycle above.
+	CPad *focusPad = CPad::GetPad(PAD_COOP);
+	if(PairActive() && focusPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
 		ms_bPartnerFocus = !ms_bPartnerFocus;
 		COOP_LOG("WII coop: camera focus %s\n", ms_bPartnerFocus ? "player 2" : "player 1");
 		Tell(ms_bPartnerFocus ? "WII_CFP" : "WII_CFL");
@@ -1395,41 +1592,56 @@ CCoop::Update(void)
 	s_leadPos = leadPos;
 	s_leadPosValid = true;
 
-	const bool padPresent = s_padHere && now - s_padSince >= kJoinAfterMs;
-	const bool padGone = !s_padHere && (!s_padEver || now - s_padLast > kDropAfterMs);
-	if(padGone){
-		s_joined = false;
-		s_joinTold = false;
-		// The camera focus was this partner's choice for their drive.  Their
-		// pad is gone, so it goes with them: a partner who joins later gets
-		// player 1's car, not a camera that prefers someone else's.
-		ms_bPartnerFocus = false;
-	}else if(padPresent && !s_joined){
-		const CControllerState &held = partnerPad->NewState;
-		if(held.Cross || held.Circle || held.Square || held.Triangle ||
-		   held.LeftShoulder1 || held.LeftShoulder2 || held.RightShoulder1 || held.RightShoulder2 ||
-		   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight)
-			s_joined = true;
-		else if(!s_joinTold && CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0){
-			s_joinTold = true;
-			Tell("WII_P2J");
+	// The partners' pads: presence, the join button, and the leave.  One
+	// partner joining or leaving is nobody else's business.
+	bool padPresent[NUMPLAYERS];
+	bool padGone[NUMPLAYERS];
+	padPresent[LEAD] = false;
+	padGone[LEAD] = false;
+	for(int partner = 0; partner < kNumPartners; partner++){
+		const int player = partner + 1;
+		CPad *pad = CPad::GetPad(PAD_COOP + partner);
+		padPresent[player] = s_padHere[partner] && now - s_padSince[partner] >= kJoinAfterMs;
+		padGone[player] = !s_padHere[partner] && (!s_padEver[partner] || now - s_padLast[partner] > kDropAfterMs);
+		if(padGone[player]){
+			s_joined[partner] = false;
+			s_joinTold[partner] = false;
+			// The camera focus was the first partner's choice for their drive.
+			// Their pad is gone, so it goes with them: a partner who joins
+			// later gets player 1's car, not a camera that prefers someone
+			// else's.
+			if(partner == 0)
+				ms_bPartnerFocus = false;
+		}else if(padPresent[player] && !s_joined[partner]){
+			const CControllerState &held = pad->NewState;
+			if(held.Cross || held.Circle || held.Square || held.Triangle ||
+			   held.LeftShoulder1 || held.LeftShoulder2 || held.RightShoulder1 || held.RightShoulder2 ||
+			   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight)
+				s_joined[partner] = true;
+			else if(!s_joinTold[partner] && CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0){
+				s_joinTold[partner] = true;
+				Tell(kJoinKeys[partner]);
+			}
 		}
 	}
 
-	CPlayerPed *partner = GetPartner();
-	if(partner != nil){
+	for(int player = 1; player < NUMPLAYERS; player++){
+		CPlayerPed *partner = CWorld::Players[player].m_pPed;
+		if(partner == nil)
+			continue;
+		CPad *partnerPad = CPad::GetPad(PAD_COOP + player - 1);
 		const char *regroup;
-		if(padGone){
-			RemovePartner("controller gone", false);
-			s_spawnTime = now;
-			s_announceJoin = true;
-			Tell("WII_P2O");
+		if(padGone[player]){
+			RemovePartner(player, "controller gone", false);
+			s_spawnTime[player] = now;
+			s_announceJoin[player] = true;
+			Tell(kLeftKeys[player - 1]);
 		}else if(partner->DyingOrDead() || partner->m_nPedState == PED_ARRESTED ||
 		         (partner->bInVehicle && partner->m_fHealth <= 1.0f)){
 			// Nothing in the engine brings a player back except CGameLogic, and
 			// CGameLogic only knows the player in focus.  So this is the whole of
-			// the partner's wasted-and-busted: down where they fell, and then
-			// either brought back by the other player reaching them or, when the
+			// a partner's wasted-and-busted: down where they fell, and then
+			// either brought back by another player reaching them or, when the
 			// bleed-out runs out, back beside player 1 as before.
 			//
 			// The last test is someone killed in a car.  CPed::InflictDamage does
@@ -1438,31 +1650,31 @@ CCoop::Update(void)
 			// carry out while the car is moving, so they would ride along at one
 			// health for as long as player 1 kept driving.
 			const bool busted = partner->m_nPedState == PED_ARRESTED;
-			if(s_downTime == 0){
-				s_downTime = now;
+			if(s_downTime[player] == 0){
+				s_downTime[player] = now;
 				if(!busted)
-					Tell("WII_P2D");
+					Tell(kDownKeys[player - 1]);
 			}else if(!busted && SomeoneCanRevive(partner)){
-				if(s_reviveTime == 0)
-					s_reviveTime = now;
-				else if(now - s_reviveTime >= kReviveHoldMs){
-					s_reviveTime = 0;
+				if(s_reviveTime[player] == 0)
+					s_reviveTime[player] = now;
+				else if(now - s_reviveTime[player] >= kReviveHoldMs){
+					s_reviveTime[player] = 0;
 					if(partner->DyingOrDead()){
 						if(partner->bInVehicle && partner->m_pMyVehicle != nil){
 							// Dead in a vehicle -- a car that drowned, a bike that
 							// threw them.  Nowhere to stand them up, so this is the
 							// ordinary return, beside player 1.
-							RemovePartner("revived", false);
+							RemovePartner(player, "revived", false);
 						}else{
 							// Dead on the ground: a fresh partner where the body is,
 							// through the same machinery as every other arrival, and
-							// with the pair's set -- a partner's death is not a reset.
+							// with the party's set -- a partner's death is not a reset.
 							const CVector at = partner->GetPosition();
-							RemovePartner("revived", false);
-							s_reviveAt = at;
-							s_reviveValid = true;
+							RemovePartner(player, "revived", false);
+							s_reviveAt[player] = at;
+							s_reviveValid[player] = true;
 						}
-						s_spawnTime = now;
+						s_spawnTime[player] = now;
 					}else{
 						// Not dead yet: one point of health in a car, waiting to get
 						// out and die.  Healed where they sit, and the order to die
@@ -1471,21 +1683,21 @@ CCoop::Update(void)
 						if(partner->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE)
 							partner->SetObjective(OBJECTIVE_NONE);
 						partner->m_leaveCarTimer = 0;
-						s_downTime = 0;
+						s_downTime[player] = 0;
 					}
-					Tell("WII_P2R");
+					Tell(kBackKeys[player - 1]);
 				}
 			}else{
-				s_reviveTime = 0;
-				if(now - s_downTime > kDownedBleedMs){
-					RemovePartner(busted ? "busted" : "wasted", false);
-					s_spawnTime = now;
+				s_reviveTime[player] = 0;
+				if(now - s_downTime[player] > kDownedBleedMs){
+					RemovePartner(player, busted ? "busted" : "wasted", false);
+					s_spawnTime[player] = now;
 				}
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, leadTeleported)) != nil){
 			// A partner who is driving their own car is moved with it.  The
 			// leash fires because the world is only streamed around player 1, so
-			// the pair has to come back to them -- but the car is the thing that
+			// the party has to come back to them -- but the car is the thing that
 			// went too far, and deleting the partner out of it throws away the
 			// drive and leaves the car abandoned.
 			CVehicle *driven = (partner->bInVehicle && partner->m_pMyVehicle != nil &&
@@ -1498,6 +1710,10 @@ CCoop::Update(void)
 			CVector airPos;
 			bool boat = false;
 			CVector boatPos;
+			// Each partner's search starts one notch further back than the
+			// last, so three cars brought back at once line up along the road
+			// instead of piling onto one node.
+			const float lane = (float)(player - 1);
 			if(driven != nil){
 				const CVector leadAt = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
 				const float heading = leadVehicle != nil ? leadVehicle->GetForward().Heading() : lead->m_fRotationCur;
@@ -1509,7 +1725,7 @@ CCoop::Update(void)
 					// if not, which is where the water is when they are standing
 					// on a pier.  Otherwise it is left where it is: a boat in the
 					// road is worse than a boat out of sight.
-					for(float back = kRegroupBack; back <= kRegroupBack*3.0f && !boat; back += kRegroupBack){
+					for(float back = kRegroupBack*(1.0f + lane); back <= kRegroupBack*(3.0f + lane) && !boat; back += kRegroupBack){
 						const CVector pos = leadAt - forward*back;
 						float level;
 						if(CWaterLevel::GetWaterLevel(pos, &level, true)){
@@ -1517,7 +1733,7 @@ CCoop::Update(void)
 							boat = true;
 						}
 					}
-					for(float ahead = kRegroupBack; ahead <= kRegroupBack*3.0f && !boat; ahead += kRegroupBack){
+					for(float ahead = kRegroupBack*(1.0f + lane); ahead <= kRegroupBack*(3.0f + lane) && !boat; ahead += kRegroupBack){
 						const CVector pos = leadAt + forward*ahead;
 						float level;
 						if(CWaterLevel::GetWaterLevel(pos, &level, true)){
@@ -1530,7 +1746,7 @@ CCoop::Update(void)
 					// in the street: it goes back into the air behind player 1,
 					// level with them if they are flying and well above them if
 					// they are not.  Anything solid in the way sends it higher.
-					airPos = leadAt - forward*kRegroupBack;
+					airPos = leadAt - forward*(kRegroupBack*(1.0f + lane));
 					airPos.z = leadAt.z + (leadVehicle != nil &&
 						(leadVehicle->IsRealHeli() || leadVehicle->IsRealPlane()) ? 0.0f : 30.0f);
 					for(int tries = 0; tries < 4 &&
@@ -1544,7 +1760,7 @@ CCoop::Update(void)
 					// seconds pushing each other out of it -- the regroup that fires
 					// every second.  Behind is also the direction the partner can
 					// drive on in, which is where they were going anyway.
-					for(float back = kRegroupBack; back <= kRegroupBack*3.0f && node < 0; back += kRegroupBack){
+					for(float back = kRegroupBack*(1.0f + lane); back <= kRegroupBack*(3.0f + lane) && node < 0; back += kRegroupBack){
 						const int32 candidate = ThePaths.FindNodeClosestToCoors(leadAt - forward*back, PATH_CAR, kRegroupSearch);
 						if(candidate < 0)
 							continue;
@@ -1554,7 +1770,8 @@ CCoop::Update(void)
 					}
 					// Nothing clear behind: the node nearest player 1 after all, so
 					// the car is at least on something.  It goes to the side of them
-					// if that node is the one they are on.
+					// if that node is the one they are on, fanned out by lane so
+					// two of them do not land on the same spot.
 					if(node < 0){
 						node = ThePaths.FindNodeClosestToCoors(leadAt, PATH_CAR, 100.0f);
 						beside = node >= 0 && leadVehicle != nil &&
@@ -1574,7 +1791,7 @@ CCoop::Update(void)
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
-					COOP_LOG("WII coop: player 2's boat brought back (%s)\n", regroup);
+					COOP_LOG("WII coop: player %d's boat brought back (%s)\n", player + 1, regroup);
 				}
 			}else if(airborne){
 				driven->SetPosition(airPos);
@@ -1584,12 +1801,12 @@ CCoop::Update(void)
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
-					COOP_LOG("WII coop: player 2's aircraft brought back (%s)\n", regroup);
+					COOP_LOG("WII coop: player %d's aircraft brought back (%s)\n", player + 1, regroup);
 				}
 			}else if(node >= 0){
 				CVector pos = ThePaths.m_pathNodes[node].GetPosition();
 				if(beside)
-					pos += leadVehicle->GetRight()*kRegroupClearance;
+					pos += leadVehicle->GetRight()*(kRegroupClearance + lane*4.0f);
 				pos.z += 1.0f;
 				driven->SetPosition(pos);
 				// Facing the way player 1 faces, so taking the wheel back does
@@ -1607,70 +1824,81 @@ CCoop::Update(void)
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
-					COOP_LOG("WII coop: player 2's car brought back (%s)\n", regroup);
+					COOP_LOG("WII coop: player %d's car brought back (%s)\n", player + 1, regroup);
 				}
 			}else if(driven != nil && driven->IsBoat()){
 				// Nowhere to put it: left alone rather than deleted.  The world
 				// around it is thin, but a boat respawned on foot is worse.
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
-					COOP_LOG("WII coop: player 2's boat left where it is (no water by player 1)\n");
+					COOP_LOG("WII coop: player %d's boat left where it is (no water by player 1)\n", player + 1);
 				}
 			}else{
 				// Replaced rather than moved.  Moving a ped that might be halfway
 				// through a door, a fall or a punch means unpicking whichever of
 				// those it is; a fresh one beside player 1 is in a known state,
 				// and carries over the health and the weapon the old one had.
-				RemovePartner(regroup, true);
-				s_spawnTime = now;
+				RemovePartner(player, regroup, true);
+				s_spawnTime[player] = now;
 			}
 		}else{
-			s_downTime = 0;
+			s_downTime[player] = 0;
 			// These are set on every passenger of a car whose driver is dragged
 			// out, with no exception for players, and would send the partner
 			// running from the car under the engine's control.
 			partner->bFleeAfterExitingCar = false;
 			partner->bHeldHostageInCar = false;
 			partner->m_area = lead->m_area;
-			// Player 1's car is entered as a passenger or not at all.  The
-			// partner is sent to an empty seat, but if somebody takes it while
-			// they walk over, CPed::SeekCar has them drag that somebody out
-			// instead -- and CPed::PedSetInCarCB then makes the partner the
-			// car's driver, over the top of player 1, who is sitting in it.
-			// Stopped here, on the frame it starts, before anyone is pulled
-			// anywhere.
+			// Another player's car is entered as a passenger or not at all.
+			// The partner is sent to an empty seat, but if somebody takes it
+			// while they walk over, CPed::SeekCar has them drag that somebody
+			// out instead -- and CPed::PedSetInCarCB then makes the partner
+			// the car's driver, over the top of the player who is sitting in
+			// it.  Stopped here, on the frame it starts, before anyone is
+			// pulled anywhere.
 			//
 			// A car the partner is taking as its driver is meant to be a
 			// carjack, occupied or not -- cancelling every PED_CARJACK is what
 			// stopped the partner stealing an occupied car at all -- but never
 			// with a player in the driver's seat: that is not a carjack, it is
-			// one player pulling the other out of their own car.
+			// one player pulling another out of their own car.
 			if(partner->m_nPedState == PED_CARJACK &&
 			   (partner->m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER ||
 			    (partner->m_carInObjective != nil && partner->m_carInObjective->pDriver != nil &&
 			     partner->m_carInObjective->pDriver->IsPlayer())))
 				partner->QuitEnteringCar();
-			if(UpdatePartnerVehicle(lead, partner, partnerPad)){
+			CVehicle *rideInto = nil;
+			if(UpdatePartnerVehicle(player, partner, partnerPad, rideInto)){
 				// Replaced, like every other time the partner is moved; the new
-				// one is made in the seat.  SpawnPartner runs just below.
-				RemovePartner("hopping in", true);
-				s_spawnTime = now;
-			}else
-				UpdateArsenal(lead, partner);
+				// one is made in the seat.  SpawnPartner runs just below, and
+				// the seat's vehicle goes with them: it may be any player's,
+				// not just player 1's.
+				RemovePartner(player, "hopping in", true);
+				s_spawnTime[player] = now;
+				s_rideInto[player] = rideInto;
+				if(rideInto != nil)
+					rideInto->RegisterReference((CEntity**)&s_rideInto[player]);
+			}
 		}
-		partner = GetPartner();
-		if(partner != nil){
-			SyncSharedAmmo(lead, partner);
-			ShareWantedLevel(lead, partner);
-		}
-	}
-	if(partner == nil && padPresent && s_joined && now >= s_spawnTime){
-		if(!SpawnPartner(lead))
-			s_spawnTime = now + kRetryMs;
 	}
 
-	UpdateAim(LEAD);
-	UpdateAim(PARTNER);
+	// The arsenal and the heat are the party's, whoever is in the world this
+	// frame: the shared pool syncs every partner at once.
+	UpdateArsenal(lead);
+	SyncSharedAmmo(lead);
+	ShareWantedLevel();
+
+	for(int player = 1; player < NUMPLAYERS; player++){
+		if(CWorld::Players[player].m_pPed != nil)
+			continue;
+		if(!padPresent[player] || !s_joined[player - 1] || now < s_spawnTime[player])
+			continue;
+		if(!SpawnPartner(lead, player))
+			s_spawnTime[player] = now + kRetryMs;
+	}
+
+	for(int i = 0; i < NUMPLAYERS; i++)
+		UpdateAim(i);
 }
 
 void
@@ -1681,31 +1909,42 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 	const int index = GetPlayerIndex(ped);
 	if(index < 0)
 		return;
-	// Only between two players who are both up and both on foot.  Someone in a
-	// car is not held by this -- the leash deals with them -- and someone lying
-	// dead in the road does not get to keep the other one standing over them.
-	CPlayerPed *other = CWorld::Players[index == LEAD ? PARTNER : LEAD].m_pPed;
-	if(other == nil || other->bInVehicle || other->DyingOrDead() || other->m_nPedState == PED_ARRESTED)
-		return;
+	// The wall is a star: a partner is held to player 1, and player 1 is held
+	// to each partner in turn -- with one partner that is exactly the old
+	// rule, and with more it is each of the walls applied one after another,
+	// so the lead cannot walk off and drag the party along.  Only between
+	// players who are both up and both on foot.  Someone in a car is not held
+	// by this -- the leash deals with them -- and someone lying dead in the
+	// road does not get to keep the others standing over them.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(i == index)
+			continue;
+		// Partners are not held to each other, only to player 1.
+		if(index != LEAD && i != LEAD)
+			continue;
+		CPlayerPed *other = CWorld::Players[i].m_pPed;
+		if(other == nil || other->bInVehicle || other->DyingOrDead() || other->m_nPedState == PED_ARRESTED)
+			continue;
 
-	CVector2D apart(ped->GetPosition().x - other->GetPosition().x, ped->GetPosition().y - other->GetPosition().y);
-	const float distance = apart.Magnitude();
-	if(distance <= kTetherStart)
-		return;
-	apart = apart*(1.0f/distance);
-	const float outward = moved.x*apart.x + moved.y*apart.y;
-	if(outward <= 0.0f)
-		return;
+		CVector2D apart(ped->GetPosition().x - other->GetPosition().x, ped->GetPosition().y - other->GetPosition().y);
+		const float distance = apart.Magnitude();
+		if(distance <= kTetherStart)
+			continue;
+		apart = apart*(1.0f/distance);
+		const float outward = moved.x*apart.x + moved.y*apart.y;
+		if(outward <= 0.0f)
+			continue;
 
-	// All of the outward speed at the start of the band, none of it at the end,
-	// so the wall is something a player runs out of rather than into.
-	const float allowed = Clamp((kTetherMax - distance)/(kTetherMax - kTetherStart), 0.0f, 1.0f);
-	moved.x -= apart.x*outward*(1.0f - allowed);
-	moved.y -= apart.y*outward*(1.0f - allowed);
+		// All of the outward speed at the start of the band, none of it at the
+		// end, so the wall is something a player runs out of rather than into.
+		const float allowed = Clamp((kTetherMax - distance)/(kTetherMax - kTetherStart), 0.0f, 1.0f);
+		moved.x -= apart.x*outward*(1.0f - allowed);
+		moved.y -= apart.y*outward*(1.0f - allowed);
 
-	if(allowed < 0.2f && !s_tetherTold){
-		s_tetherTold = true;
-		Tell("WII_TTH");
+		if(allowed < 0.2f && !s_tetherTold){
+			s_tetherTold = true;
+			Tell("WII_TTH");
+		}
 	}
 }
 
@@ -1819,7 +2058,7 @@ CCoop::FindShotVector(CEntity *shooter, float range, const CVector &fireSource, 
 bool
 CCoop::GetReticle(int player, float &x, float &y, bool &engaged)
 {
-	if(player < 0 || player > PARTNER || !s_aim[player].drawReticle)
+	if(player < 0 || player >= NUMPLAYERS || !s_aim[player].drawReticle)
 		return false;
 	x = s_aim[player].reticleX;
 	y = s_aim[player].reticleY;

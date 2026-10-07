@@ -958,6 +958,28 @@ CPickups::AddToCollectedPickupsArray(int32 index)
 		CollectedPickUpIndex = 0;
 }
 
+// One pickup, offered to every player in slot order.  Player 1 is asked
+// first, so a pickup two players are both standing on is his, the way it has
+// always been; the partners (slots 1..3 of CWorld::Players; see CCoop) are
+// asked for the rest, in order.  The calls cannot both take the same pickup:
+// the first one that touches it removes it, and the next sees it removed.
+static bool
+TryPickupForPlayers(uint32 index)
+{
+	if (CPickups::aPickUps[index].m_eType == PICKUP_NONE)
+		return false;
+	if (CPickups::aPickUps[index].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus))
+		return true;
+	for (int player = 1; player < NUMPLAYERS; player++) {
+		CPlayerPed *ped = CWorld::Players[player].m_pPed;
+		if (ped == nil || CPickups::aPickUps[index].m_eType == PICKUP_NONE)
+			continue;
+		if (CPickups::aPickUps[index].Update(ped, ped->bInVehicle ? ped->m_pMyVehicle : nil, player))
+			return true;
+	}
+	return false;
+}
+
 void
 CPickups::Update()
 {
@@ -992,8 +1014,15 @@ CPickups::Update()
 		}
 	}
 #endif
-	if (CPad::GetPad(0)->CollectPickupJustDown() ||
-	    (CCoop::GetPartner() != nil && CPad::GetPad(PAD_COOP)->CollectPickupJustDown()))
+	// Any player's button arms the buffer; the pickup itself still goes to
+	// whoever is standing on it, below.
+	bool wantsCollect = false;
+	for (int i = 0; i < NUMPLAYERS && !wantsCollect; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped != nil && GetPadFromPlayer(ped)->CollectPickupJustDown())
+			wantsCollect = true;
+	}
+	if (wantsCollect)
 		CollectPickupBuffer = 6;
 	else
 		CollectPickupBuffer = Max(0, CollectPickupBuffer - 1);
@@ -1001,33 +1030,18 @@ CPickups::Update()
 	if (PlayerOnWeaponPickup)
 		PlayerOnWeaponPickup = Max(0, PlayerOnWeaponPickup - 1);
 
-	// Both players collect.  Player 1 is asked first, so a pickup the two are
-	// both standing on is his, the way it has always been; the partner (slot 1
-	// of CWorld::Players; see CCoop) is asked for the rest.  The two calls
-	// cannot both take the same pickup: the first one that touches it removes
-	// it, and the second sees it removed.
-	CPlayerPed *partner = CCoop::GetPartner();
-
 #define PICKUPS_FRAME_SPAN (6)
 #ifdef FIX_BUGS
 	for (uint32 i = NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN) / PICKUPS_FRAME_SPAN; i < NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1) / PICKUPS_FRAME_SPAN; i++) {
 #else // BUG: this code can only reach 318 out of 320 pickups
 	for (uint32 i = NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN); i < NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1); i++) {
 #endif
-		bool taken = aPickUps[i].m_eType != PICKUP_NONE &&
-			aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus);
-		if (!taken && partner != nil && aPickUps[i].m_eType != PICKUP_NONE)
-			taken = aPickUps[i].Update(partner, partner->bInVehicle ? partner->m_pMyVehicle : nil, 1);
-		if (taken)
+		if (TryPickupForPlayers(i))
 			AddToCollectedPickupsArray(i);
 	}
 #undef PICKUPS_FRAME_SPAN
 	for (uint32 i = NUMGENERALPICKUPS; i < NUMPICKUPS; i++) {
-		bool taken = aPickUps[i].m_eType != PICKUP_NONE &&
-			aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus);
-		if (!taken && partner != nil && aPickUps[i].m_eType != PICKUP_NONE)
-			taken = aPickUps[i].Update(partner, partner->bInVehicle ? partner->m_pMyVehicle : nil, 1);
-		if (taken)
+		if (TryPickupForPlayers(i))
 			AddToCollectedPickupsArray(i);
 	}
 }

@@ -225,8 +225,13 @@ RwTexture *gpViewFinderTex;
 
 // Couch co-op: one colour per player, worn by their reticle and by the pip over
 // their head, so that on one screen it is plain whose aim is whose -- and, with
-// two identical figures on it, which of them is you.  Vice City's own pair.
-static const CRGBA kCoopColours[2] = { CRGBA(80, 215, 255, 255), CRGBA(255, 110, 200, 255) };
+// identical figures on it, which of them is you.  Player 1 and the first
+// partner are Vice City's own pair; the other two are the next most telling
+// hues against the game's streets.
+static const CRGBA kCoopColours[NUMPLAYERS] = {
+	CRGBA(80, 215, 255, 255), CRGBA(255, 110, 200, 255),
+	CRGBA(140, 240, 120, 255), CRGBA(255, 200, 90, 255)
+};
 
 static void
 DrawCoopMarks(void)
@@ -305,8 +310,9 @@ DrawCoopMarks(void)
 
 	// The reticles.  A full crosshair with something to shoot, a dot without --
 	// the same two marks the single-player HUD draws -- and red, like the
-	// single-player one, while it is on a target.
-	for (int i = 0; i < 2; i++) {
+	// single-player one, while it is on a target.  One per player, each in
+	// that player's colour.
+	for (int i = 0; i < NUMPLAYERS; i++) {
 		float x, y;
 		bool engaged;
 		CPlayerPed *ped = CWorld::Players[i].m_pPed;

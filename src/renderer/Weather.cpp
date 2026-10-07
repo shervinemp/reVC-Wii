@@ -205,7 +205,8 @@ void CWeather::Update(void)
 		DMAudio.PlayOneShot(SoundHandle, SOUND_LIGHTNING, LightningDuration);
 		// Thunder is everybody's: no position, so it is not a proximity test.
 		CPad::GetPad(0)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
-		CPad::GetPad(PAD_COOP)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
+		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
+			CPad::GetPad(coop)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
 		WhenToPlayLightningSound = 0;
 	}
 

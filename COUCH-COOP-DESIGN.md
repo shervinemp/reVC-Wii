@@ -1,11 +1,12 @@
 # Couch co-op (GTA:SA PS2 model) — design
 
-Branch: `couch-coop`, on top of `definitive-qol`.
+Branch: `coop-4` (the four player work, on top of `couch-coop`), itself on top
+of `definitive-qol`.
 
 Target model is the **PS2 GTA: San Andreas co-op** the Wii was built alongside:
-two players, **one shared camera, one screen**, no split-screen. Player 1 stays
-the script driver; player 2 is a real second ped who walks, aims, shoots, drives
-and rides along, but never owns a mission.
+up to four players, **one shared camera, one screen**, no split-screen. Player 1
+stays the script driver; each partner is a real ped who walks, aims, shoots,
+drives and rides along, but never owns a mission.
 
 This document describes the design **as it is built**. An earlier version of it
 was written before any of the code could be run, and three of the things it
@@ -13,9 +14,11 @@ stated as fact turned out not to be; those are listed under "What the first
 draft got wrong", because each one cost time and each is the kind of thing that
 gets re-believed.
 
-**Nothing here has been run on hardware yet.** It compiles and links, and every
-path was written against the engine code it calls, but the first boot with two
-controllers is still ahead. See `HANDOFF-COUCH-COOP.md` for the test plan.
+The two-player build has been through hardware testing. The four-player work is
+staged: the session, the pads, the arsenal, the wanted level and the peds are
+four-player now; the camera and the HUD still speak the pair's shape and are
+the next stages (see `COOP-4-PLAN.md`). Four controllers in one room have not
+been tried yet.
 
 ## The rules, and why each one
 
@@ -24,86 +27,95 @@ not a degradation, and it is the thing that makes the rest affordable. Mission
 scripts, their cutscene cameras, their fail states and every `PlayerInFocus`
 assumption inside a scripted sequence were written for one player; with co-op
 off while `CTheScripts::IsPlayerOnAMission()` is true, none of that ever runs
-next to a second ped. It is also what SA did: there was no co-op campaign.
-In practice "off" means the partner is taken out of the world and the camera is
-the ordinary one again; both come back when the mission ends.
+next to another ped. It is also what SA did: there was no co-op campaign.
+In practice "off" means the partners are taken out of the world and the camera
+is the ordinary one again; all of it comes back when the mission ends.
 
 **`PlayerInFocus` stays 0.** `FindPlayerPed()` is player 1 forever. Scripts, the
 HUD, pickups, the wanted level and the save all keep talking to the player they
-have always talked to, and nothing has to learn that a second one exists.
+have always talked to, and nothing has to learn that more exist.
 
 **One camera, and aiming never moves it.** The shared camera takes no input
 from the pointer or a stick. Each player's pointer is a reticle — a mark on the
-screen — so two people can share one view without fighting over it.
+screen — so several people can share one view without fighting over it.
 
 **Each player aims at their own reticle, from their own gun.** Not along the
 camera. See "Aiming" below; this is the part the first draft had wrong in a way
 that mattered.
 
-**Player 2 is not saved.** The partner is `PEDTYPE_PLAYER2`, and
+**The partners are not saved.** They are `PEDTYPE_PLAYER2..4`, and
 `CPools::SavePedPool` picks what to write by `PEDTYPE_PLAYER1`. Every existing
 save stays byte-identical and valid.
 
-**Drop-in, drop-out.** With the menu toggle on, the partner appears when a
-second controller is connected and leaves when it has been gone a few seconds.
-Nobody has to go back to the menu.
+**Drop-in, drop-out.** With the menu toggle on, a partner appears when their
+controller is connected and joins with a button press, and leaves when it has
+been gone a few seconds. Nobody has to go back to the menu.
 
 ## How it is built
 
 ### The session — `CCoop` (`src/core/Coop.cpp`)
 
-One class owns co-op: whether it is running this frame, who the partner is, and
-where each player is aiming. `CCoop::Update()` runs once a frame from
+One class owns co-op: whether it is running this frame, who the partners are,
+and where each player is aiming. `CCoop::Update()` runs once a frame from
 `CGame::Process`, after the scripts and before the world.
 
 `CCamera::bWiiCoopCamera` is only the menu toggle — it says the players *want*
-co-op. `CCoop::PairActive()` says whether the pair is actually in the game: the
-session is on and somebody has pressed a button on the partner's pad. The
-session itself is also off during missions, cutscenes, replays and while player
-1 is wasted or busted — and until the second player joins, the game is the
-ordinary one: the follow camera and its own crosshair, the scopes, the
-drive-bys. Anything outside the co-op layer whose behaviour depends on co-op
-reads `PairActive()` (or `UsesReticleAim()`, below), never the toggle.
+co-op. `CCoop::PairActive()` says whether the shared-view half is actually on:
+the session is running and at least one partner has joined. The session itself
+is also off during missions, cutscenes, replays and while player 1 is wasted or
+busted — and until a partner joins, the game is the ordinary one: the follow
+camera and its own crosshair, the scopes, the drive-bys. Anything outside the
+co-op layer whose behaviour depends on co-op reads `PairActive()` (or
+`UsesReticleAim()`, below), never the toggle.
 
-### The second player
+### The partners
 
-- `NUMPLAYERS` is 2. Slot 1 of `CWorld::Players[]` is the partner's and is nil
-  whenever nobody is playing it. `COMMAND_CREATE_PLAYER` accepts slot 0 only.
-- The partner is a `CPlayerPed`, `PEDTYPE_PLAYER2` (keeps it out of the save),
-  `MISSION_CHAR` (keeps it, and any car it is sitting in, from being deleted by
-  the population code — the same protection `CREATE_PLAYER` gives player 1),
-  `bStayInCarOnJack` (stays seated when player 1 gets back into the car) and
-  `bDontDragMeOutCar` (player 1 coming to the passenger door climbs past them
-  instead of hauling them out).
-- `Players[1].m_pPed` is a registered reference, so the engine nils it if it
-  deletes the ped. `CCoop` never caches the pointer; nil means "bring them back".
-- **Input** is a pad slot of its own, `PAD_COOP` (index 2). Not pad 1: outside
-  `MASTER` builds pad 1 is the engine's debug pad — Circle (the fire button)
-  toggles the debug camera, Start hides the HUD, and so on.
-  `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that reads
-  a pad on a player's behalf while processing a ped uses it.
-- **Controller**: player 1 is what it always was (a GameCube pad in port 1, else
-  Wii Remote 1). The partner is the first other controller present — any further
-  GameCube pad, then any Wii Remote with a Nunchuk or Classic Controller.
+- `NUMPLAYERS` is 4. Slots 1..3 of `CWorld::Players[]` are the partners' and
+  are nil whenever nobody is playing them. `COMMAND_CREATE_PLAYER` accepts
+  slot 0 only.
+- Each partner is a `CPlayerPed`, `PEDTYPE_PLAYER2..4` (keeps them out of the
+  save), `MISSION_CHAR` (keeps them, and any car they are sitting in, from
+  being deleted by the population code — the same protection `CREATE_PLAYER`
+  gives player 1), `bStayInCarOnJack` (stays seated when another player gets
+  back into the car) and `bDontDragMeOutCar` (a player coming to the passenger
+  door climbs past them instead of hauling them out).
+- Each slot's `m_pPed` is a registered reference, so the engine nils it if it
+  deletes the ped. `CCoop` never caches the pointers; nil means "bring them
+  back".
+- **Input** is a pad slot of its own per partner, `PAD_COOP`..`PAD_COOP3`
+  (indices 2..4). Not pads 1..3: outside `MASTER` builds pad 1 is the engine's
+  debug pad — Circle (the fire button) toggles the debug camera, Start hides
+  the HUD, and so on.
+  `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that
+  reads a pad on a player's behalf while processing a ped uses it.
+- **Controller**: player 1 is what it always was (a GameCube pad in port 1,
+  else Wii Remote 1). The partners are the remaining controllers in order —
+  GameCube pads in port order first, then Wii Remotes with a Nunchuk or Classic
+  Controller, the same rule player 1 is held to.
 - **Joining takes a button press.** A controller being connected is not a
-  player: the remote that launched the game is still switched on while its owner
-  plays on a GameCube pad, and would otherwise put an idle second Tommy beside
-  everyone who plays that way. The help box says "Player 2: press any button to
-  join" once when a second controller is noticed. They leave when the
-  controller has been gone for 6 s.
+  player: the remote that launched the game is still switched on while its
+  owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
+  everyone who plays that way. The help box says "Player 3: press any button to
+  join" once when that controller is noticed — one line per partner, so it
+  names the right player. They leave when their controller has been gone for
+  6 s, and one partner leaving is nobody else's business.
 
 ### Coming and going
 
-Everything that has to move the partner does it by **replacing** them: the ped
+Everything that has to move a partner does it by **replacing** them: the ped
 is deleted (the destructor already handles every state a ped can be in) and a
 fresh one is put beside player 1, carrying over health, armour, their weapons
 and ammo, and which one was in hand. That covers:
 
 - **Dying or being arrested.** Nothing in the engine brings a player back except
-  `CGameLogic`, which only knows the player in focus. The partner is left where
-  they fell for 3.5 s and then returns beside player 1 at full health.
+  `CGameLogic`, which only knows the player in focus. A partner is left where
+  they fell; another player who reaches them and holds for a second brings them
+  back **where they fell**, and if nobody does, after 10 s they come back beside
+  player 1 as before. Arrested is the one nobody can be brought back from —
+  they wait out the 10 s. A partner at their last point of health in a car is
+  healed where they sit instead.
 - **Getting past the leash** (28 m — see "Staying together"), falling through
-  the world, being driven off by someone else, or player 1 being teleported by a
+  the world, being driven off by an NPC, or player 1 being teleported by a
   script. The world is only streamed around player 1, so a partner left behind
   is on ground that is about to stop existing.
 - **No seat.** If player 1 is driving something with no free seat (or a boat),
@@ -113,35 +125,45 @@ and ammo, and which one was in hand. That covers:
 
 ### Staying together
 
-There is a limit on how far apart the two can get, in two parts.
+There is a limit on how far apart the party can get, in two parts. It is a
+**star**: every partner is held to player 1, not to each other, and player 1 is
+held to each partner the same way.
 
 **On foot it is a wall** (`CCoop::LimitSeparation`, applied to the walking
-velocity in `CPed::UpdatePosition` and to a jump's take-off). Past 18 m a player
-moving away from the other is slowed, and at 24 m they are stopped; walking
-back, or sideways along the edge, is untouched. It holds both players equally —
-neither can leave the other behind — and it is sized so that at the wall both
-are still on screen. The help box says so the first time someone reaches it.
+velocity in `CPed::UpdatePosition` and to a jump's take-off). Past 18 m a
+partner moving away from player 1 is slowed, and at 24 m they are stopped;
+player 1 is held to each partner the same way, one wall after another, so no
+one can leave the others behind. Walking back, or sideways along the edge, is
+untouched. It is sized so that at the wall two players are still on screen; with
+more than two, the wall is the lever to tighten if the spread ever runs off the
+screen (see `COOP-4-PLAN.md`). The help box says so the first time someone
+reaches it.
 
 **The wall only works on someone walking**, so behind it there is a leash at
 28 m for everything that gets past: a car driving off, a fall, the blast from an
-explosion. Past the leash the partner is brought back to player 1 — into the
-passenger seat if player 1 is the one in the car, otherwise beside them.
+explosion. Past the leash a partner is brought back to player 1 — into the
+passenger seat if there is one going, otherwise beside them. A car brought back
+is put one notch further behind player 1 for each partner, so several coming
+back at once line up along the road instead of piling onto one node.
 
 ### Riding along, and driving
 
-- **Getting in with player 1.** The partner presses the enter/exit button (2 on
-  the Wii Remote, Y on a GameCube pad, X on a Classic Controller) within 12 m
-  of the car player 1 is driving or getting into, and there is a free passenger
-  seat. If it is standing still they walk to the nearest free passenger door and
-  get in the way anyone does; if it is already rolling they are put straight
-  into the seat, since nobody catches a moving car on foot. On a bike they ride
-  pillion, and are always put straight onto it, and only once player 1 is
-  sitting on it: the engine hands a bike to any player who finishes climbing on,
-  so a partner still walking over when player 1 got off again would be left on a
-  bike with no rider, which the bike's own code does not survive.
-- **Taking their own car.** With no free seat beside player 1 -- player 1 on
-  foot, in a full car, or in a boat -- the same button takes the nearest car or
-  bike within 10 m that another player is not driving and enters it as its
+- **Getting in with another player.** A partner presses the enter/exit button
+  (2 on the Wii Remote, Y on a GameCube pad, X on a Classic Controller) within
+  12 m of a car another player is driving or getting into, and there is a free
+  passenger seat. If it is standing still they walk to the nearest free
+  passenger door and get in the way anyone does; if it is already rolling they
+  are put straight into the seat, since nobody catches a moving car on foot.
+  On a bike they ride pillion, and are always put straight onto it, and only
+  once its rider is sitting on it: the engine hands a bike to any player who
+  finishes climbing on, so a partner still walking over when the rider got off
+  again would be left on a bike with no rider, which the bike's own code does
+  not survive. The seat's vehicle travels with them through the respawn, so a
+  moving car or a bike that belongs to partner 2 seats them into *that*
+  vehicle, not player 1's.
+- **Taking their own car.** With no free seat beside another player -- player 1
+  on foot, in a full car, or in a boat -- the same button takes the nearest car
+  or bike within 10 m that another player is not driving and enters it as its
   **driver**. It is the same enter-car path player 1 uses, carjacking an
   occupied car if that is the nearest. Boats are deliberately left alone (see
   "Not done"); a bike is not, because its controls and drive-by come off the
@@ -166,16 +188,18 @@ passenger seat if player 1 is the one in the car, otherwise beside them.
   pulled out to their side at the leash.
 - **When it goes wrong.** A car on fire puts the partner out of it by itself. One
   killed in the car, or still in it when it explodes, comes back the usual few
-  seconds later. If someone else takes the wheel, the partner is brought back to
-  player 1. Player 1's own enter button treats a car the partner is driving as a
-  passenger seat rather than a carjack, and the partner's button never picks a
-  car player 1 is driving, so the two cannot take each other's wheel.
+  seconds later. If an NPC takes the wheel, the partner is brought back to
+  player 1; a car any player is driving is part of the party and the leash
+  keeps it near. Player 1's own enter button treats a car a partner is driving
+  as a passenger seat rather than a carjack, and a partner's button never picks
+  a car another player is driving, so nobody can take anybody else's wheel.
 
-A boat is the one vehicle the partner is only ever a passenger in: the engine
-makes any player who boards one its driver whatever seat they asked for, and its
-control code still looks the rider up as player 1. The partner is never allowed
-to finish dragging someone out of a seat (`CPed::PedSetInCarCB` makes whoever
-did the dragging the driver).
+A boat is the one vehicle a partner is only ever a passenger in: the engine
+makes any player who boards one its driver whatever seat they asked for, so
+rather than hand the wheel over by surprise, no partner is ever offered one
+(see "Not done"). A partner is never allowed to finish dragging someone out of
+a seat either (`CPed::PedSetInCarCB` makes whoever did the dragging the
+driver).
 
 A **drive-by** under the shared camera works for whoever is driving: the side is
 taken from the look-left/look-right buttons directly, the way the engine already
@@ -192,41 +216,44 @@ passengers still do not fight.  A bike's pillion and a boat's passenger do not
 shoot: their vehicles' drive-bys are the driver's alone.
 
 A Rhino's turret and a fire truck's hose are turned with the pad, as in stock
-Vice City, and a Rhino's belongs to both players: `TankControl` takes the driver
-from the vehicle, with their own pad. A Wiimote and Nunchuk have no right stick,
-so on that controller the Nunchuk's lean stands in for it in a heli and a tank
-(see the input layer). AIM IN CAR otherwise hands them to the car camera that
-follows the pointer, which does not run under the shared one, so
+Vice City, and each belongs to whoever is driving: `TankControl` and
+`FireTruckControl` take the driver from the vehicle, with their own pad, so a
+partner who steals one drives and fires it. A Wiimote and Nunchuk have no right
+stick, so on that controller the Nunchuk's lean stands in for it in a heli and
+a tank (see the input layer). AIM IN CAR otherwise hands them to the car camera
+that follows the pointer, which does not run under the shared one, so
 `CCamera::UseFreeCarCam` answers no while co-op is running.
 
 ### Weapons
 
 Pickups, shops and scripts all hand weapons to `FindPlayerPed()`, and that is
-left alone. Instead the partner is given the same **weapons** player 1 has —
-one pickup arms both — but the two draw from **one shared pool of ammo**, not a
-copy each. Player 1's `m_nAmmoTotal` is the pool and the partner's is kept
-equal to it, so a burst from one empties the other too.
+left alone. Instead every partner is given the same **weapons** player 1 has —
+one pickup arms the party — but they all draw from **one shared pool of ammo**,
+not a copy each. Player 1's `m_nAmmoTotal` is the pool and each partner's is
+kept equal to it, so a burst from one empties the others too.
 
 - **The clip and the reload stay each player's own**, so a reload still takes
-  its own time and a magazine is not shared. The partner's clip is clamped to
-  what the pool has left, so it can never hold rounds the other player has
+  its own time and a magazine is not shared. A partner's clip is clamped to
+  what the pool has left, so it can never hold rounds another player has
   already spent.
-- The partner's own `m_nAmmoTotal` is only a **cache of the pool**, re-synced
-  every frame (`CCoop::SyncSharedAmmo`). This is the whole of the ammo race:
-  both read and write one count, so two players firing the same gun cannot fire
-  the same round twice.
-- The partner **switches weapons independently** — `ProcessWeaponSwitch` is
-  per-ped and reads their own pad — but draws from the pool.
+- Each partner's own `m_nAmmoTotal` is only a **cache of the pool**, re-synced
+  every frame (`CCoop::SyncSharedAmmo`), with what every partner spent summed
+  into one subtraction. This is the whole of the ammo race: everyone reads and
+  writes one count, so several players firing the same gun cannot fire the same
+  round twice. The pool drains N−1 times faster with N players; that is
+  deliberate, and worth revisiting only if it feels thin on hardware.
+- Partners **switch weapons independently** — `ProcessWeaponSwitch` is per-ped
+  and reads their own pad — but draw from the pool.
 - A partner who is **new, or who died**, gets a copy of every weapon player 1 is
   carrying. A partner who was only **moved** (regrouped, seated, set aside for a
   mission) keeps their own weapons. The ammo behind them is the pool either way.
 - **A rampage's weapon is not shared.** `CDarkel` puts it in one of player 1's
   slots and takes it out afterwards; that slot is ignored while it lasts
-  (`CDarkel::GetFrenzyWeaponSlot`). The partner fights the rampage with their
+  (`CDarkel::GetFrenzyWeaponSlot`). The partners fight the rampage with their
   own.
-- The **HUD** shows player 1's weapon, which *is* the shared count, so it is the
-  partner's too when they hold the same gun. A different gun in the partner's
-  hands has no ammo readout of its own.
+- The **HUD** shows player 1's weapon, which *is* the shared count, so it is
+  everyone's when they hold the same gun. Each partner's own readout is the
+  ammo line under their pip (see "Marks on screen").
 
 ### The camera
 
@@ -243,15 +270,20 @@ script directs.
 - Fixed heading on foot — whatever way the view was facing when it took over.
   It follows a car player 1 is driving, because a camera pitched down from behind
   sees four times as far ahead as behind and driving toward it is driving blind.
-- Looks at the midpoint of the two players. Its height follows slowly, so
-  kerbs and steps do not shake the view, but never from more than 6 m behind.
+- Looks at the midpoint of player 1 and the partner furthest from them, so the
+  view stays on the line between the two it can see least far across. Its
+  height follows slowly, so kerbs and steps do not shake the view, but never
+  from more than 6 m behind. The full four-player shape — a centroid and the
+  widest pair, with the yaw following the vehicle carrying the most players —
+  is stage 4; see `COOP-4-PLAN.md`.
 - Comes in along its own line when a building is in the way, so indoors it ends
   up under the ceiling rather than looking at the roof. The line that is tested
-  runs back from **each player**, not from the midpoint: the midpoint is an
-  average and can be inside a staircase or under a floor, and from in there the
-  test finds the surface it started beneath. With two answers the camera takes
-  the roomier one — it cannot be under one player's ceiling and still show the
-  other down the street.
+  runs back from **player 1 and the framed partner**, not from the midpoint:
+  the midpoint is an average and can be inside a staircase or under a floor,
+  and from in there the test finds the surface it started beneath. It takes the
+  roomier of the two answers — it cannot be under one player's ceiling and
+  still show the other down the street. Stage 4 extends the test to every
+  player.
 - The **cinematic camera** and Classic controls' **look-around** are off while
   co-op runs. Both take the view (and the second also the controls) away from
   the players, and co-op has the button that would give them back.
@@ -362,19 +394,29 @@ nothing.
 
 ### Smaller rules
 
-- **The players can shoot and punch each other** — it is more fun that way —
-  **but nothing aims at the other player for them.** Classic lock-on skips
-  them, the aim assist skips them, and a reticle resting on the other player
-  does not turn red or snap; it is treated as pointing past them.
+- **The players can shoot and punch each other** — it is more fun that way,
+  and there is a **Friendly Fire** toggle on the co-op page (on by default) to
+  turn it off. With it off, a hit that lands on a player from a player -- or
+  from a car one of them is driving -- costs nothing; the glance and the blood
+  still show, because the hit feedback is what makes a fight read.
+  **Nothing aims at another player for them:** Classic lock-on skips them, the
+  aim assist skips them, and a reticle resting on another player does not turn
+  red or snap; it is treated as pointing past them.
 - **What they do to each other is not a crime** and not a statistic: no wanted
-  level for hitting your partner, and a dead partner is not a rampage kill.
-- **The heat is shared** for everything else. There is one wanted level,
-  player 1's, and the partner's crimes count toward it.
-- **Notices.** The help box says when player 2 joins or leaves, when co-op is
-  paused for a mission, and which framing the camera button picked.
-- **Marks on screen.** One colour per player (cyan, pink), worn by their reticle
-  and by a pip with a health bar over their head. The pips only appear once there
-  are two players; the health bar is the only place the partner's health is shown.
+  level for hitting another player, and a dead partner is not a rampage kill.
+- **The heat is shared** for everything else, and the **Shared Wanted** toggle
+  (on by default) is what "shared" means. With it on, a crime by anyone raises
+  everyone to the highest level; drops decay on their own. With it off each
+  player keeps their own record — but a partner's rise is still put on player
+  1, because every cop in the city reads player 1's wanted level and nobody
+  else's; without that a partner's crime would call nobody.
+- **Notices.** The help box says when a partner joins or leaves — by name, one
+  line per partner — when co-op is paused for a mission, and which framing the
+  camera button picked.
+- **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
+  by their reticle and by a pip with a health bar and an ammo line over their
+  head. The pips and the full four-colour treatment are stage 5; the reticles
+  are already one per player.
 - **The stock zoom does not cycle** while co-op has the camera button.
 
 ## What the first draft got wrong
@@ -407,27 +449,26 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
-- **Player 2 cannot drive a boat.** Cars and bikes they can steal and drive (see
-  "Riding along, and driving"); a boat would need `CBoat::ProcessControl` to
-  find the rider the way `CAutomobile` and `CBike` now do, and it still looks
-  the rider up as player 1. A boat's passenger rides without a drive-by, and so
-  does a bike's pillion: their drive-bys are the driver's alone.
-- **Boats and trains**: the partner waits out of the world. They can still be a
-  passenger in player 1's car, pillion on player 1's bike, or riding in a boat.
-- **A fire truck's hose does nothing for the partner.** It is turned only when
-  the vehicle is `FindPlayerVehicle()` (player 1's), so a partner who steals one
-  drives it without it. (The Rhino's turret works for both.)
-- **The wallet and the arsenal are player 1's.** Both players collect pickups
-  now, but weapons and ammo, money, packages and property are credited to player
-  1 -- the partner gets the weapon back through the usual mirror -- so a money
-  pickup the partner walks over is really player 1's. Health, armour, adrenaline
+- **No partner ever takes a boat.** Cars and bikes they can steal and drive
+  (see "Riding along, and driving"); a boat is deliberately left alone, so
+  nobody finishes climbing on one and gets made its driver by surprise. A
+  boat's passenger rides without a drive-by, and so does a bike's pillion:
+  their drive-bys are the driver's alone.
+- **Boats and trains**: a partner waits out of the world. They can still be a
+  passenger in another player's car, pillion on their bike, or riding in a
+  boat.
+- **The wallet and the arsenal are player 1's.** Everyone collects pickups now,
+  but weapons and ammo, money, packages and property are credited to player 1
+  -- a partner gets the weapon back through the usual mirror -- so a money
+  pickup a partner walks over is really player 1's. Health, armour, adrenaline
   and a bribe stay with whoever walked over them.
-- **No remote speaker for player 2.** The speaker code drives one remote, and
-  the partner's would need its own stream. Rumble works for both (gunfire,
-  explosions, the car or bike they are in).
-- **The partner's skin is a choice, not the player's.** The co-op page's Partner
-  Skin picks from the special-character models; the default is player 1's model,
-  which means player 1's skin texture too (`RenderPlayerCB` applies slot 0's).
+- **No remote speaker for the partners.** The speaker code drives one remote,
+  and each partner's would need its own stream. Rumble works for everyone
+  (gunfire, explosions, the car or bike they are in, thunder).
+- **The partners' skins are one choice, not one each.** The co-op page's
+  Partner Skin picks from the special-character models and every partner wears
+  it; the default is player 1's model, which means player 1's skin texture too
+  (`RenderPlayerCB` applies slot 0's). Per-partner skin rows are stage 5.
 - **Indoors** the camera ends up close under low ceilings. It works; it is not
   pretty.
 - **A camera that tilts up by itself near walls.** The honest fix for tall
@@ -437,21 +478,20 @@ Recorded because each was stated as a verified fact.
   ceiling of height h is h/sin(pitch)), which means probing both ways every
   frame. A camera that nods is worse than one that is sometimes tight, and
   there was no way to watch it. The overhead framing is the manual version.
-- **A few statics are still shared between the players**: the jack-cancel tap
-  (`cancelJack` in `CPed::ProcessControl`), the melee combo flag
+- **A few statics are still shared between the players**: the melee combo flag
   (`nPlayerInComboMove`), and under Classic controls the lock-on's
   `bDontAllowWeaponChange` and its single target marker. Each is a moment's
-  oddity, not a fault.
+  oddity, not a fault. (The jack-cancel tap is per player now.)
 - **Sound is quieter.** The listener is the camera, and it is 15–30 m from the
   players instead of 4. (Height hardly counts — the audio code scales it by a
   fifth — but the distance back does.) Footsteps and nearby chatter suffer most.
 - **Pop-in at the top of the screen when the players are far apart.** Pedestrians
   are created about 40 m from player 1, on the understanding that this is off
   screen; pulled all the way back, the low framing sees further than that.
-- **Player 2's ammo readout.** The HUD shows player 1's weapon, which is the
-  shared count; it does not show a different gun in the partner's hands, and
-  the engine switching weapon when the pool runs dry is the only notice they
-  get.
+- **A partner's ammo readout is the pip.** The HUD proper shows player 1's
+  weapon, which is the shared count; each partner's own gun and its count are
+  on their pip, and the engine switching weapon when the pool runs dry is the
+  only other notice they get. Stage 5 extends the pips to all four players.
 - **Dynamic control ownership** — SA let the players hand "control" back and
   forth, with the camera following whoever had it. Here the camera frames the
   midpoint and player 1 is the anchor. Framing a player's lock target is not
@@ -465,14 +505,17 @@ Recorded because each was stated as a verified fact.
 | framings | `kCoopFramings`, `Cam.cpp` | see table above |
 | pull-back per metre apart | `kCoopSeparationGain` | 1.0, beyond 6 m |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
-| leash | `kLeash`, `Coop.cpp` | 28 m |
-| board player 1's car within | `kBoardingRange`, `Coop.cpp` | 12 m |
-| partner's own steal range | `kStealRange`, `Coop.cpp` | 10 m |
+| leash (on foot) | `kLeash`, `Coop.cpp` | 28 m |
+| leash (driving) | `kLeashDriving`, `Coop.cpp` | 50 m |
+| regroup lane per partner | `kRegroupBack` steps, `Coop.cpp` | 12 m further back each |
+| board another player's car within | `kBoardingRange`, `Coop.cpp` | 12 m |
+| own steal range | `kStealRange`, `Coop.cpp` | 10 m |
 | camera's furthest | `kCoopMaxDistance`, `Cam.cpp` | 40 m |
-| respawn delay | `kRespawnAfterMs` | 3.5 s |
+| revive: reach within / hold for | `kReviveRange` / `kReviveHoldMs`, `Coop.cpp` | 2 m / 1 s |
+| downed bleed-out | `kDownedBleedMs`, `Coop.cpp` | 10 s |
 | join / drop-out delay | `kJoinAfterMs` / `kDropAfterMs` | 0.4 s (then a button) / 6 s |
 | pointer lapse | `kPointerFreshMs` | 1.5 s |
 | shot follows the reticle within | `kAimArc`, `Coop.cpp` | 50° of the gun |
 | view height may trail by | `kCoopHeightLag`, `Cam.cpp` | 6 m |
 | assist cone | `kAssistMinCone` / `kAssistMaxCone` | 2.5° / 8° |
-| player colours | `kCoopColours`, `Hud.cpp` | cyan / pink |
+| player colours | `kCoopColours`, `Hud.cpp` | cyan / pink / green / amber |
