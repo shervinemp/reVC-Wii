@@ -163,7 +163,12 @@ back at once line up along the road instead of piling onto one node.
   vehicle, not player 1's. A seat somebody is already walking to is never
   offered to a teleport -- the vehicle flags the door -- so a partner can
   never land in the seat another player is climbing into, and nobody finishes
-  their entry with no seat.
+  their entry with no seat. Scripted passengers -- a taxi fare, a patient --
+  walk in through the engine's own enter path, which checks the same seats
+  and door flags and gives up cleanly when the car is full: a cab full of
+  partners leaves the fare waiting until one gets out, and it retries on its
+  own. A partner never drags an NPC out of a seat either: their passenger
+  entry turns into a carjack exactly then, and that is cancelled.
 - **Taking their own car.** With no free seat beside another player -- player 1
   on foot, in a full car, or in a boat -- the same button takes the nearest car
   or bike within 10 m that another player is not driving and enters it as its
@@ -171,7 +176,9 @@ back at once line up along the road instead of piling onto one node.
   occupied car if that is the nearest. Boats are deliberately left alone (see
   "Not done"); a bike is not, because its controls and drive-by come off the
   rider's own pad now. The camera turns with the car the partner is driving when
-  player 1 is not in one, so it can be driven rather than felt for.
+  player 1 is not in one, so it can be driven rather than felt for. This is
+  what a coupe with a full party comes to: its one seat carries one partner
+  and the rest drive their own cars, which the regroup then keeps in convoy.
 - **Being left behind.** If player 1 simply drives off, the leash does the same
   thing at 28 m: the partner appears in a free seat.
 - **No free seat** (a full car, a boat, a train): the partner waits out of the
