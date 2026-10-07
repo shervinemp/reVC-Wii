@@ -1,6 +1,8 @@
 # COOP-4 — three and four player couch co-op
 
-*Scoping document. Branch `coop-4`, based on `couch-coop` at `ba910797`. Not implemented yet.*
+*Scoping document. Branch `coop-4`, based on `couch-coop` at `ba910797`.
+Stages 1 and 2 are implemented (commits `0a387051`, `6b775777`); stage 3 waits
+on hardware verification of `ba910797`.*
 
 ## Verdict
 
@@ -99,9 +101,9 @@ player peds.
 
 ## Stages
 
-1. **Engine slots.** `NUMPLAYERS = 4`; verify the nil-safe loops; no behavior change with two players.
+1. **Engine slots.** `NUMPLAYERS = 4`; verify the nil-safe loops; no behavior change with two players. — *done.*
 2. **Device layer.** Probe/assign/capture four devices; per-player flick, pointer, rumble; join
-   callbacks carry a partner index (ignored until stage 3).
+   callbacks carry a partner index (ignored until stage 3). — *done.*
 3. **CCoop to N.** The bulk: loops and per-partner state for session, join/leave, leash, regroup,
    arsenal, wanted, pickups, death; pad mapping; help text.
 4. **Camera for N.** Centroid target, max-pairwise span; identical to today with two players.

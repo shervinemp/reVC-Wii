@@ -190,8 +190,8 @@ constexpr float kMaxPointerDt = 1.0f/15.0f;
 // --- which controller is which player ----------------------------------------
 // Worked out once per scan.  Player 1's rule is the one this backend has always
 // had: a GameCube pad in port 1 owns the slot, and otherwise it is the first
-// Wii Remote.  Player 2 -- couch co-op's partner, CPad's PAD_COOP -- is whichever
-// controller is there besides: see resolveDevices.
+// Wii Remote.  The partners -- couch co-op, CPad's PAD_COOP block -- are
+// whichever controllers are there besides: see resolveDevices.
 struct PadDevice
 {
 	enum Kind { NONE, GAMECUBE, WIIMOTE };
