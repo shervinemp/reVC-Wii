@@ -2104,7 +2104,7 @@ CBike::DoDriveByShootings(void)
 
 		if (!anim || !anim->IsRunning()) {
 			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				weapon->FireFromCar(this, lookingLeft, lookingRight);
+				weapon->FireFromCar(this, (CPlayerPed*)pDriver, lookingLeft, lookingRight);
 #ifdef NINTENDO_WII
 				WiiDriveByPaceShot(weapon);
 #else

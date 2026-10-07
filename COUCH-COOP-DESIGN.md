@@ -148,10 +148,10 @@ passenger seat if player 1 is the one in the car, otherwise beside them.
   thing at 28 m: the partner appears in a free seat.
 - **No free seat** (a full car, a boat, a train): the partner waits out of the
   world and reappears beside player 1 when they stop or get out.
-- **Riding and driving.** As a passenger the partner sits, does not steer and
-  cannot yet shoot from the car. As a driver the partner steers, accelerates and
-  brakes from their own pad, and their drive-by works; they still stay put while
-  player 1 gets out and back in.
+- **Riding and driving.** As a passenger the partner sits, does not steer, and
+  shoots out of their own window (see the drive-by below). As a driver the
+  partner steers, accelerates and brakes from their own pad, and their drive-by
+  works; they still stay put while player 1 gets out and back in.
 - **Getting out.** The same button: stepping out once the car has stopped, or
   rolling out of it at speed. The order is only given when the engine would
   obey it (`CanPedExitCar`, or the roll-out test) — one it refuses is kept,
@@ -181,6 +181,12 @@ the car camera has swung. With a reticle up -- either player's -- the side comes
 from which side of the car it is on instead, and the shot itself goes where the
 reticle is, within the cone the single-player pointer correction uses; outside
 it the stock window direction stays, because nobody shoots across their own car.
+
+A player in a **passenger seat** shoots too.  Their side is their seat's -- a
+rear-left passenger has the left window and no other -- and their shot follows
+their reticle when it is on that side, on the same terms.  The traffic's
+passengers still do not fight.  A bike's pillion and a boat's passenger do not
+shoot: their vehicles' drive-bys are the driver's alone.
 
 A Rhino's turret and a fire truck's hose are turned with the pad, as in stock
 Vice City, and a Rhino's belongs to both players: `TankControl` takes the driver
@@ -398,12 +404,11 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
-- **Player 2 cannot drive a boat, and cannot shoot as a car passenger.** Cars
-  and bikes they can steal and drive (see "Riding along, and driving"); a boat
-  would need `CBoat::ProcessControl` to find the rider the way `CAutomobile` and
-  `CBike` now do, and it still looks the rider up as player 1. There is no
-  passenger drive-by in Vice City at all, so a passenger rides and does not
-  shoot, whichever player they are.
+- **Player 2 cannot drive a boat.** Cars and bikes they can steal and drive (see
+  "Riding along, and driving"); a boat would need `CBoat::ProcessControl` to
+  find the rider the way `CAutomobile` and `CBike` now do, and it still looks
+  the rider up as player 1. A boat's passenger rides without a drive-by, and so
+  does a bike's pillion: their drive-bys are the driver's alone.
 - **Boats and trains**: the partner waits out of the world. They can still be a
   passenger in player 1's car, pillion on player 1's bike, or riding in a boat.
 - **A fire truck's hose does nothing for the partner.** It is turned only when

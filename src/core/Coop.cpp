@@ -911,11 +911,15 @@ UpdateAim(int index)
 		return;
 	if(ped->DyingOrDead())
 		return;
-	// Inside a car only the driver aims: the reticle is what a drive-by fires
-	// at, and a passenger has no drive-by (see the design's Not done).
+	// Inside a vehicle the driver aims, and so does a passenger with a window
+	// to shoot out of -- a car's passenger seat (CAutomobile's drive-by).  A
+	// pillion or a boat passenger has no drive-by to aim, so no reticle.
 	if(ped->bInVehicle){
 		CVehicle *vehicle = ped->m_pMyVehicle;
-		if(vehicle == nil || vehicle->pDriver != ped)
+		if(vehicle == nil)
+			return;
+		if(vehicle->pDriver != ped &&
+		   (!vehicle->IsCar() || vehicle->IsRealHeli() || vehicle->IsRealPlane()))
 			return;
 	}
 

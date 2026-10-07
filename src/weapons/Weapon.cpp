@@ -472,7 +472,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 }
 
 bool
-CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
+CWeapon::FireFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool left, bool right)
 {
 	ASSERT(shooter!=nil);
 
@@ -482,16 +482,16 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 	if ( m_nAmmoInClip <= 0 )
 		return false;
 
-	if ( FireInstantHitFromCar(shooter, left, right) )
+	if ( FireInstantHitFromCar(shooter, shooterPed, left, right) )
 	{
 #ifdef NINTENDO_WII
 		// The car's own shot sound is always a submachine gun's (the vehicle one-shots
 		// in AudioLogic.cpp pick from the SMG slot), which covers everything stock Vice
 		// City lets out of a window.  A gun the "Drive-By Weapons" option lets through
-		// is heard as itself instead, through the driver's sound, which picks by the
+		// is heard as itself instead, through the shooter's sound, which picks by the
 		// weapon in hand.
-		if ( shooter->pDriver && GetInfo()->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN )
-			DMAudio.PlayOneShot(shooter->pDriver->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+		if ( shooterPed != nil && GetInfo()->m_nWeaponSlot != WEAPONSLOT_SUBMACHINEGUN )
+			DMAudio.PlayOneShot(shooterPed->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 		else
 #endif
 		DMAudio.PlayOneShot(shooter->m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
@@ -499,7 +499,7 @@ CWeapon::FireFromCar(CVehicle *shooter, bool left, bool right)
 		// The player's guns crack through the Wiimote from a car as well as on foot
 		// (see Fire), and on the same terms: not while that remote is in couch
 		// co-op's partner's hands.
-		if ( shooter->GetStatus() == STATUS_PLAYER && !WiiPadRemoteIsPartners() )
+		if ( shooterPed != nil && shooterPed == FindPlayerPed() && !WiiPadRemoteIsPartners() )
 			WiiSpeakerPlayShot();
 #endif
 
@@ -2620,7 +2620,7 @@ CWeapon::FireM16_1stPerson(CEntity *shooter)
 }
 
 bool
-CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
+CWeapon::FireInstantHitFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool left, bool right)
 {
 	CWeaponInfo *info = GetInfo();
 
@@ -2630,11 +2630,11 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	
 	if ( shooter->IsBike() )
 	{
-		if ( shooter->pDriver )
+		if ( shooterPed )
 		{
 			source = info->m_vecFireOffset;
 			
-			shooter->pDriver->TransformToNode(source, PED_HANDR);
+			shooterPed->TransformToNode(source, PED_HANDR);
 			source += CTimer::GetTimeStep() * shooter->m_vecMoveSpeed;
 			
 			if ( left )
@@ -2690,7 +2690,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 			source.z -= 0.1f;
 		}
 		
-		shooter->pDriver->TransformToNode(source, PED_HANDR);
+		shooterPed->TransformToNode(source, PED_HANDR);
 		source += CTimer::GetTimeStep() * shooter->m_vecMoveSpeed;
 		
 		if ( left )
@@ -2723,14 +2723,14 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	// way an on-foot shot does.  The stock direction is square out of the
 	// window, and the cone keeps it for a reticle that is nowhere near it --
 	// a driver cannot shoot across their own car.
-	if ( CCoop::UsesReticleAim() && shooter->pDriver != nil && shooter->pDriver->IsPlayer() )
+	if ( CCoop::UsesReticleAim() && shooterPed != nil && shooterPed->IsPlayer() )
 	{
-		CPlayerPed *driver = (CPlayerPed*)shooter->pDriver;
-		if ( CCoop::HasAim(driver) )
+		CPlayerPed *shooterPlayer = shooterPed;
+		if ( CCoop::HasAim(shooterPlayer) )
 		{
 			CVector stock = target - source;
 			stock.Normalise();
-			const float heading = CCoop::GetAimHeading(driver);
+			const float heading = CCoop::GetAimHeading(shooterPlayer);
 			CVector aimed(-Sin(heading), Cos(heading), 0.0f);
 			if ( DotProduct(aimed, stock) > kDriveByAimCone )
 				target = source + info->m_fRange * aimed;
@@ -2743,7 +2743,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 
 	// Whoever is driving is the one shooting: the auto-aim, the crime and the
 	// damage all belong to them, not to player 1.
-	CPlayerPed *culprit = (shooter->pDriver != nil && shooter->pDriver->IsPlayer()) ? (CPlayerPed*)shooter->pDriver : FindPlayerPed();
+	CPlayerPed *culprit = (shooterPed != nil && shooterPed->IsPlayer()) ? shooterPed : FindPlayerPed();
 
 	DoDriveByAutoAiming(culprit, shooter, &source, &target);
 
@@ -2869,10 +2869,9 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 		CBulletTraces::AddTrace(&source, &traceTarget, m_eWeaponType, shooter);
 	}
 
-	// A drive-by shakes the driver's pad, whoever is driving it.
-	if ( shooter != nil && shooter == FindPlayerVehicle() && shooter->pDriver != nil && shooter->pDriver->IsPlayer() ) {
-		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter->pDriver;
-		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
+	// A drive-by shakes the shooter's pad, whoever is driving or riding.
+	if ( shooterPed != nil && shooterPed->IsPlayer() ) {
+		GetPadFromPlayer(shooterPed)->StartShake_Distance(240, 128,
 			shooter->GetPosition().x, shooter->GetPosition().y, shooter->GetPosition().z);
 	}
 

@@ -3904,11 +3904,100 @@ CAutomobile::ProcessBuoyancy(void)
 	}
 }
 
+// A player in a passenger seat, shooting out of their own window.  The side is
+// the seat's -- a rear-left passenger has the left window and no other -- and
+// the shot itself follows their reticle when it is on that side (see
+// CWeapon::FireInstantHitFromCar).  Only players: the traffic's passengers do
+// not fight.
+static void
+DoPassengerDriveBy(CVehicle *vehicle, CPlayerPed *passenger, int seat)
+{
+	CPlayerInfo *playerInfo = passenger->GetPlayerInfoForThisPlayerPed();
+	if (playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
+
+	CWeapon *weapon = passenger->GetWeapon();
+	bool canDriveBy = CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN;
+#ifdef NINTENDO_WII
+	canDriveBy = canDriveBy || WiiDriveByWeaponAllowed(weapon->m_eWeaponType);
+#endif
+	if (!canDriveBy)
+		return;
+
+	weapon->Update(passenger->m_audioEntityId, nil);
+
+	// Seat 0 is the front right, 1 the rear left, 2 the rear right; see
+	// CPed::PedSetInCarCB.
+	bool lookingLeft = seat == 1;
+	bool lookingRight = seat != 1;
+	CPad *pad = GetPadFromPlayer(passenger);
+
+	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
+	AnimationId leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
+	if (vehicle->bLowVehicle) {
+		rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT_LO;
+		leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT_LO;
+	}
+
+	CAnimBlendAssociation *anim = nil;
+	if (pad->GetCarGunFired()) {
+#ifdef NINTENDO_WII
+		// Notes the frame for CPed::IsPedDoingDriveByShooting, so a passenger
+		// leaning out is not dragged out of the seat either.
+		vehicle->PickDriveBySideFromView(lookingLeft, lookingRight);
+#endif
+		if (lookingLeft) {
+			anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), rightAnim);
+			if (anim)
+				anim->blendDelta = -1000.0f;
+			anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), leftAnim);
+			if (anim == nil || anim->blendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(passenger->GetClump(), ASSOCGRP_STD, leftAnim);
+		} else {
+			anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), leftAnim);
+			if (anim)
+				anim->blendDelta = -1000.0f;
+			anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), rightAnim);
+			if (anim == nil || anim->blendDelta < 0.0f)
+				anim = CAnimManager::AddAnimation(passenger->GetClump(), ASSOCGRP_STD, rightAnim);
+		}
+
+		if (!anim || !anim->IsRunning()) {
+			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+				weapon->FireFromCar(vehicle, passenger, lookingLeft, lookingRight);
+#ifdef NINTENDO_WII
+				WiiDriveByPaceShot(weapon);
+#else
+				weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+#endif
+			}
+		}
+	} else {
+		weapon->Reload();
+		anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), leftAnim);
+		if (anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), rightAnim);
+		if (anim)
+			anim->blendDelta = -1000.0f;
+	}
+}
+
 void
 CAutomobile::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim = nil;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
+
+	// Couch co-op: a player in a passenger seat shoots out of their own window,
+	// whether or not the driver has anything to shoot with.  Co-op only: in a
+	// mission a scripted ride leaves the player a passenger, and that scene was
+	// written without a gun out of the window.
+	if (CCoop::IsRunning())
+		for (int seat = 0; seat < m_nNumMaxPassengers; seat++)
+			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
+				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);
+
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
 		return;
 
@@ -3989,7 +4078,7 @@ CAutomobile::DoDriveByShootings(void)
 
 		if (!anim || !anim->IsRunning()) {
 			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
-				weapon->FireFromCar(this, lookingLeft, true);
+				weapon->FireFromCar(this, (CPlayerPed*)pDriver, lookingLeft, true);
 #ifdef NINTENDO_WII
 				WiiDriveByPaceShot(weapon);
 #else

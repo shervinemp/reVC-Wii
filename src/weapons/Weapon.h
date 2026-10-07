@@ -10,6 +10,7 @@ class CEntity;
 class CPhysical;
 class CVehicle;
 class CPed;
+class CPlayerPed;
 struct CColPoint;
 class CWeaponInfo;
 
@@ -40,7 +41,7 @@ public:
 	void Shutdown();
 	
 	bool Fire          (CEntity *shooter, CVector *fireSource);
-	bool FireFromCar   (CVehicle *shooter, bool left, bool right);
+	bool FireFromCar   (CVehicle *shooter, CPlayerPed *shooterPed, bool left, bool right);
 	bool FireMelee     (CEntity *shooter, CVector &fireSource);
 	bool FireInstantHit(CEntity *shooter, CVector *fireSource);
 	
@@ -58,7 +59,7 @@ public:
 	bool FireSniper           (CEntity *shooter);
 	bool TakePhotograph       (CEntity *shooter);
 	bool FireM16_1stPerson    (CEntity *shooter);
-	bool FireInstantHitFromCar(CVehicle *shooter, bool left, bool right);
+	bool FireInstantHitFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool left, bool right);
 	
 	static void DoDoomAiming       (CEntity *shooter, CVector *source,   CVector *target);
 	static void DoTankDoomAiming   (CEntity *shooter, CEntity *driver,   CVector *source, CVector *target);
