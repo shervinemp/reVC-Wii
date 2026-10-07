@@ -1186,12 +1186,32 @@ CCoop::Update(void)
 				s_spawnTime = now;
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, leadTeleported)) != nil){
-			// Replaced rather than moved.  Moving a ped that might be halfway
-			// through a door, a fall or a punch means unpicking whichever of
-			// those it is; a fresh one beside player 1 is in a known state, and
-			// carries over the health and the weapon the old one had.
-			RemovePartner(regroup, true);
-			s_spawnTime = now;
+			// A partner who is driving their own car is moved with it.  The
+			// leash fires because the world is only streamed around player 1, so
+			// the pair has to come back to them -- but the car is the thing that
+			// went too far, and deleting the partner out of it throws away the
+			// drive and leaves the car abandoned.  The road node is the same
+			// trick the vehicle cheat uses: it is a road, so a car placed there
+			// is on something, which a spot picked for a ped on foot is not.
+			CVehicle *driven = (partner->bInVehicle && partner->m_pMyVehicle != nil &&
+			                    partner->m_pMyVehicle->pDriver == partner) ? partner->m_pMyVehicle : nil;
+			int32 node = driven != nil && !driven->IsBike() && !driven->IsBoat()
+				? ThePaths.FindNodeClosestToCoors(lead->GetPosition(), PATH_CAR, 100.0f) : -1;
+			if(node >= 0){
+				CVector pos = ThePaths.m_pathNodes[node].GetPosition();
+				pos.z += 1.0f;
+				driven->SetPosition(pos);
+				driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				COOP_LOG("WII coop: player 2's car brought back (%s)\n", regroup);
+			}else{
+				// Replaced rather than moved.  Moving a ped that might be halfway
+				// through a door, a fall or a punch means unpicking whichever of
+				// those it is; a fresh one beside player 1 is in a known state,
+				// and carries over the health and the weapon the old one had.
+				RemovePartner(regroup, true);
+				s_spawnTime = now;
+			}
 		}else{
 			s_downTime = 0;
 			// These are set on every passenger of a car whose driver is dragged
