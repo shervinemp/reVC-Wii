@@ -1269,34 +1269,60 @@ CCoop::Update(void)
 			                         lead->m_pMyVehicle->pDriver == lead) ? lead->m_pMyVehicle : nil;
 			int32 node = -1;
 			bool beside = false;
+			bool airborne = false;
+			CVector airPos;
 			if(driven != nil && !driven->IsBoat()){
-				// On the road behind player 1 rather than on top of them.  The
-				// node nearest player 1 is the one their own car is standing on,
-				// and two cars put in the same square metre spend the next few
-				// seconds pushing each other out of it -- the regroup that fires
-				// every second.  Behind is also the direction the partner can
-				// drive on in, which is where they were going anyway.
 				const CVector leadAt = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
 				const float heading = leadVehicle != nil ? leadVehicle->GetForward().Heading() : lead->m_fRotationCur;
 				const CVector forward(-Sin(heading), Cos(heading), 0.0f);
-				for(float back = kRegroupBack; back <= kRegroupBack*3.0f && node < 0; back += kRegroupBack){
-					const int32 candidate = ThePaths.FindNodeClosestToCoors(leadAt - forward*back, PATH_CAR, kRegroupSearch);
-					if(candidate < 0)
-						continue;
-					if((ThePaths.m_pathNodes[candidate].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance)
-						continue;
-					node = candidate;
-				}
-				// Nothing clear behind: the node nearest player 1 after all, so
-				// the car is at least on something.  It goes to the side of them
-				// if that node is the one they are on.
-				if(node < 0){
-					node = ThePaths.FindNodeClosestToCoors(leadAt, PATH_CAR, 100.0f);
-					beside = node >= 0 && leadVehicle != nil &&
-					         (ThePaths.m_pathNodes[node].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance;
+				if(driven->IsRealHeli() || driven->IsRealPlane()){
+					// An aircraft is not on the road, and a path node would put it
+					// in the street: it goes back into the air behind player 1,
+					// level with them if they are flying and well above them if
+					// they are not.  Anything solid in the way sends it higher.
+					airPos = leadAt - forward*kRegroupBack;
+					airPos.z = leadAt.z + (leadVehicle != nil &&
+						(leadVehicle->IsRealHeli() || leadVehicle->IsRealPlane()) ? 0.0f : 30.0f);
+					for(int tries = 0; tries < 4 &&
+						CWorld::TestSphereAgainstWorld(airPos, 4.0f, nil, true, true, false, true, false, false) != nil; tries++)
+						airPos.z += 15.0f;
+					airborne = true;
+				}else{
+					// On the road behind player 1 rather than on top of them.  The
+					// node nearest player 1 is the one their own car is standing on,
+					// and two cars put in the same square metre spend the next few
+					// seconds pushing each other out of it -- the regroup that fires
+					// every second.  Behind is also the direction the partner can
+					// drive on in, which is where they were going anyway.
+					for(float back = kRegroupBack; back <= kRegroupBack*3.0f && node < 0; back += kRegroupBack){
+						const int32 candidate = ThePaths.FindNodeClosestToCoors(leadAt - forward*back, PATH_CAR, kRegroupSearch);
+						if(candidate < 0)
+							continue;
+						if((ThePaths.m_pathNodes[candidate].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance)
+							continue;
+						node = candidate;
+					}
+					// Nothing clear behind: the node nearest player 1 after all, so
+					// the car is at least on something.  It goes to the side of them
+					// if that node is the one they are on.
+					if(node < 0){
+						node = ThePaths.FindNodeClosestToCoors(leadAt, PATH_CAR, 100.0f);
+						beside = node >= 0 && leadVehicle != nil &&
+						         (ThePaths.m_pathNodes[node].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance;
+					}
 				}
 			}
-			if(node >= 0){
+			if(airborne){
+				driven->SetPosition(airPos);
+				if(leadVehicle != nil)
+					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
+				driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				if(now - s_regroupLogTime >= 3000){
+					s_regroupLogTime = now;
+					COOP_LOG("WII coop: player 2's aircraft brought back (%s)\n", regroup);
+				}
+			}else if(node >= 0){
 				CVector pos = ThePaths.m_pathNodes[node].GetPosition();
 				if(beside)
 					pos += leadVehicle->GetRight()*kRegroupClearance;

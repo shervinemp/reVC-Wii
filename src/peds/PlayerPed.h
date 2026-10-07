@@ -6,6 +6,7 @@
 class CPad;
 class CCopPed;
 class CWanted;
+class CVehicle;
 
 class CPlayerPed : public CPed
 {
@@ -126,6 +127,13 @@ public:
 // while processing a ped wants this rather than CPad::GetPad(0), or the partner
 // moves when player 1 pushes the stick.
 class CPad *GetPadFromPlayer(CPlayerPed *ped);
+
+// The pad that drives a vehicle: the driver's own when a player is at the
+// wheel, and pad 0 otherwise -- an NPC driver, or a remote-controlled vehicle
+// with nobody in it, which is the one holding the remote.  The flight code, a
+// car's horn and a vehicle's own guns all want this rather than CPad::GetPad(0),
+// or the partner's stolen helicopter flies on player 1's stick.
+class CPad *GetPadFromVehicleDriver(CVehicle *vehicle);
 
 // The index of that pad, for the vehicle control code, which takes a pad
 // number (CAutomobile::ProcessControlInputs and friends) rather than a CPad.

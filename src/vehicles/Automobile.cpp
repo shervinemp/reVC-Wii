@@ -1393,22 +1393,25 @@ CAutomobile::ProcessControl(void)
 			if(!IsAlarmOn())
 				ReduceHornCounter();
 		}else{
+			// Couch co-op: the horn and the siren are the driver's, whoever is
+			// driving.
+			CPad *hornPad = GetPadFromVehicleDriver(this);
 			if(UsesSiren()){
-				if(Pads[0].bHornHistory[Pads[0].iCurrHornHistory]){
-					if(Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
-					   Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-2) % CPad::HORNHISTORY_SIZE])
+				if(hornPad->bHornHistory[hornPad->iCurrHornHistory]){
+					if(hornPad->bHornHistory[(hornPad->iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
+					   hornPad->bHornHistory[(hornPad->iCurrHornHistory+CPad::HORNHISTORY_SIZE-2) % CPad::HORNHISTORY_SIZE])
 						m_nCarHornTimer = 1;
 					else
 						m_nCarHornTimer = 0;
-				}else if(Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
-				         !Pads[0].bHornHistory[(Pads[0].iCurrHornHistory+1) % CPad::HORNHISTORY_SIZE]){
+				}else if(hornPad->bHornHistory[(hornPad->iCurrHornHistory+CPad::HORNHISTORY_SIZE-1) % CPad::HORNHISTORY_SIZE] &&
+				         !hornPad->bHornHistory[(hornPad->iCurrHornHistory+1) % CPad::HORNHISTORY_SIZE]){
 					m_nCarHornTimer = 0;
 					m_bSirenOrAlarm = !m_bSirenOrAlarm;
 				}else
 					m_nCarHornTimer = 0;
 			}else if(GetModelIndex() != MI_VOODOO && !CVehicle::bCheat3 && !carHasNitro){
 				if(!IsAlarmOn()){
-					if(Pads[0].GetHorn())
+					if(hornPad->GetHorn())
 						m_nCarHornTimer = 1;
 					else
 						m_nCarHornTimer = 0;
@@ -1439,6 +1442,8 @@ CAutomobile::ProcessControl(void)
 		}else if(GetModelIndex() == MI_RCBARON){
 			FlyingControl(FLIGHT_MODEL_RCPLANE);
 		}else if(IsRealHeli() || bAllCarCheat){
+			// Couch co-op: the pilot's own pad lifts it and fires its guns.
+			CPad *heliPad = GetPadFromVehicleDriver(this);
 #ifdef RESTORE_ALLCARSHELI_CHEAT
 			if (bAllCarCheat)
 				FlyingControl(FLIGHT_MODEL_HELI);
@@ -1458,11 +1463,11 @@ CAutomobile::ProcessControl(void)
 					if (GetModelIndex() == MI_RCRAIDER || GetModelIndex() == MI_RCGOBLIN)
 						FlyingControl(FLIGHT_MODEL_RCHELI);
 					else if (m_nWheelsOnGround < 4 && !(GetModelIndex() == MI_SEASPAR && bTouchingWater) ||
-						CPad::GetPad(0)->GetAccelerate() != 0 ||
+						heliPad->GetAccelerate() != 0 ||
 #ifndef FREE_CAM
-						CPad::GetPad(0)->GetCarGunUpDown() > 1.0f ||
+						heliPad->GetCarGunUpDown() > 1.0f ||
 #else
-						((!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController)) && CPad::GetPad(0)->GetCarGunUpDown() > 1.0f) ||
+						((!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController)) && heliPad->GetCarGunUpDown() > 1.0f) ||
 #endif
 						Abs(m_vecMoveSpeed.x) > 0.02f ||
 						Abs(m_vecMoveSpeed.y) > 0.02f ||
@@ -1488,7 +1493,7 @@ CAutomobile::ProcessControl(void)
 			// Heli weapons
 			if(GetModelIndex() == MI_HUNTER && GetStatus() == STATUS_PLAYER){
 				// Hunter rockets
-				if(CPad::GetPad(0)->CarGunJustDown() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+350){
+				if(heliPad->CarGunJustDown() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+350){
 					CWeapon gun(WEAPONTYPE_ROCKETLAUNCHER, 100);
 					CVector source = vecHunterRocketPos;
 					source = GetMatrix()*source + Max(DotProduct(m_vecMoveSpeed, GetForward()), 0.0f)*GetForward()*CTimer::GetTimeStep();
@@ -1503,7 +1508,7 @@ CAutomobile::ProcessControl(void)
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 					m_nGunFiringTime = CTimer::GetTimeInMilliseconds();
 				// Hunter gun
-				}else if(CPad::GetPad(0)->GetHandBrake() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+60){
+				}else if(heliPad->GetHandBrake() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+60){
 					CWeapon gun(WEAPONTYPE_HELICANNON, 5000);
 					CVector source = vecHunterGunPos;
 					source = GetMatrix()*source + m_vecMoveSpeed*CTimer::GetTimeStep();
@@ -1515,7 +1520,7 @@ CAutomobile::ProcessControl(void)
 				}
 			}else if(GetModelIndex() == MI_SEASPAR && GetStatus() == STATUS_PLAYER){
 				// Sea sparrow gun
-				if(CPad::GetPad(0)->GetHandBrake() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+40){
+				if(heliPad->GetHandBrake() && CTimer::GetTimeInMilliseconds() > m_nGunFiringTime+40){
 					CWeapon gun(WEAPONTYPE_M4, 5000);
 					CVector source = vecSeaSparrowGunPos;
 					source = GetMatrix()*source + m_vecMoveSpeed*CTimer::GetTimeStep();
@@ -1659,14 +1664,14 @@ CAutomobile::ProcessControl(void)
 		float speed = m_vecMoveSpeed.MagnitudeSqr();
 		if(speed > sq(0.1f)){
 			speed = Sqrt(speed);
+			// Whoever is driving feels it.
+			CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
 			if(suspShake > 0.0f){
 				uint8 freq = Min(200.0f*suspShake*speed*2000.0f/m_fMass + 100.0f, 250.0f);
-				// The suspension is felt by whoever is driving it.
-				CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
 				shakePad->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
 			}else{
 				uint8 freq = Min(200.0f*surfShake*speed*2000.0f/m_fMass + 40.0f, 150.0f);
-				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
+				shakePad->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
 			}
 		}
 	}
@@ -5412,8 +5417,8 @@ CPed::MakeTyresMuddySectorList(CPtrList &list)
 
 											CVector vehAndWheelDist = wheelPos - car->GetPosition();
 											car->ApplyTurnForce(CVector(0.0f, 0.0f, 50.0f * Min(1.0f, m_fTurnMass * 0.0005f)), vehAndWheelDist);
-											if (car == FindPlayerVehicle()) {
-												CPad::GetPad(0)->StartShake(300, 70);
+											if (car->pDriver != nil && car->pDriver->IsPlayer()) {
+												GetPadFromVehicleDriver(car)->StartShake(300, 70);
 											}
 										}
 									}
@@ -5451,8 +5456,8 @@ CPed::MakeTyresMuddySectorList(CPtrList &list)
 											CVector vehAndWheelDist = wheelPos - bike->GetPosition();
 											bike->ApplyTurnForce(CVector(0.0f, 0.0f, 10.0f), vehAndWheelDist);
 
-											if (bike == FindPlayerVehicle()) {
-												CPad::GetPad(0)->StartShake(300, 70);
+											if (bike->pDriver != nil && bike->pDriver->IsPlayer()) {
+												GetPadFromVehicleDriver(bike)->StartShake(300, 70);
 											}
 										}
 									}

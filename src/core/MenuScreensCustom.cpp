@@ -14,6 +14,7 @@
 #include "Frontend.h"
 #include "Font.h"
 #include "Camera.h"
+#include "Coop.h"
 #include "main.h"
 #include "MBlur.h"
 #include "postfx.h"
@@ -128,7 +129,7 @@
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
-	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false) }, 0, 0, MENUALIGN_CENTER,
+	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_CENTER,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -175,6 +176,15 @@ void VibrationAfterChange(int8 before, int8 after) {
 		CPad::GetPad(0)->StartShake(350, 150);
 		TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 	}
+}
+
+// The partner's skin is read when they are made, so a change here would not be
+// seen until the next time they arrived.  Sent away, they come back with it as
+// soon as the menu closes.
+void CoopSkinAfterChange(int8 before, int8 after) {
+	(void)before;
+	(void)after;
+	CCoop::Suspend("partner skin");
 }
 #endif
 

@@ -2,6 +2,7 @@
 
 #include "RwHelper.h"
 #include "PlayerPed.h"
+#include "Vehicle.h"
 #include "Wanted.h"
 #include "Fire.h"
 #include "DMAudio.h"
@@ -69,6 +70,14 @@ GetPadIndexFromPlayer(CPlayerPed *ped)
 	if (ped != nil && ped == CWorld::Players[1].m_pPed)
 		return PAD_COOP;
 	return 0;
+}
+
+CPad*
+GetPadFromVehicleDriver(CVehicle *vehicle)
+{
+	if (vehicle != nil && vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
+		return GetPadFromPlayer((CPlayerPed*)vehicle->pDriver);
+	return CPad::GetPad(0);
 }
 
 CPlayerPed::~CPlayerPed()

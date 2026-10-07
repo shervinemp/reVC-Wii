@@ -323,6 +323,11 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 	if(pFlyingHandling == nil)
 		return;
 
+	// Couch co-op: whoever is at the controls flies from their own pad.  An NPC
+	// driver, or a remote-controlled aircraft with nobody in it, stays on pad 0
+	// -- the one holding the remote.
+	CPad *pad = GetPadFromVehicleDriver(this);
+
 	switch(flightModel){
 	case FLIGHT_MODEL_DODO:
 	{
@@ -348,7 +353,7 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		moveSpeed = m_vecMoveSpeed.Magnitude();
 		float upSpeed = DotProduct(m_vecMoveSpeed, GetUp());
 		float upImpulse = -1.0f * upSpeed / moveSpeed;
-		turnImpulse = (upImpulse*0.002f + -CPad::GetPad(0)->GetSteeringUpDown()/128.0f*0.001f) *
+		turnImpulse = (upImpulse*0.002f + -pad->GetSteeringUpDown()/128.0f*0.001f) *
 			magic*m_fTurnMass*CTimer::GetTimeStep();
 		ApplyTurnForce(turnImpulse*GetUp(), -4.0f*GetForward());
 
@@ -380,14 +385,14 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 	case FLIGHT_MODEL_PLANE_UNUSED:
 	case FLIGHT_MODEL_PLANE:
 	{
-		float fSteerLR = CPad::GetPad(0)->GetSteeringLeftRight() / 128.0f;
-		float fSteerUD = CPad::GetPad(0)->GetSteeringUpDown() / 128.0f;
-		float fGunUD = Abs(CPad::GetPad(0)->GetCarGunUpDown());
+		float fSteerLR = pad->GetSteeringLeftRight() / 128.0f;
+		float fSteerUD = pad->GetSteeringUpDown() / 128.0f;
+		float fGunUD = Abs(pad->GetCarGunUpDown());
 #ifdef FREE_CAM
 		if(!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
 #endif
 		if(fGunUD > 1.0f)
-			fSteerUD = -CPad::GetPad(0)->GetCarGunUpDown() / 128.0f;
+			fSteerUD = -pad->GetCarGunUpDown() / 128.0f;
 
 		float fSteerAngle = Atan2(fSteerUD, fSteerLR);
 		float fSteerMult = 1.0f;
@@ -420,7 +425,7 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 #endif
 		float fForwSpeed = DotProduct(GetMoveSpeed(), GetForward());
 		CVector vecTail = GetColModel()->boundingBox.min.y * GetForward();
-		float fPedalState = (CPad::GetPad(0)->GetAccelerate() - CPad::GetPad(0)->GetBrake()) / 255.0f;
+		float fPedalState = (pad->GetAccelerate() - pad->GetBrake()) / 255.0f;
 		float fThrustAccel;
 		if(fForwSpeed > 0.0f || fPedalState > 0.0f)
 			fThrustAccel = (fPedalState - fThrustFallOff * fForwSpeed) * fThrust;
@@ -443,8 +448,8 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 
 		float fRollAccel;
 		if (flightModel == FLIGHT_MODEL_RCPLANE) {
-			float fDirectionMultiplier = CPad::GetPad(0)->GetLookRight();
-			if (CPad::GetPad(0)->GetLookLeft())
+			float fDirectionMultiplier = pad->GetLookRight();
+			if (pad->GetLookLeft())
 				fDirectionMultiplier = -1;
 			fRollAccel = (0.5f * fDirectionMultiplier + fSteerLR) * pFlyingHandling->fRoll;
 		}
@@ -513,7 +518,7 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 		if (GetStatus() != STATUS_PLAYER && GetStatus() != STATUS_PLAYER_REMOTE)
 			return;
 		float fUpSpeed = DotProduct(m_vecMoveSpeed, GetUp());
-		float fThrust = (CPad::GetPad(0)->GetAccelerate() - CPad::GetPad(0)->GetBrake()) / 255.0f;
+		float fThrust = (pad->GetAccelerate() - pad->GetBrake()) / 255.0f;
 		if(fThrust < 0.0f)
 			fThrust *= 2.0f;
 		if(flightModel == FLIGHT_MODEL_RCHELI){
@@ -548,29 +553,29 @@ CVehicle::FlyingControl(eFlightModel flightModel)
 
 		float fRoll, fPitch, fYaw;
 		if (bCheat5) {
-			fPitch = CPad::GetPad(0)->GetSteeringUpDown() / 128.0f;
-			fRoll = CPad::GetPad(0)->GetLookLeft();
-			if (CPad::GetPad(0)->GetLookRight())
+			fPitch = pad->GetSteeringUpDown() / 128.0f;
+			fRoll = pad->GetLookLeft();
+			if (pad->GetLookRight())
 				fRoll = -1.0f;
-			fYaw = CPad::GetPad(0)->GetSteeringLeftRight() / 128.0f;
+			fYaw = pad->GetSteeringLeftRight() / 128.0f;
 		} else {
-			fPitch = CPad::GetPad(0)->GetSteeringUpDown() / 128.0f;
-			fRoll = -CPad::GetPad(0)->GetSteeringLeftRight() / 128.0f;
-			fYaw = CPad::GetPad(0)->GetLookRight();
-			if (CPad::GetPad(0)->GetLookLeft())
+			fPitch = pad->GetSteeringUpDown() / 128.0f;
+			fRoll = -pad->GetSteeringLeftRight() / 128.0f;
+			fYaw = pad->GetLookRight();
+			if (pad->GetLookLeft())
 				fYaw = -1.0f;
 #ifdef FREE_CAM
 			if (!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
 #endif
-			if(Abs(CPad::GetPad(0)->GetCarGunLeftRight()) > 1.0f)
-				fYaw = CPad::GetPad(0)->GetCarGunLeftRight() / 128.0f;
+			if(Abs(pad->GetCarGunLeftRight()) > 1.0f)
+				fYaw = pad->GetCarGunLeftRight() / 128.0f;
 		}
 #ifdef FREE_CAM
 		if(!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
 #endif
-		if(Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f)
-			fPitch = -CPad::GetPad(0)->GetCarGunUpDown() / 128.0f;
-		if (CPad::GetPad(0)->GetHorn()) {
+		if(Abs(pad->GetCarGunUpDown()) > 1.0f)
+			fPitch = -pad->GetCarGunUpDown() / 128.0f;
+		if (pad->GetHorn()) {
 			fYaw = 0.0f;
 			fPitch = Clamp(flyingHandling->fPitchStab * DotProduct(m_vecMoveSpeed, GetForward()), -200.0f, 1.3f);
 			fRoll = Clamp(flyingHandling->fRollStab * DotProduct(m_vecMoveSpeed, GetRight()), -200.0f, 1.3f);
@@ -1379,8 +1384,10 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 void
 CVehicle::DoFixedMachineGuns(void)
 {
+	// Couch co-op: the gunner's own pad.
+	CPad *pad = GetPadFromVehicleDriver(this);
 	if(TheCamera.Cams[TheCamera.ActiveCam].DirectionWasLooking == LOOKING_FORWARD){
-		if(CPad::GetPad(0)->GetCarGunFired() && !bGunSwitchedOff){
+		if(pad->GetCarGunFired() && !bGunSwitchedOff){
 			FireFixedMachineGuns();
 		}else{
 			if(CTimer::GetTimeInMilliseconds() > m_nGunFiringTime + 1400)
