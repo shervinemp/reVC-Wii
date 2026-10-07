@@ -2107,12 +2107,12 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 	if (TheCamera.m_WideScreenOn || bIsDucking)
 		return;
 
-	// The focus player only.  The timers below are function statics and the
-	// animation block is loaded and unloaded by this one function, so a second
-	// player ped would share both -- and a player who is busy unloads the block
-	// (the RemoveAnim below) out from under one who is standing idle.
-	if (this != FindPlayerPed())
-		return;
+	// Per player: the timer and the last animation are each player's own, so
+	// the partner idles on their own schedule rather than not at all.  The
+	// block itself is shared -- see the release below.
+	const int player = PlayerSlotForFlags(this);
+	static int32 lastTime[2] = { 0, 0 };
+	static int32 lastAnim[2] = { -1, -1 };
 
 	struct animAndGroup {
 		AnimationId animId;
@@ -2127,9 +2127,6 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 		{ANIM_STD_XPRESS_SCRATCH, ASSOCGRP_STD},
 	};
 
-	static int32 lastTime = 0;
-	static int32 lastAnim = -1;
-
 	bool hasIdleAnim = false;
 	CAnimBlock *idleAnimBlock = CAnimManager::GetAnimationBlock(idleAnimBlockIndex);
 	uint32 sinceLastInput = padUsed->InputHowLongAgo();
@@ -2141,10 +2138,14 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 					assoc->blendDelta = -8.0f;
 				}
 			}
-			if (!hasIdleAnim)
+			// In co-op the block is not released: either player may be idle or
+			// still blending an idle animation out, and one unloading it would
+			// leave the other holding animations from a block that is gone.  It
+			// is a small block, and the session ends with it.
+			if (!hasIdleAnim && !CCoop::IsRunning())
 				CStreaming::RemoveAnim(idleAnimBlockIndex);
 		} else {
-			lastTime = 0;
+			lastTime[player] = 0;
 		}
 	} else {
 		CStreaming::RequestAnim(idleAnimBlockIndex, STREAMFLAGS_DONT_REMOVE);
@@ -2158,16 +2159,16 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 				}
 			}
 
-			if (!hasIdleAnim && !bIsLooking && !bIsRestoringLook && sinceLastInput - lastTime > 25000) {
+			if (!hasIdleAnim && !bIsLooking && !bIsRestoringLook && sinceLastInput - lastTime[player] > 25000) {
 				int anim;
 				do
 					anim = CGeneral::GetRandomNumberInRange(0, ARRAY_SIZE(idleAnims));
-				while (lastAnim == anim);
+				while (lastAnim[player] == anim);
 
 				assoc = CAnimManager::BlendAnimation(GetClump(), idleAnims[anim].groupId, idleAnims[anim].animId, 8.0f);
 				assoc->flags |= ASSOC_IDLE;
-				lastAnim = anim;
-				lastTime = sinceLastInput;
+				lastAnim[player] = anim;
+				lastTime[player] = sinceLastInput;
 			}
 		}
 	}
