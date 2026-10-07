@@ -365,13 +365,6 @@ WiiSpeakerWake(void)
 bool
 WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 {
-	// One line per call attempt, and a call is rare.  This is the single place that
-	// decides whether a mission phone line goes to the remote, so a call that is
-	// silent on hardware names the gate that stopped it rather than needing another
-	// build to find out.
-	WiiTraceReport("WII speaker: call try rate=%u mode=%d spk=%d state=%d active=%d clip=%d\n",
-	               (unsigned)sampleRate, (int)WiiPhoneRemoteMode, (int)WiiRemoteSpeakerEnabled,
-	               (int)s_state, (int)s_call.active, (int)(gettime() < s_clipEnd));
 	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate)
 		return false;
 	releaseCallBuffer();
@@ -402,7 +395,16 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	s_call.encoderFresh = true;
 	s_call.active = true;
 	s_pending = CLIP_NONE;
-	WiiTraceReport("WII speaker: call started %ums\n", (unsigned)lengthMs);
+	// One line per session, not one per line of dialogue: this is the signal
+	// that the remote is in use at all, and a phone call is otherwise silent in
+	// the log.  (The gate-by-gate diagnostics that used to be here served their
+	// purpose when the speaker was being fixed; if it ever goes quiet again,
+	// they are the thing to bring back for one build.)
+	static bool s_loggedFirstCall;
+	if(!s_loggedFirstCall){
+		s_loggedFirstCall = true;
+		WiiTraceReport("WII speaker: first call started %ums\n", (unsigned)lengthMs);
+	}
 	return true;
 }
 

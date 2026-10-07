@@ -233,11 +233,13 @@ static CVector s_coopTarget;
 #ifdef NINTENDO_WII
 // The shared camera can only be judged on a console, by two people, and a
 // black screen afterwards tells nobody anything.  So it says what it is doing
-// in debug.log -- but only for its first minute after taking over, a line every
-// five seconds: enough to see whether the framing numbers and the reticle are
-// sane, and bounded, because the log lives on a small SD card and a line every
-// few seconds for a whole evening is the flood the rest of the port's logging
-// was cut back to stop.
+// in debug.log -- but only for the session's first minute, a line every five
+// seconds: enough to see whether the framing numbers and the reticle are sane,
+// and bounded, because the log lives on a small SD card and a line every few
+// seconds for a whole evening is the flood the rest of the port's logging was
+// cut back to stop.  The budget is the session's, not each takeover's: the
+// camera stands aside for menus and missions and comes back, and a fresh burst
+// every time would be that flood by another name.
 static uint32 s_coopLogTime;
 static int s_coopLogLines;
 static const int kCoopLogLines = 12;
@@ -1289,12 +1291,6 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		s_coopDistance = wantedDistance;
 		s_coopPitch = wantedPitch;
 		s_coopClip = 1.0f;
-#ifdef NINTENDO_WII
-		if(ResetStatics){
-			s_coopLogLines = 0;
-			s_coopLogTime = 0;
-		}
-#endif
 	}else{
 		const float follow = 1.0f - exp(-kCoopFollowRate*dt);
 		s_coopTarget.x += (target.x - s_coopTarget.x)*follow;
