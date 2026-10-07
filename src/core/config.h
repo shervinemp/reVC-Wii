@@ -13,26 +13,26 @@
 #endif
 
 enum Config {
-	// Two slots: the player the game has always had, and couch co-op's partner
-	// (CCoop, Coop.cpp).  It doubles as the size of CWorld::Players[].
+	// Four slots: the player the game has always had, and couch co-op's
+	// partners (CCoop, Coop.cpp).  It doubles as the size of CWorld::Players[].
 	//
 	// Raising it was not free, and what it cost is worth keeping written down:
 	//
-	//   Slot 1 belongs to CCoop and to nobody else.  COMMAND_CREATE_PLAYER used to
-	//   guard its index against this number, which at 2 would have let a script
-	//   conjure a second player into a game with nothing prepared for one; it now
-	//   accepts slot 0 only.
+	//   Slots 1..3 belong to CCoop and to nobody else.  COMMAND_CREATE_PLAYER used
+	//   to guard its index against this number, which at 4 would have let a script
+	//   conjure players into a game with nothing prepared for them; it now accepts
+	//   slot 0 only.
 	//
-	//   Slot 1 is empty most of the time.  Anything that walks the array has to
-	//   expect m_pPed to be nil there -- CReplay did not.
+	//   The partner slots are empty most of the time.  Anything that walks the
+	//   array has to expect m_pPed to be nil there -- CReplay did not.
 	//
-	//   Nothing is saved from it.  SavePedPool picks peds by PEDTYPE_PLAYER1, and
-	//   the partner is PEDTYPE_PLAYER2 precisely so it is never written and every
-	//   existing save stays byte-identical.
+	//   Nothing is saved from them.  SavePedPool picks peds by PEDTYPE_PLAYER1,
+	//   and the partners are PEDTYPE_PLAYER2..4 precisely so they are never
+	//   written and every existing save stays byte-identical.
 	//
 	// CWorld::PlayerInFocus stays 0 throughout, so FindPlayerPed() still means
 	// what every script, the HUD and the camera take it to mean.
-	NUMPLAYERS = 2,
+	NUMPLAYERS = 4,
 
 	NUMCDIMAGES = 6, // gta3.img duplicates (not used on PC)
 	MAX_CDIMAGES = 8, // additional cdimages
