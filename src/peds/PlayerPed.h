@@ -52,7 +52,10 @@ public:
 	CVector m_cachedCamUp;
 #endif
 
-	static bool bDontAllowWeaponChange;
+	// One per player: the lock-on sets it for the player who is locked on, and a
+	// single shared flag had one player's lock-on freezing the other's weapon
+	// change.  Indexed by the player, see PlayerSlotForFlags.
+	static bool bDontAllowWeaponChange[2];
 #ifndef MASTER
 	static bool bDebugPlayerInfo;
 #endif

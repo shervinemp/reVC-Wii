@@ -27,7 +27,15 @@
 #include "SpecialFX.h"
 #include "Coop.h"
 
-uint16 nPlayerInComboMove;
+// One per player: the flag means "this player is mid-combo", and a single shared
+// one let either player's combo suppress the other's.  Only ever touched for a
+// ped that answers IsPlayer(), so the index is always one of the two.
+uint16 nPlayerInComboMove[2];
+static int
+PlayerComboSlot(CPed *ped)
+{
+	return CCoop::GetPlayerIndex(ped) > 0 ? 1 : 0;
+}
 RpClump* flyingClumpTemp;
 
 FightMove tFightMoves[NUM_FIGHTMOVES] =
@@ -1167,7 +1175,7 @@ CPed::StartFightAttack(uint8 buttonPressure)
 	bIsAttacking = true;
 
 	if (IsPlayer())
-		nPlayerInComboMove = 0;
+		nPlayerInComboMove[PlayerComboSlot(this)] = 0;
 }
 
 void
@@ -1531,7 +1539,7 @@ CPed::Fight(void)
 					currentAssoc->speed = 0.8f;
 			}
 
-			if (IsPlayer() && !nPlayerInComboMove && !fightWithWeapon) {
+			if (IsPlayer() && !nPlayerInComboMove[PlayerComboSlot(this)] && !fightWithWeapon) {
 				if (curMove.comboFollowOnTime > 0.0f && m_fightButtonPressure != 0 && animTime > curMove.comboFollowOnTime) {
 
 					m_lastFightMove = m_curFightMove;
@@ -1541,7 +1549,7 @@ CPed::Fight(void)
 					animAssoc->SetCurrentTime(0.1f * animAssoc->hierarchy->totalLength);
 					animAssoc->speed = 0.8f;
 					m_fightButtonPressure = 0;
-					nPlayerInComboMove = 1;
+					nPlayerInComboMove[PlayerComboSlot(this)] = 1;
 				}
 			}
 		}

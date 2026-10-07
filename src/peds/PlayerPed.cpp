@@ -33,7 +33,15 @@
 #define PAD_MOVE_TO_GAME_WORLD_MOVE_ZELDA 38.0f
 #endif
 
-bool CPlayerPed::bDontAllowWeaponChange;
+bool CPlayerPed::bDontAllowWeaponChange[2];
+
+// Which of the two players this ped is, for the per-player flags.  Only ever
+// asked about a ped that answers IsPlayer(), so the index is one of the two.
+static int
+PlayerSlotForFlags(CPed *ped)
+{
+	return CCoop::GetPlayerIndex(ped) > 0 ? 1 : 0;
+}
 #ifndef MASTER
 bool CPlayerPed::bDebugPlayerInfo;
 #endif
@@ -743,7 +751,7 @@ CPlayerPed::ProcessWeaponSwitch(CPad *padUsed)
 	if (CDarkel::FrenzyOnGoing() || m_attachedTo)
 		goto switchDetectDone;
 
-	if (!m_pPointGunAt && !bDontAllowWeaponChange && GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR) {
+	if (!m_pPointGunAt && !bDontAllowWeaponChange[PlayerSlotForFlags(this)] && GetWeapon()->m_eWeaponType != WEAPONTYPE_DETONATOR) {
 		if (padUsed->CycleWeaponRightJustDown()) {
 
 			if (TheCamera.PlayerWeaponMode.Mode != CCam::MODE_M16_1STPERSON
@@ -1146,7 +1154,7 @@ CPlayerPed::FindNextWeaponLockOnTarget(CEntity *previousTarget, bool lookToLeft)
 		return false;
 
 	SetWeaponLockOnTarget(nextTarget);
-	bDontAllowWeaponChange = true;
+	bDontAllowWeaponChange[PlayerSlotForFlags(this)] = true;
 	SetPointGunAt(nextTarget);
 	return true;
 }
@@ -1196,7 +1204,7 @@ CPlayerPed::FindWeaponLockOnTarget(void)
 		return false;
 
 	SetWeaponLockOnTarget(nextTarget);
-	bDontAllowWeaponChange = true;
+	bDontAllowWeaponChange[PlayerSlotForFlags(this)] = true;
 	SetPointGunAt(nextTarget);
 	Say(SOUND_PED_AIMING);
 	return true;
@@ -2063,9 +2071,9 @@ CPlayerPed::ProcessControl(void)
 		m_bSpeedTimerFlag = false;
 	}
 
-	if (bDontAllowWeaponChange && FindPlayerPed() == this) {
+	if (bDontAllowWeaponChange[PlayerSlotForFlags(this)] && IsPlayer()) {
 		if (!CPad::GetPad(0)->GetTarget())
-			bDontAllowWeaponChange = false;
+			bDontAllowWeaponChange[PlayerSlotForFlags(this)] = false;
 	}
 
 	if (m_nPedState != PED_SNIPER_MODE && (GetWeapon()->m_eWeaponState == WEAPONSTATE_FIRING || m_nPedState == PED_ATTACK))
