@@ -102,6 +102,14 @@ const float kLeash = 28.0f;
 // under a driving partner ever looks thin, and it wants checking on hardware
 // rather than trusting.
 const float kLeashDriving = 50.0f;
+// Where a car the leash has caught is put: this far back along player 1's
+// heading, and never within this much of the car player 1 is driving.  The node
+// nearest player 1 is the one their own car is standing on, and two cars in the
+// same square metre spend the next few seconds pushing each other out -- which
+// is what a regroup that fires every second looks like from the sofa.
+const float kRegroupBack = 12.0f;
+const float kRegroupClearance = 8.0f;
+const float kRegroupSearch = 30.0f;
 // Below player 1 by this much means they fell through something.
 const float kFallLimit = 25.0f;
 // Player 1 moving further than this in one frame was a teleport, not travel.
@@ -188,6 +196,9 @@ bool s_joined;
 bool s_joinTold;
 // When the partner may next be put into the world.
 uint32 s_spawnTime;
+// When the regroup line was last written.  It is a signal, not a tick: a car
+// being yanked every second must not write it every second too.
+uint32 s_regroupLogTime;
 // When the partner was first seen dead or arrested, or 0.
 uint32 s_downTime;
 // Where player 1 was last frame, to notice a teleport.
@@ -1048,6 +1059,7 @@ CCoop::Init(void)
 	s_padSince = 0;
 	s_padLast = 0;
 	s_spawnTime = 0;
+	s_regroupLogTime = 0;
 	s_downTime = 0;
 	s_leadPosValid = false;
 	s_tetherTold = false;
@@ -1240,20 +1252,63 @@ CCoop::Update(void)
 			// leash fires because the world is only streamed around player 1, so
 			// the pair has to come back to them -- but the car is the thing that
 			// went too far, and deleting the partner out of it throws away the
-			// drive and leaves the car abandoned.  The road node is the same
-			// trick the vehicle cheat uses: it is a road, so a car placed there
-			// is on something, which a spot picked for a ped on foot is not.
+			// drive and leaves the car abandoned.
 			CVehicle *driven = (partner->bInVehicle && partner->m_pMyVehicle != nil &&
 			                    partner->m_pMyVehicle->pDriver == partner) ? partner->m_pMyVehicle : nil;
-			int32 node = driven != nil && !driven->IsBike() && !driven->IsBoat()
-				? ThePaths.FindNodeClosestToCoors(lead->GetPosition(), PATH_CAR, 100.0f) : -1;
+			CVehicle *leadVehicle = (lead->bInVehicle && lead->m_pMyVehicle != nil &&
+			                         lead->m_pMyVehicle->pDriver == lead) ? lead->m_pMyVehicle : nil;
+			int32 node = -1;
+			bool beside = false;
+			if(driven != nil && !driven->IsBike() && !driven->IsBoat()){
+				// On the road behind player 1 rather than on top of them.  The
+				// node nearest player 1 is the one their own car is standing on,
+				// and two cars put in the same square metre spend the next few
+				// seconds pushing each other out of it -- the regroup that fires
+				// every second.  Behind is also the direction the partner can
+				// drive on in, which is where they were going anyway.
+				const CVector leadAt = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
+				const float heading = leadVehicle != nil ? leadVehicle->GetForward().Heading() : lead->m_fRotationCur;
+				const CVector forward(-Sin(heading), Cos(heading), 0.0f);
+				for(float back = kRegroupBack; back <= kRegroupBack*3.0f && node < 0; back += kRegroupBack){
+					const int32 candidate = ThePaths.FindNodeClosestToCoors(leadAt - forward*back, PATH_CAR, kRegroupSearch);
+					if(candidate < 0)
+						continue;
+					if((ThePaths.m_pathNodes[candidate].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance)
+						continue;
+					node = candidate;
+				}
+				// Nothing clear behind: the node nearest player 1 after all, so
+				// the car is at least on something.  It goes to the side of them
+				// if that node is the one they are on.
+				if(node < 0){
+					node = ThePaths.FindNodeClosestToCoors(leadAt, PATH_CAR, 100.0f);
+					beside = node >= 0 && leadVehicle != nil &&
+					         (ThePaths.m_pathNodes[node].GetPosition() - leadAt).Magnitude2D() < kRegroupClearance;
+				}
+			}
 			if(node >= 0){
 				CVector pos = ThePaths.m_pathNodes[node].GetPosition();
+				if(beside)
+					pos += leadVehicle->GetRight()*kRegroupClearance;
 				pos.z += 1.0f;
 				driven->SetPosition(pos);
-				driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				// Facing the way player 1 faces, so taking the wheel back does
+				// not begin with a U-turn.
+				if(leadVehicle != nil)
+					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
+				// Moving with player 1 rather than parked in their road.  A car
+				// put down at rest fifty metres behind a car doing fifty is
+				// fifty metres behind again a second later, and the regroup
+				// fires again -- the loop this is here to stop.
+				if(leadVehicle != nil)
+					driven->m_vecMoveSpeed = leadVehicle->GetMoveSpeed();
+				else
+					driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
-				COOP_LOG("WII coop: player 2's car brought back (%s)\n", regroup);
+				if(now - s_regroupLogTime >= 3000){
+					s_regroupLogTime = now;
+					COOP_LOG("WII coop: player 2's car brought back (%s)\n", regroup);
+				}
 			}else{
 				// Replaced rather than moved.  Moving a ped that might be halfway
 				// through a door, a fall or a punch means unpicking whichever of
