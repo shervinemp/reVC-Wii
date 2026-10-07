@@ -681,10 +681,10 @@ SessionBlocker(void)
 	return nil;
 }
 
-// The nearest car the partner could take as its driver.  Only a car: a bike
-// makes whoever climbs on it the rider whatever seat they asked for, and its
-// control code looks the rider up as the player in focus, and a boat is
-// handled as a different problem entirely; neither is worth the risk here.
+// The nearest car or bike the partner could take as its driver.  A boat is
+// handled as a different problem entirely; a bike is not: the rider's controls
+// and drive-by come off their own pad now (CBike::ProcessControl), and a bike
+// makes whoever climbs on it the rider, which is what the partner wants.
 // Never one a player is driving -- that would be a carjack of player 1 -- and
 // not one player 1 is already walking to, a wreck or one in the water, which
 // nobody can enter.
@@ -696,7 +696,7 @@ FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 	const CVector pos = partner->GetPosition();
 	for(int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--){
 		CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
-		if(vehicle == nil || !vehicle->IsCar())
+		if(vehicle == nil || (!vehicle->IsCar() && !vehicle->IsBike()))
 			continue;
 		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
 			continue;
@@ -909,9 +909,15 @@ UpdateAim(int index)
 	aim.drawReticle = false;
 	if(ped == nil || !CCoop::UsesReticleAim())
 		return;
-	// Nothing is aimed from inside a car yet.
-	if(ped->DyingOrDead() || ped->bInVehicle)
+	if(ped->DyingOrDead())
 		return;
+	// Inside a car only the driver aims: the reticle is what a drive-by fires
+	// at, and a passenger has no drive-by (see the design's Not done).
+	if(ped->bInVehicle){
+		CVehicle *vehicle = ped->m_pMyVehicle;
+		if(vehicle == nil || vehicle->pDriver != ped)
+			return;
+	}
 
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	CPad *pad = GetPadFromPlayer(ped);
@@ -1259,7 +1265,7 @@ CCoop::Update(void)
 			                         lead->m_pMyVehicle->pDriver == lead) ? lead->m_pMyVehicle : nil;
 			int32 node = -1;
 			bool beside = false;
-			if(driven != nil && !driven->IsBike() && !driven->IsBoat()){
+			if(driven != nil && !driven->IsBoat()){
 				// On the road behind player 1 rather than on top of them.  The
 				// node nearest player 1 is the one their own car is standing on,
 				// and two cars put in the same square metre spend the next few

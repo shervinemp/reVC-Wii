@@ -391,6 +391,11 @@ CPlayerInfo::Process(void)
 							m_pPed->m_vehDoor = 0;
 							m_pPed->SetEnterCar(carBelow, m_pPed->m_vehDoor);
 						}
+					} else if (carBelow->pDriver != nil && carBelow->pDriver->IsPlayer() && carBelow->pDriver != m_pPed) {
+						// Couch co-op: a car the partner is driving is entered
+						// as a passenger.  Everything else here means the
+						// driver's seat, and that would carjack them.
+						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_PASSENGER, carBelow);
 					} else {
 						m_pPed->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, carBelow);
 					}
@@ -598,11 +603,12 @@ CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, 
 				continue;
 
 			car->m_scanCode = CWorld::GetCurrentScanCode();
-			// Couch co-op: never a car another player is driving.  The enter
-			// button here means "get in as the driver", and aiming it at the
-			// partner's car would take the wheel from them and leave them
-			// sitting in a seat the engine now thinks is player 1's.
-			if (car->pDriver != nil && car->pDriver->IsPlayer() && car->pDriver != ped)
+			// Couch co-op: the partner's car is a candidate now -- player 1 can
+			// ride along in it -- but any other player-driven car is still not.
+			// The enter button means the driver's seat, and aiming it at another
+			// player's car would take the wheel from them.
+			if (car->pDriver != nil && car->pDriver->IsPlayer() && car->pDriver != ped &&
+			    car->pDriver != CWorld::Players[1].m_pPed)
 				continue;
 			if (car->GetStatus() != STATUS_WRECKED && car->GetStatus() != STATUS_TRAIN_MOVING
 				&& (car->GetUp().z > 0.3f || (car->IsVehicle() && ((CVehicle*)car)->m_vehType == VEHICLE_TYPE_BIKE))) {
