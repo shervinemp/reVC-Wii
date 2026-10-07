@@ -373,10 +373,10 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 		if (isPickupTouched) {
 			eWeaponType weaponType = CPickups::WeaponForModel(m_pObject->GetModelIndex());
 			// Co-op: player 1 is the wallet and the arsenal.  A weapon or ammo
-			// pickup arms both players, and both the guns and the rounds live on
-			// player 1 -- CCoop mirrors the weapon to the partner and shares one
-			// pool of ammo.  The money, the packages and the property are one
-			// player's too.  So those, when the partner is the one who walked
+			// pickup arms the party, and both the guns and the rounds live on
+			// player 1 -- CCoop mirrors the weapons to the partners and shares
+			// one pool of ammo.  The money, the packages and the property are
+			// one player's too.  So those, when a partner is the one who walked
 			// over them, are credited to player 1; health, armour, adrenaline
 			// and a bribe stay with whoever collected them.  The touch test
 			// above was still the collector's: it is their body on the pickup.

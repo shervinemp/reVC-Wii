@@ -239,13 +239,17 @@ DrawCoopMarks(void)
 	RwRenderStateSet(rwRENDERSTATETEXTUREFILTER, (void *)rwFILTERLINEAR);
 	RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
 
-	// The pips, and only once there are two players to tell apart.  Each has a
-	// health bar under it: the HUD proper is player 1's, so for the partner this
-	// is the only place their health is shown at all, and it is drawn for both
-	// so the two markers read the same way.
-	if (CCoop::GetPartner() != nil) {
+	// The pips, and only once there is a partner to tell player 1 apart from.
+	// Each has a health bar under it: the HUD proper is player 1's, so for a
+	// partner this is the only place their health is shown at all, and it is
+	// drawn for everyone so the markers read the same way.
+	bool anyPartner = false;
+	for (int i = 1; i < NUMPLAYERS && !anyPartner; i++)
+		if (CWorld::Players[i].m_pPed != nil)
+			anyPartner = true;
+	if (anyPartner) {
 		const float maxHealth = Max(1.0f, (float)CWorld::Players[0].m_nMaxHealth);
-		for (int i = 0; i < 2; i++) {
+		for (int i = 0; i < NUMPLAYERS; i++) {
 			CPlayerPed *ped = CWorld::Players[i].m_pPed;
 			if (ped == nil || ped->bInVehicle || !ped->bIsVisible)
 				continue;
@@ -270,7 +274,7 @@ DrawCoopMarks(void)
 			if (health > 0.0f)
 				CSprite2d::DrawRect(CRect(screen.x - half, top, screen.x - half + 2.0f*half*health, bottom), kCoopColours[i]);
 
-			// The partner has no HUD of their own, so their ammo is shown here
+			// A partner has no HUD of their own, so their ammo is shown here
 			// or nowhere: the same "total-clip" the HUD proper gives player 1,
 			// in the same colour, right-aligned under the bar's right end.  A
 			// weapon with no clip to speak of -- the fists, a bat, the

@@ -32,9 +32,9 @@
 #include "WiiTrace.h"
 #endif
 
-// Transitions only.  Co-op cannot be run on anything but a console with two
-// people in front of it, so when it misbehaves the log is the whole of the
-// evidence -- but a session that is working writes a handful of these lines
+// Transitions only.  Co-op cannot be run on anything but a console with
+// several people in front of it, so when it misbehaves the log is the whole of
+// the evidence -- but a session that is working writes a handful of these lines
 // and no more, which keeps it inside the "signal, not trace" budget the rest of
 // the port's logging holds to.
 #ifdef NINTENDO_WII
@@ -49,9 +49,9 @@ bool CCoop::ms_bPartnerFocus = false;
 
 // The co-op options that are not pad settings, set from the co-op page and
 // saved in the INI under "Wii".  Friendly fire is on by default -- the game as
-// it was, with no rule against players shooting each other -- and the pair
-// shares one wanted level, which is what the pair was designed around.  With
-// sharing off a partner's crimes are still the pair's problem, because the
+// it was, with no rule against players shooting each other -- and the party
+// shares one wanted level, which is what the party was designed around.  With
+// sharing off a partner's crimes are still the party's problem, because the
 // police only ever read player 1; see ShareWantedLevel.
 int8_t CoopFriendlyFire = 1;
 int8_t CoopSharedWanted = 1;
@@ -65,7 +65,6 @@ enum
 	// partners.  A partner's pad is PAD_COOP + (slot - 1); the pad layer
 	// numbers partners 0..kNumPartners-1, which is its "partner index".
 	LEAD = 0,
-	PARTNER = 1,
 	kNumPartners = NUMPLAYERS - 1,
 };
 
@@ -244,9 +243,9 @@ bool s_tetherTold;
 bool s_announceJoin[NUMPLAYERS];
 
 // A line in the help box, for the few things that happen with nothing on screen
-// to show for them: a second controller being noticed, the partner going
-// because theirs went, the framing changing.  The words are in Text.cpp's
-// fallback table, since the user's own GXT files are never rewritten.
+// to show for them: a controller being noticed, a partner going because theirs
+// went, the framing changing.  The words are in Text.cpp's fallback table,
+// since the user's own GXT files are never rewritten.
 void
 Tell(const char *key)
 {
@@ -577,7 +576,7 @@ SyncSharedAmmo(CPlayerPed *lead)
 	}
 }
 
-// --- putting the partner into the world, and taking them out -----------------
+// --- putting a partner into the world, and taking them out -------------------
 // Somewhere to stand next to a point: beside it first, then behind, then in
 // front.  A spot has to be on the same level, not through a wall from where it
 // was measured from, and not inside anything.
@@ -829,7 +828,7 @@ SpawnPartner(CPlayerPed *lead, int player)
 
 	// Making a player ped resets the things that were only ever reset when THE
 	// player was made: among them the speed the game runs at, which a cheat or
-	// a script may have changed and would find put back every time the partner
+	// a script may have changed and would find put back every time a partner
 	// came round a corner.
 	const float timeScale = CTimer::GetTimeScale();
 	CPlayerPed *partner = new CPlayerPed();
@@ -838,8 +837,8 @@ SpawnPartner(CPlayerPed *lead, int player)
 	// is loaded into the slot that goes with its number in the game's own list
 	// (CStreaming::RequestSpecialChar), the same slots the cutscenes spawn their
 	// characters from -- which is safe here because a cutscene, like a mission,
-	// stands co-op down and takes the partner with it.  Looking the name up as a
-	// model finds nothing, which is how a chosen skin used to come out as
+	// stands co-op down and takes the partners with it.  Looking the name up as
+	// a model finds nothing, which is how a chosen skin used to come out as
 	// player 1.
 	//
 	// The names are the character models in the game's own archive (the ig*
@@ -879,11 +878,12 @@ SpawnPartner(CPlayerPed *lead, int player)
 	// RANDOM_CHAR is fair game for CPopulation::RemovePedsIfThePoolGetsFull, and
 	// a vehicle with only RANDOM_CHARs aboard is one the engine may delete.
 	partner->CharCreatedBy = MISSION_CHAR;
-	// Stay in the car when player 1 gets back into it, instead of being told to
-	// get out like any other passenger.  They leave when they press the button.
+	// Stay in the car when a player gets back into it, instead of being told
+	// to get out like any other passenger.  They leave when they press the
+	// button.
 	partner->bStayInCarOnJack = true;
-	// Nor pulled out of it: player 1 coming to the passenger door of a car with
-	// the partner already in that seat would otherwise haul them into the road
+	// Nor pulled out of it: a player coming to the passenger door of a car with
+	// a partner already in that seat would otherwise haul them into the road
 	// to get past.
 	partner->bDontDragMeOutCar = true;
 
@@ -906,7 +906,7 @@ SpawnPartner(CPlayerPed *lead, int player)
 		s_wantSlot[player] = s_carry[player].slot;
 		// Their weapons come back through the same queue player 1's gains do,
 		// on top of anything that was still on its way to them when they went.
-		// Empty, because the ammo is the shared pool, not a count the partner
+		// Empty, because the ammo is the shared pool, not a count a partner
 		// owns; the first sync fills them from it.
 		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 			if(s_carry[player].weapon[slot] == WEAPONTYPE_UNARMED)
@@ -978,9 +978,9 @@ SessionBlocker(void)
 	return nil;
 }
 
-// The nearest car, bike or boat the partner could take as its driver.  All
+// The nearest car, bike or boat a partner could take as its driver.  All
 // three come off the driver's own pad now; a bike makes whoever climbs on it
-// the rider, and a boat makes whoever boards it the driver, which is what the
+// the rider, and a boat makes whoever boards it the driver, which is what a
 // partner wants in every case.  Never one a player is driving -- that would be
 // a carjack of another player -- and not one a player is already walking to, a
 // wreck or one on its roof, which nobody can enter.
@@ -1083,7 +1083,7 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 		return false;
 
 	// A seat with another player first -- player 1's car ahead of the rest,
-	// because that is the car the pair has always shared.  The car they are
+	// because that is the car the party has always shared.  The car they are
 	// in, or the one they are climbing into, and only if it is theirs or
 	// empty and has room.
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -1137,7 +1137,7 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 	return false;
 }
 
-// Whether the partner has to be brought back to player 1.
+// Whether a partner has to be brought back to player 1.
 const char *
 NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, bool leadTeleported)
 {
@@ -1442,12 +1442,6 @@ CCoop::Init(void)
 }
 
 CPlayerPed *
-CCoop::GetPartner(void)
-{
-	return CWorld::Players[PARTNER].m_pPed;
-}
-
-CPlayerPed *
 CCoop::GetPlayerPed(int player)
 {
 	if(player < 0 || player >= NUMPLAYERS)
@@ -1607,7 +1601,7 @@ CCoop::Update(void)
 	}
 
 	// A script moving player 1 somewhere else -- into a building, to a safe
-	// house -- leaves the partner where they were.  Travel never covers this
+	// house -- leaves the partners where they were.  Travel never covers this
 	// much ground in a frame, on foot or in anything.
 	const CVector leadPos = (lead->bInVehicle && lead->m_pMyVehicle) ? lead->m_pMyVehicle->GetPosition() : lead->GetPosition();
 	const bool leadTeleported = s_leadPosValid && (leadPos - s_leadPos).Magnitude() > kTeleportStep;
@@ -1720,7 +1714,7 @@ CCoop::Update(void)
 			// A partner who is driving their own car is moved with it.  The
 			// leash fires because the world is only streamed around player 1, so
 			// the party has to come back to them -- but the car is the thing that
-			// went too far, and deleting the partner out of it throws away the
+			// went too far, and deleting a partner out of it throws away the
 			// drive and leaves the car abandoned.
 			CVehicle *driven = (partner->bInVehicle && partner->m_pMyVehicle != nil &&
 			                    partner->m_pMyVehicle->pDriver == partner) ? partner->m_pMyVehicle : nil;
@@ -1780,7 +1774,7 @@ CCoop::Update(void)
 					// node nearest player 1 is the one their own car is standing on,
 					// and two cars put in the same square metre spend the next few
 					// seconds pushing each other out of it -- the regroup that fires
-					// every second.  Behind is also the direction the partner can
+					// every second.  Behind is also the direction a partner can
 					// drive on in, which is where they were going anyway.
 					for(float back = kRegroupBack*(1.0f + lane); back <= kRegroupBack*(3.0f + lane) && node < 0; back += kRegroupBack){
 						const int32 candidate = ThePaths.FindNodeClosestToCoors(leadAt - forward*back, PATH_CAR, kRegroupSearch);
@@ -1866,22 +1860,22 @@ CCoop::Update(void)
 		}else{
 			s_downTime[player] = 0;
 			// These are set on every passenger of a car whose driver is dragged
-			// out, with no exception for players, and would send the partner
+			// out, with no exception for players, and would send a partner
 			// running from the car under the engine's control.
 			partner->bFleeAfterExitingCar = false;
 			partner->bHeldHostageInCar = false;
 			partner->m_area = lead->m_area;
 			// Another player's car is entered as a passenger or not at all.
-			// The partner is sent to an empty seat, but if somebody takes it
+			// A partner is sent to an empty seat, but if somebody takes it
 			// while they walk over, CPed::SeekCar has them drag that somebody
-			// out instead -- and CPed::PedSetInCarCB then makes the partner
-			// the car's driver, over the top of the player who is sitting in
-			// it.  Stopped here, on the frame it starts, before anyone is
-			// pulled anywhere.
+			// out instead -- and CPed::PedSetInCarCB then makes the entering
+			// partner the car's driver, over the top of the player who is
+			// sitting in it.  Stopped here, on the frame it starts, before
+			// anyone is pulled anywhere.
 			//
-			// A car the partner is taking as its driver is meant to be a
+			// A car a partner is taking as its driver is meant to be a
 			// carjack, occupied or not -- cancelling every PED_CARJACK is what
-			// stopped the partner stealing an occupied car at all -- but never
+			// stopped a partner stealing an occupied car at all -- but never
 			// with a player in the driver's seat: that is not a carjack, it is
 			// one player pulling another out of their own car.
 			if(partner->m_nPedState == PED_CARJACK &&
@@ -1891,7 +1885,7 @@ CCoop::Update(void)
 				partner->QuitEnteringCar();
 			CVehicle *rideInto = nil;
 			if(UpdatePartnerVehicle(player, partner, partnerPad, rideInto)){
-				// Replaced, like every other time the partner is moved; the new
+				// Replaced, like every other time a partner is moved; the new
 				// one is made in the seat.  SpawnPartner runs just below, and
 				// the seat's vehicle goes with them: it may be any player's,
 				// not just player 1's.

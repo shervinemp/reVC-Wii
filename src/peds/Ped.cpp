@@ -1559,10 +1559,11 @@ CPed::UpdatePosition(void)
 	if (CReplay::IsPlayingBack() || !bIsStanding || m_attachedTo)
 		return;
 
-	// Couch co-op: the two players cannot walk further apart than the shared
-	// camera can hold them both.  m_moved is the walking velocity everything
-	// below turns into movement, so this is the one place a limit on it holds
-	// whichever control scheme set it.
+	// Couch co-op: a partner cannot walk further from player 1 than the shared
+	// camera can hold, and player 1 is held to each partner the same way.
+	// m_moved is the walking velocity everything below turns into movement, so
+	// this is the one place a limit on it holds whichever control scheme set
+	// it.
 	if (IsPlayer())
 		CCoop::LimitSeparation(this, m_moved);
 
@@ -7181,10 +7182,10 @@ CPed::SetDead(void)
 
 	m_currentWeapon = WEAPONTYPE_UNARMED;
 	CEventList::RegisterEvent(EVENT_INJURED_PED, EVENT_ENTITY_PED, this, nil, 250);
-	// No player leaves their guns on the pavement.  With a second player ped
-	// that matters twice over: the partner carries a copy of what player 1
-	// carries and comes back with a fresh one, so a partner who dropped
-	// everything on dying would be an ammunition tap.
+	// No player leaves their guns on the pavement.  With partner peds that
+	// matters even more: a partner carries a copy of what player 1 carries and
+	// comes back with a fresh one, so a partner who dropped everything on dying
+	// would be an ammunition tap.
 	if (!IsAnyPlayerPed(this)) {
 		RemoveWeaponAnims(0, -1000.0f);
 		CreateDeadPedWeaponPickups();

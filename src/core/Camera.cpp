@@ -1074,8 +1074,8 @@ CCamera::CamControl(void)
 			   // Not while the view is shared.  Looking around is the right
 			   // stick, and there the right stick aims; and what this does
 			   // once it has started -- take the controls away so the view can
-			   // turn -- would be copied to the second player's pad and hold
-			   // them both still for as long as the first one kept looking.
+			   // turn -- would be copied to the partners' pads and hold
+			   // everyone still for as long as the first one kept looking.
 			   && !CCoop::PairActive()
 #ifdef FREE_CAM
 			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)

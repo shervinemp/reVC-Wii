@@ -418,7 +418,7 @@ CAutomobile::ProcessControl(void)
 		   pDriver && pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAG_FROM_CAR && pDriver->GetPedState() != PED_ARRESTED){
 			// process control input if controlled by player
 			//
-			// Couch co-op: both players drive from their own pad, so this is
+			// Couch co-op: the players drive from their own pads, so this is
 			// asked of the driver rather than assumed to be player 1's.  A
 			// remote-controlled car has no driver at the wheel at all and
 			// stays on pad 0, which is the one holding the remote.

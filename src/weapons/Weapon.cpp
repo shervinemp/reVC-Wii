@@ -231,7 +231,7 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 				// fire at all unless the camera is in a scope mode.  The shared
 				// view has no scope, so there the rifle is an instant-hit weapon
 				// like any other, with a very long reach -- which is also what a
-				// second player's would have been anyway, not being FindPlayerPed().
+				// partner's would have been anyway, not being FindPlayerPed().
 				if (shooter == FindPlayerPed() && !CCoop::PairActive())
 					fired = FireSniper(shooter);
 				else

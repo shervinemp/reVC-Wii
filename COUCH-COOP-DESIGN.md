@@ -425,8 +425,8 @@ nothing.
   camera button picked.
 - **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
   by their reticle and by a pip with a health bar and an ammo line over their
-  head. The pips and the full four-colour treatment are stage 5; the reticles
-  are already one per player.
+  head -- one set per player, shown once a partner is in the world. The menu
+  and the per-partner skins are stage 5.
 - **The stock zoom does not cycle** while co-op has the camera button.
 
 ## What the first draft got wrong
@@ -488,10 +488,10 @@ Recorded because each was stated as a verified fact.
   ceiling of height h is h/sin(pitch)), which means probing both ways every
   frame. A camera that nods is worse than one that is sometimes tight, and
   there was no way to watch it. The overhead framing is the manual version.
-- **A few statics are still shared between the players**: the melee combo flag
-  (`nPlayerInComboMove`), and under Classic controls the lock-on's
-  `bDontAllowWeaponChange` and its single target marker. Each is a moment's
-  oddity, not a fault. (The jack-cancel tap is per player now.)
+- **The Classic lock-on's target marker is single.** Under Classic controls
+  the lock-on marker is the engine's one, so with several players locked on it
+  shows one of them. A moment's oddity, not a fault. (The jack-cancel tap, the
+  melee combo flag and the weapon-change lock are per player now.)
 - **Sound is quieter.** The listener is the camera, and it is 15–30 m from the
   players instead of 4. (Height hardly counts — the audio code scales it by a
   fifth — but the distance back does.) Footsteps and nearby chatter suffer most.
@@ -501,7 +501,7 @@ Recorded because each was stated as a verified fact.
 - **A partner's ammo readout is the pip.** The HUD proper shows player 1's
   weapon, which is the shared count; each partner's own gun and its count are
   on their pip, and the engine switching weapon when the pool runs dry is the
-  only other notice they get. Stage 5 extends the pips to all four players.
+  only other notice they get.
 - **Dynamic control ownership** — SA let the players hand "control" back and
   forth, with the camera following whoever had it. Here the camera frames the
   midpoint and player 1 is the anchor. Framing a player's lock target is not

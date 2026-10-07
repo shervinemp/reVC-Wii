@@ -724,7 +724,7 @@ captureWiimote(int padID, const WPADData &data, u32 expansion, CControllerState 
 	const u32 buttons = data.btns_h;
 	const bool hasNunchuk = expansion == WPAD_EXP_NUNCHUK;
 	// This pad's own player: 1 is jump on foot and the radio in a car, and with
-	// two players one of them can be in a car while the other is not.
+	// several players one can be in a car while another is not.
 	CPlayerPed *player = padPlayer(padID);
 	const bool inCar = player != nil && player->bInVehicle;
 	const bool flickPulse = s_flick[playerForPad(padID)].pulse;
@@ -1258,7 +1258,7 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	// only the turn is dropped.
 	//
 	// CCoop::PairActive(), not the menu toggle: the toggle stays on through a
-	// mission and while the session waits for a second player, and in both the
+	// mission and while the session waits for a partner, and in both the
 	// camera is the ordinary one, which does turn.
 	const bool reticleOnly = CCoop::PairActive();
 

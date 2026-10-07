@@ -28,13 +28,14 @@
 #include "Coop.h"
 
 // One per player: the flag means "this player is mid-combo", and a single shared
-// one let either player's combo suppress the other's.  Only ever touched for a
-// ped that answers IsPlayer(), so the index is always one of the two.
-uint16 nPlayerInComboMove[2];
+// one let either player's combo suppress another's.  Only ever touched for a
+// ped that answers IsPlayer(), so the index is a player slot.
+uint16 nPlayerInComboMove[NUMPLAYERS];
 static int
 PlayerComboSlot(CPed *ped)
 {
-	return CCoop::GetPlayerIndex(ped) > 0 ? 1 : 0;
+	const int slot = CCoop::GetPlayerIndex(ped);
+	return slot >= 0 ? slot : 0;
 }
 RpClump* flyingClumpTemp;
 

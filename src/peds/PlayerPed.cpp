@@ -34,14 +34,16 @@
 #define PAD_MOVE_TO_GAME_WORLD_MOVE_ZELDA 38.0f
 #endif
 
-bool CPlayerPed::bDontAllowWeaponChange[2];
+bool CPlayerPed::bDontAllowWeaponChange[NUMPLAYERS];
 
-// Which of the two players this ped is, for the per-player flags.  Only ever
-// asked about a ped that answers IsPlayer(), so the index is one of the two.
+// Which player this ped is, for the per-player flags: their slot in
+// CWorld::Players.  Only ever asked about a ped that answers IsPlayer(), and
+// 0 (player 1) is the safe answer for anything else.
 static int
 PlayerSlotForFlags(CPed *ped)
 {
-	return CCoop::GetPlayerIndex(ped) > 0 ? 1 : 0;
+	const int slot = CCoop::GetPlayerIndex(ped);
+	return slot >= 0 ? slot : 0;
 }
 #ifndef MASTER
 bool CPlayerPed::bDebugPlayerInfo;
@@ -59,7 +61,7 @@ int32 idleAnimBlockIndex;
 CPad*
 GetPadFromPlayer(CPlayerPed *ped)
 {
-	// See PAD_COOP for why the partner is not simply on pad 1.
+	// See PAD_COOP for why the partners are not simply on pads 1..3.
 	return CPad::GetPad(GetPadIndexFromPlayer(ped));
 }
 
@@ -145,8 +147,8 @@ CPlayerPed::ClearWeaponTarget()
 {
 	// The lock is this ped's own, so any player drops theirs.  The weapon
 	// camera and the target marker there is only one of each, and they are the
-	// focus player's: couch co-op's partner is PEDTYPE_PLAYER2 and leaves both
-	// alone, or one player losing a target would take the other's marker.
+	// focus player's: couch co-op's partners are PEDTYPE_PLAYER2..4 and leave
+	// both alone, or one player losing a target would take another's marker.
 	if (IsPlayer())
 		SetWeaponLockOnTarget(nil);
 	if (m_nPedType == PEDTYPE_PLAYER1) {
@@ -1334,7 +1336,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 		m_wepAccuracy = 100;
 
 	// No scope while the view is shared.  The scope is a camera, there is one
-	// camera, and it is the one both players are looking through.
+	// camera, and it is the one all the players are looking through.
 	//
 	// The weapons that are nothing without one -- the rocket launcher and the
 	// two rifles -- are fired there the way the scope itself fires them
@@ -1865,7 +1867,7 @@ CPlayerPed::ProcessControl(void)
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
 			// The driver's door is the driver's to pull shut.  A passenger is in
-			// PED_DRIVING too, and with a second player ped there can be one.
+			// PED_DRIVING too, and with partner peds there can be one.
 			if (m_pMyVehicle->IsCar() && m_pMyVehicle->pDriver == this &&
 				((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
 				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
@@ -2085,7 +2087,7 @@ CPlayerPed::ProcessControl(void)
 	}
 
 	if (bDontAllowWeaponChange[PlayerSlotForFlags(this)] && IsPlayer()) {
-		if (!CPad::GetPad(0)->GetTarget())
+		if (!GetPadFromPlayer(this)->GetTarget())
 			bDontAllowWeaponChange[PlayerSlotForFlags(this)] = false;
 	}
 
@@ -2121,11 +2123,11 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 		return;
 
 	// Per player: the timer and the last animation are each player's own, so
-	// the partner idles on their own schedule rather than not at all.  The
+	// a partner idles on their own schedule rather than not at all.  The
 	// block itself is shared -- see the release below.
 	const int player = PlayerSlotForFlags(this);
-	static int32 lastTime[2] = { 0, 0 };
-	static int32 lastAnim[2] = { -1, -1 };
+	static int32 lastTime[NUMPLAYERS] = { 0 };
+	static int32 lastAnim[NUMPLAYERS] = { -1 };
 
 	struct animAndGroup {
 		AnimationId animId;
@@ -2151,16 +2153,21 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 					assoc->blendDelta = -8.0f;
 				}
 			}
-			// Released only once neither player is idle and neither still has an
-			// idle animation blending out: the block is shared, and one player
-			// unloading it would leave the other holding animations from a
-			// block that is gone.
-			const int other = player == 0 ? 1 : 0;
-			CPlayerPed *otherPed = CWorld::Players[other].m_pPed;
-			const bool otherNeeds = otherPed != nil &&
-				(GetPadFromPlayer(otherPed)->InputHowLongAgo() > 30000 ||
-				 RpAnimBlendClumpGetFirstAssociation(otherPed->GetClump(), ASSOC_IDLE) != nil);
-			if (!hasIdleAnim && !otherNeeds)
+			// Released only once no player is idle and nobody still has an
+			// idle animation blending out: the block is shared, and one
+			// player unloading it would leave another holding animations
+			// from a block that is gone.
+			bool anyoneNeeds = false;
+			for(int i = 0; i < NUMPLAYERS && !anyoneNeeds; i++){
+				if(i == player)
+					continue;
+				CPlayerPed *otherPed = CWorld::Players[i].m_pPed;
+				if(otherPed != nil &&
+				   (GetPadFromPlayer(otherPed)->InputHowLongAgo() > 30000 ||
+				    RpAnimBlendClumpGetFirstAssociation(otherPed->GetClump(), ASSOC_IDLE) != nil))
+					anyoneNeeds = true;
+			}
+			if (!hasIdleAnim && !anyoneNeeds)
 				CStreaming::RemoveAnim(idleAnimBlockIndex);
 		} else {
 			lastTime[player] = 0;

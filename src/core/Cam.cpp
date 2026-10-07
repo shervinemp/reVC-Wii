@@ -1344,13 +1344,14 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// players, it comes in along its own line to just this side of -- so the
 	// angle still does not change, and indoors it ends up under the ceiling.
 	//
-	// The line that is tested runs back from each player, not from the point
-	// the view is centred on.  That point is an average and nothing stands on
-	// it: between two players on a staircase it is inside the stairs, and
-	// behind one who is climbing it is under the floor.  The line test hits
-	// surfaces from behind as well as in front, so from in there the first
-	// thing it meets is whatever it started underneath, and the camera came
-	// all the way in for nothing.  A player is always standing in the open.
+	// The line that is tested runs back from player 1 and the framed partner,
+	// not from the point the view is centred on.  That point is an average and
+	// nothing stands on it: between two players on a staircase it is inside
+	// the stairs, and behind one who is climbing it is under the floor.  The
+	// line test hits surfaces from behind as well as in front, so from in
+	// there the first thing it meets is whatever it started underneath, and
+	// the camera came all the way in for nothing.  A player is always standing
+	// in the open.
 	//
 	// With two answers, the roomier.  The camera cannot be in under one
 	// player's ceiling and still show the other one down the street, and a

@@ -222,7 +222,7 @@ public:
 #endif
 	void Process_ModelView(const CVector &CameraTarget, float, float, float);
 	void Process_FollowPed(const CVector &CameraTarget, float TargetOrientation, float, float);
-	// Couch co-op.  One camera for both players, above and behind the midpoint
+	// Couch co-op.  One camera for the players, above and behind the midpoint
 	// between them, at a fixed downward angle, and it never takes input: aiming
 	// is a reticle on the screen rather than something that steers the view.
 	void Process_WiiCoop(const CVector &CameraTarget, float TargetOrientation, float, float);
@@ -550,7 +550,7 @@ public:
 	static bool m_bUseMouse3rdPerson;
 	// Couch co-op's switch: the pause menu's COUCH CO-OP row, and nothing more
 	// than that.  It says the players WANT co-op.  Whether co-op is actually in
-	// charge this frame is CCoop::PairActive() -- running, with a second player
+	// charge this frame is CCoop::PairActive() -- running, with a partner
 	// joined -- which is also false during missions and cutscenes however this
 	// is set -- so read that, not this, anywhere the answer changes what the
 	// game does.

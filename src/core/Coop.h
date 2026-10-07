@@ -32,9 +32,9 @@ class CVector2D;
 //   slot 0 is player 1.
 //
 // The co-op options that are not pad settings: whether a player's shots can
-// hurt the other, and whether the pair shares one wanted level.  With sharing
+// hurt another, and whether the party shares one wanted level.  With sharing
 // off each player keeps their own record, but a partner's crime is still the
-// pair's problem.  Set from the co-op page and saved in the INI under "Wii".
+// party's problem.  Set from the co-op page and saved in the INI under "Wii".
 extern int8_t CoopFriendlyFire;
 extern int8_t CoopSharedWanted;
 
@@ -59,11 +59,6 @@ public:
 	// that only exists because the view or the party is shared asks this,
 	// never the menu toggle.
 	static bool PairActive(void);
-	// The first partner's ped (player 2's), or nil when there is none in the
-	// world right now.  For the callers that still speak of one partner --
-	// the shared camera and the Wiimote speaker; see GetPlayerPed for the
-	// general case.
-	static CPlayerPed *GetPartner(void);
 	// A player's ped by slot: 0 is player 1, 1..3 the partners.  Nil when that
 	// player is not in the world.  Slots 1..3 are the co-op slots: they hold
 	// a ped only while that partner's controller is there and they have
@@ -128,7 +123,9 @@ public:
 	// follows player 1's; true follows the partner's.  The camera can only follow
 	// one nose, and following player 1's leaves the partner driving half blind, so
 	// the partner's camera button hands it over -- the job San Andreas gives its
-	// Select button.
+	// Select button.  Still the first partner's button and a two car choice; the
+	// stage that gives the camera its four player shape (see COOP-4-PLAN.md)
+	// replaces it with the vehicle carrying the most players.
 	static bool ms_bPartnerFocus;
 	enum { NUM_FRAMINGS = 4 };
 

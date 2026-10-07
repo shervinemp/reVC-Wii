@@ -54,9 +54,9 @@ public:
 #endif
 
 	// One per player: the lock-on sets it for the player who is locked on, and a
-	// single shared flag had one player's lock-on freezing the other's weapon
+	// single shared flag had one player's lock-on freezing another's weapon
 	// change.  Indexed by the player, see PlayerSlotForFlags.
-	static bool bDontAllowWeaponChange[2];
+	static bool bDontAllowWeaponChange[NUMPLAYERS];
 #ifndef MASTER
 	static bool bDebugPlayerInfo;
 #endif
@@ -122,10 +122,10 @@ public:
 	static const uint32 nSaveStructSize;
 };
 
-// The pad that drives a player ped: pad 0 for the player in focus, PAD_COOP for
-// couch co-op's partner.  Anything that reads a pad on behalf of "the player"
-// while processing a ped wants this rather than CPad::GetPad(0), or the partner
-// moves when player 1 pushes the stick.
+// The pad that drives a player ped: pad 0 for the player in focus, PAD_COOP..
+// PAD_COOP3 for couch co-op's partners in slot order.  Anything that reads a
+// pad on behalf of "the player" while processing a ped wants this rather than
+// CPad::GetPad(0), or a partner moves when player 1 pushes the stick.
 class CPad *GetPadFromPlayer(CPlayerPed *ped);
 
 // The pad that drives a vehicle: the driver's own when a player is at the
