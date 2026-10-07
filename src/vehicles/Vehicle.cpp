@@ -1915,13 +1915,22 @@ CVehicle::SetDriver(CPed *driver)
 	pDriver = driver;
 	pDriver->RegisterReference((CEntity**)&pDriver);
 
-	if(bFreebies && driver == FindPlayerPed()){
+	// The vehicle's one-time bonus goes to whichever player first drives it:
+	// health and armour to that driver, the weapons to the party's arsenal
+	// (player 1's, mirrored to the partners) and the money to the wallet, the
+	// same as a pickup.  Still one bonus per vehicle, which is what the saved
+	// flag holds.
+	if(bFreebies && driver != nil && driver->IsPlayer()){
+		CPlayerPed *playerDriver = (CPlayerPed*)driver;
 		bFreebies = false;
 		switch(GetModelIndex()){
 		case MI_AMBULAN:
-			FindPlayerPed()->m_fHealth = Max(FindPlayerPed()->m_fHealth, Min(FindPlayerPed()->m_fHealth + 20.0f, CWorld::Players[0].m_nMaxHealth));
+		{
+			CPlayerInfo *info = playerDriver->GetPlayerInfoForThisPlayerPed();
+			const float maxHealth = info != nil ? (float)info->m_nMaxHealth : 100.0f;
+			playerDriver->m_fHealth = Max(playerDriver->m_fHealth, Min(playerDriver->m_fHealth + 20.0f, maxHealth));
 			break;
-
+		}
 		case MI_TAXI:
 		case MI_CABBIE:
 		case MI_ZEBRA:
@@ -1935,11 +1944,14 @@ CVehicle::SetDriver(CPed *driver)
 			break;
 
 		case MI_ENFORCER:
-			driver->m_fArmour = Max(driver->m_fArmour, CWorld::Players[0].m_nMaxArmour);
+		{
+			CPlayerInfo *info = playerDriver->GetPlayerInfoForThisPlayerPed();
+			const float maxArmour = info != nil ? (float)info->m_nMaxArmour : 100.0f;
+			playerDriver->m_fArmour = Max(playerDriver->m_fArmour, maxArmour);
 			break;
-
+		}
 		case MI_CADDY:
-			if(!(driver->IsPlayer() && ((CPlayerPed*)driver)->DoesPlayerWantNewWeapon(WEAPONTYPE_GOLFCLUB, true)))
+			if(!playerDriver->DoesPlayerWantNewWeapon(WEAPONTYPE_GOLFCLUB, true))
 				CStreaming::RequestModel(MI_GOLFCLUB, STREAMFLAGS_DONT_REMOVE);
 			break;
 		}
@@ -2005,19 +2017,24 @@ CVehicle::RemoveDriver(void)
 	if (GetStatus() != STATUS_WRECKED)
 #endif
 		SetStatus(STATUS_ABANDONED);
-	if(pDriver == FindPlayerPed()){
+	// The police car's shotgun and the caddy's club are found when a player
+	// leaves one: the party's arsenal gets them -- player 1, mirrored to the
+	// partners -- so it is player 1 who is asked whether they want it, however
+	// the car was driven.
+	CPlayerPed *arsenal = FindPlayerPed();
+	if(pDriver != nil && pDriver->IsPlayer() && arsenal != nil){
 		if(GetModelIndex() == MI_POLICE && CStreaming::HasModelLoaded(MI_SHOTGUN)){
 			if(bFreebies){
-				if(((CPlayerPed*)pDriver)->DoesPlayerWantNewWeapon(WEAPONTYPE_SHOTGUN, true))
-					pDriver->GiveWeapon(WEAPONTYPE_SHOTGUN, 5, true);
+				if(arsenal->DoesPlayerWantNewWeapon(WEAPONTYPE_SHOTGUN, true))
+					arsenal->GiveWeapon(WEAPONTYPE_SHOTGUN, 5, true);
 				else
-					pDriver->GrantAmmo(WEAPONTYPE_SHOTGUN, 5);
+					arsenal->GrantAmmo(WEAPONTYPE_SHOTGUN, 5);
 				bFreebies = false;
 			}
 			CStreaming::SetModelIsDeletable(MI_SHOTGUN);
 		}else if(GetModelIndex() == MI_CADDY && CStreaming::HasModelLoaded(MI_GOLFCLUB)){
-			if(((CPlayerPed*)pDriver)->DoesPlayerWantNewWeapon(WEAPONTYPE_GOLFCLUB, true))
-				pDriver->GiveWeapon(WEAPONTYPE_GOLFCLUB, 1, true);
+			if(arsenal->DoesPlayerWantNewWeapon(WEAPONTYPE_GOLFCLUB, true))
+				arsenal->GiveWeapon(WEAPONTYPE_GOLFCLUB, 1, true);
 			CStreaming::SetModelIsDeletable(MI_GOLFCLUB);
 		}
 	}

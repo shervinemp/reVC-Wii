@@ -425,8 +425,11 @@ nothing.
   havoc and media attention are the party's, a script-set "only damaged by
   player" yields to any player, a partner shooting a police car raises the
   shared wanted level, and the fast-reload cheat speeds up everyone's reload.
-  The AI and the law still read player 1 alone, by design: they chase and
-  target the anchor.
+  A vehicle's one-time bonus — the ambulance heal, the taxi fare, the police
+  shotgun, the enforcer armour, the caddy club — goes to whichever player
+  first drives it: health and armour to them, the weapons and the money to
+  the shared arsenal and wallet. The AI and the law still read player 1 alone,
+  by design: they chase and target the anchor.
 - **Notices.** The help box says when a partner joins or leaves — by name, one
   line per partner — when co-op is paused for a mission, and which framing the
   camera button picked.
