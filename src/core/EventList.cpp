@@ -7,6 +7,7 @@
 #include "EventList.h"
 #include "Messages.h"
 #include "Text.h"
+#include "CoopModes.h"
 #include "main.h"
 #include "Accident.h"
 
@@ -124,7 +125,12 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 	// What the two of them do to EACH OTHER is not a crime, though.  They can
 	// shoot and punch one another, and a stray round into your partner in the
 	// middle of a firefight should not be what brings the helicopters.
-	if(IsAnyPlayerPed(criminal) && !(ent != criminal && IsAnyPlayerPed(ent)))
+	//
+	// And a cop shift's takedown is on duty: the suspect is the victim, or
+	// the gunfire is the case itself, and neither should call the real police
+	// down on the party doing the work.  See CCoopModes::OnDuty.
+	if(IsAnyPlayerPed(criminal) && !(ent != criminal && IsAnyPlayerPed(ent)) &&
+	   !CCoopModes::OnDuty(criminal, ent, type == EVENT_GUNSHOT))
 		ReportCrimeForEvent(type, (intptr)ent, copsDontCare);
 }
 

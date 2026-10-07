@@ -37,6 +37,10 @@ class CVector2D;
 // party's problem.  Set from the co-op page and saved in the INI under "Wii".
 extern int8_t CoopFriendlyFire;
 extern int8_t CoopSharedWanted;
+// The minigames switch, same page and same INI as the other two.  With it off
+// the engine-side modes cannot start; a mode already running is left to
+// finish, because the switch is the off switch for the offer, not a trapdoor.
+extern int8_t CoopMinigames;
 
 class CCoop
 {

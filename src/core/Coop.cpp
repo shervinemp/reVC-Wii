@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "Coop.h"
+#include "CoopModes.h"
 #include "AimAssist.h"
 #include "Camera.h"
 #include "CutsceneMgr.h"
@@ -53,8 +54,13 @@ bool CCoop::ms_bPartnerFocus = false;
 // shares one wanted level, which is what the party was designed around.  With
 // sharing off a partner's crimes are still the party's problem, because the
 // police only ever read player 1; see ShareWantedLevel.
+//
+// The minigames are on by default too: they only ever arm from something the
+// party does on purpose -- a siren, in the cop shift's case -- so the switch
+// is there for a party that wants the city to itself.
 int8_t CoopFriendlyFire = 1;
 int8_t CoopSharedWanted = 1;
+int8_t CoopMinigames = 1;
 
 namespace
 {
@@ -1439,6 +1445,8 @@ CCoop::Init(void)
 			s_rideInto[player]->CleanUpOldReference((CEntity**)&s_rideInto[player]);
 		s_rideInto[player] = nil;
 	}
+	// The minigames hold entities of their own; a reset is the end of them.
+	CCoopModes::Init();
 }
 
 CPlayerPed *

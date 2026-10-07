@@ -134,6 +134,7 @@
 	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define FRIENDLY_FIRE_TOGGLE MENUACTION_CFO_SELECT, "WII_FF", { new CCFOSelect((int8*)&CoopFriendlyFire, "Wii", "FriendlyFire", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define SHARED_WANTED_TOGGLE MENUACTION_CFO_SELECT, "WII_SHW", { new CCFOSelect((int8*)&CoopSharedWanted, "Wii", "SharedWanted", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define MINIGAMES_TOGGLE MENUACTION_CFO_SELECT, "WII_MG", { new CCFOSelect((int8*)&CoopMinigames, "Wii", "Minigames", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -144,6 +145,7 @@
 	#define COOP_SKIN_SELECT
 	#define FRIENDLY_FIRE_TOGGLE
 	#define SHARED_WANTED_TOGGLE
+	#define MINIGAMES_TOGGLE
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -1144,6 +1146,7 @@ CMenuScreenCustom aScreens[] = {
 		COOP_SKIN_SELECT
 		FRIENDLY_FIRE_TOGGLE
 		SHARED_WANTED_TOGGLE
+		MINIGAMES_TOGGLE
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 #endif

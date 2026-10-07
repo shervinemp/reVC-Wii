@@ -103,6 +103,7 @@
 #include "screendroplets.h"
 #include "VarConsole.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #ifdef USE_TEXTURE_POOL
 #include "TexturePools.h"
 #endif
@@ -1098,6 +1099,10 @@ void CGame::Process(void)
 		// said so; before the world, so every ped is processed against this
 		// frame's aim.
 		CCoop::Update();
+
+		// The minigames ride the same session state and the same frame; see
+		// CoopModes.h.
+		CCoopModes::Update();
 
 		PUSH_MEMID(MEMID_WORLD);
 		CWorld::Process();
