@@ -3336,9 +3336,19 @@ CAutomobile::TankControl(void)
 	CVector gunEnd(0.0f, 1.813f, 2.979f);
 	CVector baseToEnd = gunEnd - turrentBase;
 
-	if(this != FindPlayerVehicle())
-		return;
-	if(CWorld::Players[CWorld::PlayerInFocus].m_WBState != WBSTATE_PLAYING)
+	// Whose tank this is: player 1's, or in co-op the partner's.  Both drive it
+	// from their own pad and both get a turret; this only ever ran for the
+	// player in focus -- player 1 -- so a partner's Rhino had no turret at all.
+	CPlayerPed *driver = FindPlayerPed();
+	CPad *pad = CPad::GetPad(0);
+	if(this != FindPlayerVehicle()){
+		if(this->pDriver == nil || this->pDriver == driver || !this->pDriver->IsPlayer())
+			return;
+		driver = (CPlayerPed*)this->pDriver;
+		pad = GetPadFromPlayer(driver);
+	}
+	CPlayerInfo *driverInfo = driver->GetPlayerInfoForThisPlayerPed();
+	if(driverInfo->m_WBState != WBSTATE_PLAYING)
 		return;
 
 	// Rotate turret
@@ -3346,7 +3356,7 @@ CAutomobile::TankControl(void)
 #ifdef FREE_CAM
 	if(!CCamera::UseFreeCarCam())
 #endif
-		m_fCarGunLR -= CPad::GetPad(0)->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
+		m_fCarGunLR -= pad->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
 
 	if(m_fCarGunLR < 0.0f)
 		m_fCarGunLR += TWOPI;
@@ -3356,9 +3366,9 @@ CAutomobile::TankControl(void)
 		DMAudio.PlayOneShot(m_audioEntityId, SOUND_CAR_TANK_TURRET_ROTATE, Abs(m_fCarGunLR - prevAngle));
 
 	// Shoot
-	if(CPad::GetPad(0)->CarGunJustDown() &&
-	   CTimer::GetTimeInMilliseconds() > CWorld::Players[CWorld::PlayerInFocus].m_nTimeTankShotGun + 800){
-		CWorld::Players[CWorld::PlayerInFocus].m_nTimeTankShotGun = CTimer::GetTimeInMilliseconds();
+	if(pad->CarGunJustDown() &&
+	   CTimer::GetTimeInMilliseconds() > driverInfo->m_nTimeTankShotGun + 800){
+		driverInfo->m_nTimeTankShotGun = CTimer::GetTimeInMilliseconds();
 
 		// more like -sin(angle), cos(angle), i.e. rotated (0,1,0)
 		CVector turretDir = CVector(Sin(-m_fCarGunLR), Cos(-m_fCarGunLR), 0.0f);
@@ -3377,14 +3387,14 @@ CAutomobile::TankControl(void)
 		m_vecMoveSpeed -= 0.06f*turretDir;
 		m_vecMoveSpeed.z += 0.05f;
 
-		CWeapon::DoTankDoomAiming(FindPlayerVehicle(), FindPlayerPed(), &point1, &point2);
+		CWeapon::DoTankDoomAiming(this, driver, &point1, &point2);
 		CColPoint colpoint;
 		CEntity *entity = nil;
 		CWorld::ProcessLineOfSight(point1, point2, colpoint, entity, true, true, true, true, true, true, false);
 		if(entity)
 			point2 = colpoint.point - 0.04f*(colpoint.point - point1);
 
-		CExplosion::AddExplosion(nil, FindPlayerPed(), EXPLOSION_TANK_GRENADE, point2, 0);
+		CExplosion::AddExplosion(nil, driver, EXPLOSION_TANK_GRENADE, point2, 0);
 
 		// Add particles on the way to the explosion;
 		float shotDist = (point2 - point1).Magnitude();

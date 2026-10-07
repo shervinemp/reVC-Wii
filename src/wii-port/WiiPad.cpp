@@ -1285,6 +1285,49 @@ WiiPadRemoteIsPartners(void)
 		s_devices[PLAYER_TWO].channel == WPAD_CHAN_0;
 }
 
+// --- the Nunchuk's lean ------------------------------------------------------
+// A Wiimote and Nunchuk have no right stick.  In a helicopter the right stick
+// is the yaw, and in the Rhino it is the turret, so the Nunchuk's own lean
+// stands in for it there and nowhere else: in a car the same axis is the
+// camera's look, the drive-by aim and the hydraulics, and none of those are
+// steered by leaning.
+//
+// The accelerometer carries gravity, and leaning the Nunchuk over moves it
+// between the down axis (Z, across the face) and the right axis (X, along the
+// short side), so the angle between the two is the lean -- the same roll every
+// Nunchuk library derives from atan2(x, z).  Leaning it away or towards the
+// player moves gravity onto Y and does not appear here at all.
+const float kNunchukLeanDead = 0.14f;	// about 8 degrees: a hand at rest
+const float kNunchukLeanFull = 0.61f;	// about 35 degrees: hard over
+
+s16
+WiiNunchukTiltSteering(int padID)
+{
+	if(padID != 0 && padID != PAD_COOP)
+		return 0;
+	CPlayerPed *ped = padPlayer(padID);
+	if(ped == nullptr || !ped->bInVehicle || ped->m_pMyVehicle == nullptr)
+		return 0;
+	CVehicle *vehicle = ped->m_pMyVehicle;
+	if(vehicle->GetModelIndex() != MI_RHINO && !vehicle->IsRealHeli())
+		return 0;
+
+	const PadDevice &device = s_devices[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE];
+	if(device.kind != PadDevice::WIIMOTE)
+		return 0;
+	WPADData *data = WPAD_Data(device.channel);
+	if(data == nullptr || data->err != WPAD_ERR_NONE || data->exp.type != WPAD_EXP_NUNCHUK)
+		return 0;
+
+	const float lean = std::atan2(data->exp.nunchuk.gforce.x, data->exp.nunchuk.gforce.z);
+	float amount = (std::fabs(lean) - kNunchukLeanDead)/(kNunchukLeanFull - kNunchukLeanDead);
+	if(amount <= 0.0f)
+		return 0;
+	if(amount > 1.0f)
+		amount = 1.0f;
+	return (s16)(lean < 0.0f ? -amount*kAxisFullScale : amount*kAxisFullScale);
+}
+
 // Outside the anonymous namespace: the boot gate in wii_game.cpp calls these.
 bool
 WiiPadCanPlay(void)

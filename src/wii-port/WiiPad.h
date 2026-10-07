@@ -49,6 +49,12 @@ void WiiPadScan(void);
 // controller exists, so it is done every frame.  Any other padID reads nothing.
 void WiiPadCapture(int padID, CControllerState &state);
 
+// The Nunchuk's lean, in the right stick's units (-128..128), when the ped the
+// pad drives is in a helicopter or the Rhino -- the two vehicles where that
+// axis is the yaw and the turret.  Zero in anything else, or with no Nunchuk,
+// so the D-pad and any right stick keep working exactly as they did.
+s16 WiiNunchukTiltSteering(int padID);
+
 // The Wiimote pointer, as the mouse the engine already knows how to use.  In
 // game it reports a turn rate as relative motion; in a menu it drives the
 // cursor's absolute position, which it writes straight to the frontend.

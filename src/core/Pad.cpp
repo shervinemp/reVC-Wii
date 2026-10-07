@@ -2358,6 +2358,15 @@ int16 CPad::GetCarGunLeftRight(void)
 		case 1:
 		case 2:
 		{
+#ifdef NINTENDO_WII
+			// A Wiimote and Nunchuk have no right stick.  In the two vehicles
+			// that steer with this axis the Nunchuk's lean stands in for it;
+			// everywhere else this is zero and the stick is the stick.
+			const int padID = (this == CPad::GetPad(PAD_COOP)) ? PAD_COOP : 0;
+			const s16 lean = WiiNunchukTiltSteering(padID);
+			if (lean != 0)
+				return lean;
+#endif
 			return NewState.RightStickX;
 
 			break;
