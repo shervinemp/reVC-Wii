@@ -1048,7 +1048,14 @@ UpdateAim(int index)
 		CVehicle *vehicle = ped->m_pMyVehicle;
 		if(vehicle == nil)
 			return;
-		if(vehicle->pDriver != ped){
+		if(vehicle->pDriver == ped){
+			// An aircraft's pilot has no gun to point: the drive-by is gated
+			// off for them in CAutomobile::DoDriveByShootings, and the mounted
+			// guns aim themselves.  A tank's reticle stays -- it is what aims
+			// the turret.
+			if(vehicle->IsRealHeli() || vehicle->IsRealPlane())
+				return;
+		}else{
 			const bool gunSeat =
 				(vehicle->IsCar() && !vehicle->IsRealPlane() &&
 				 vehicle->GetModelIndex() != MI_HUNTER && vehicle->GetModelIndex() != MI_SEASPAR) ||
