@@ -47,6 +47,13 @@ bool CCoop::ms_bRunning;
 int8 CCoop::ms_nFraming = 1;
 bool CCoop::ms_bPartnerFocus = false;
 
+// The co-op options that are not pad settings, set from the co-op page and
+// saved in the INI under "Wii".  Friendly fire is on by default -- the game as
+// it was, with no rule against players shooting each other -- and the pair
+// shares one wanted level, which is what the pair was designed around.
+int8_t CoopFriendlyFire = 1;
+int8_t CoopSharedWanted = 1;
+
 namespace
 {
 
@@ -71,9 +78,15 @@ const uint32 kJoinAfterMs = 400;
 // second or two whenever its batteries sag or someone sits on it, and losing
 // the partner to that would read as the game throwing them out.
 const uint32 kDropAfterMs = 6000;
-// How long a dead or arrested partner is left where they fell before coming
-// back.  Long enough to see what happened, short enough not to sit out.
-const uint32 kRespawnAfterMs = 3500;
+// How long a downed partner is left where they fell before coming back beside
+// player 1.  Long enough for the other player to reach them -- which is what
+// brings them back where they are instead -- and short enough not to sit out.
+const uint32 kDownedBleedMs = 10000;
+// How close another player has to be to a downed partner to bring them back,
+// and how long they have to stay there.  The hold is what makes it something
+// a player does rather than something that happens to whoever walks past.
+const float kReviveRange = 2.0f;
+const uint32 kReviveHoldMs = 1000;
 // How long to wait before trying again when there was nowhere to put them.
 const uint32 kRetryMs = 400;
 
@@ -201,8 +214,18 @@ uint32 s_spawnTime;
 // When the regroup line was last written.  It is a signal, not a tick: a car
 // being yanked every second must not write it every second too.
 uint32 s_regroupLogTime;
-// When the partner was first seen dead or arrested, or 0.
+// When the partner was first seen down -- dead, or out of health in a car with
+// an order to die on the pavement -- or 0.  Arrested counts too: that is the
+// one of the three nobody can be brought back from.
 uint32 s_downTime;
+// Since when another player has been close enough to revive them, or 0.  A
+// revive needs the hold, so walking past a body does not do it.
+uint32 s_reviveTime;
+// Where a revived partner is put back: where they fell, not beside player 1.
+// Consumed by the next SpawnPartner, and dropped if the session goes down
+// first.
+CVector s_reviveAt;
+bool s_reviveValid;
 // Where player 1 was last frame, to notice a teleport.
 CVector s_leadPos;
 bool s_leadPosValid;
@@ -283,6 +306,10 @@ int32 s_partnerWanted;
 void
 ShareWantedLevel(CPlayerPed *lead, CPlayerPed *partner)
 {
+	// With the option off each player carries their own heat, and the police
+	// come for whoever earned it.  See the co-op page.
+	if(!CoopSharedWanted)
+		return;
 	if(lead->m_pWanted == nil || partner->m_pWanted == nil)
 		return;
 	const int32 leadLevel = lead->m_pWanted->GetWantedLevel();
@@ -520,6 +547,7 @@ RemovePartner(const char *why, bool carry)
 {
 	CPlayerPed *partner = CWorld::Players[PARTNER].m_pPed;
 	s_downTime = 0;
+	s_reviveTime = 0;
 	s_aim[PARTNER].active = false;
 	s_aim[PARTNER].drawReticle = false;
 	if(partner == nil)
@@ -550,6 +578,26 @@ RemovePartner(const char *why, bool carry)
 	CWorld::Players[PARTNER].m_pPed = nil;
 }
 
+// Whether another player is close enough to a downed partner to bring them
+// back.  What has to be reached is the body -- or the car, for someone at
+// their last point of health in one, who is not dead yet.
+bool
+SomeoneCanRevive(CPlayerPed *partner)
+{
+	const CVector at = partner->bInVehicle && partner->m_pMyVehicle != nil ?
+		partner->m_pMyVehicle->GetPosition() : partner->GetPosition();
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *other = CWorld::Players[i].m_pPed;
+		if(other == nil || other == partner || other->DyingOrDead())
+			continue;
+		const CVector pos = other->bInVehicle && other->m_pMyVehicle != nil ?
+			other->m_pMyVehicle->GetPosition() : other->GetPosition();
+		if((pos - at).Magnitude() <= kReviveRange)
+			return true;
+	}
+	return false;
+}
+
 bool
 SpawnPartner(CPlayerPed *lead)
 {
@@ -565,7 +613,12 @@ SpawnPartner(CPlayerPed *lead)
 
 	CVehicle *ride = nil;
 	CVector pos;
-	if(lead->bInVehicle && lead->m_pMyVehicle){
+	if(s_reviveValid){
+		// Brought back where they fell, not beside player 1 and not into their
+		// car: the ground the fight was on is the point of a revive.
+		pos = s_reviveAt;
+		s_reviveValid = false;
+	}else if(lead->bInVehicle && lead->m_pMyVehicle){
 		CVehicle *vehicle = lead->m_pMyVehicle;
 		if(CanRideAlong(lead, vehicle)){
 			ride = vehicle;
@@ -597,8 +650,16 @@ SpawnPartner(CPlayerPed *lead)
 	// stands co-op down and takes the partner with it.  Looking the name up as a
 	// model finds nothing, which is how a chosen skin used to come out as
 	// player 1.
-	static const char *const kCoopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
-	static const int kCoopSkinChars[] = { -1, 12, 11, 14, 17, 20, 18 };
+	//
+	// The names are the character models in the game's own archive (the ig*
+	// entries in gta3.dir) and the slots are ones its scripts leave alone; each
+	// skin has one of its own, so two partners never share a slot.
+	static const char *const kCoopSkinModels[] = { nil,
+		"igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc",
+		"igsonny", "igcolon", "igjezz", "ighlary", "iggonz" };
+	static const int kCoopSkinChars[] = { -1,
+		12, 11, 14, 17, 20, 18,
+		13, 15, 16, 19, 10 };
 	if(WiiCoopSkin > 0 && WiiCoopSkin < (int)ARRAY_SIZE(kCoopSkinChars) && kCoopSkinChars[WiiCoopSkin] >= 0){
 		const int charId = kCoopSkinChars[WiiCoopSkin];
 		const int skinModel = MI_SPECIAL01 + charId;
@@ -673,10 +734,13 @@ SpawnPartner(CPlayerPed *lead)
 	// against the last partner's.
 	ForgetSharedAmmo();
 	// The pair shares its heat: a partner who arrives while player 1 is wanted
-	// is wanted too, and the mirror starts from there.
-	partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
-	s_leadWanted = lead->m_pWanted->GetWantedLevel();
-	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
+	// is wanted too, and the mirror starts from there.  With the option off
+	// they arrive clean and keep their own.
+	if(CoopSharedWanted){
+		partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
+		s_leadWanted = lead->m_pWanted->GetWantedLevel();
+		s_partnerWanted = partner->m_pWanted->GetWantedLevel();
+	}
 	s_wantSlotUntil = CTimer::GetTimeInMilliseconds() + 4000;
 
 	if(ride != nil && !SeatPartner(partner, ride)){
@@ -1126,6 +1190,8 @@ CCoop::Init(void)
 	ForgetArsenal();
 	s_leadWanted = 0;
 	s_partnerWanted = 0;
+	s_reviveTime = 0;
+	s_reviveValid = false;
 	for(int i = 0; i < 2; i++){
 		s_aim[i].pointerSeen = false;
 		s_aim[i].stickSeen = false;
@@ -1306,18 +1372,59 @@ CCoop::Update(void)
 		         (partner->bInVehicle && partner->m_fHealth <= 1.0f)){
 			// Nothing in the engine brings a player back except CGameLogic, and
 			// CGameLogic only knows the player in focus.  So this is the whole of
-			// the partner's wasted-and-busted: a pause, then back beside player 1.
+			// the partner's wasted-and-busted: down where they fell, and then
+			// either brought back by the other player reaching them or, when the
+			// bleed-out runs out, back beside player 1 as before.
 			//
 			// The last test is someone killed in a car.  CPed::InflictDamage does
 			// not let them die there: it leaves them one point of health and an
 			// order to get out and die on the pavement -- which a passenger cannot
 			// carry out while the car is moving, so they would ride along at one
 			// health for as long as player 1 kept driving.
-			if(s_downTime == 0)
+			const bool busted = partner->m_nPedState == PED_ARRESTED;
+			if(s_downTime == 0){
 				s_downTime = now;
-			else if(now - s_downTime > kRespawnAfterMs){
-				RemovePartner(partner->m_nPedState == PED_ARRESTED ? "busted" : "wasted", false);
-				s_spawnTime = now;
+				if(!busted)
+					Tell("WII_P2D");
+			}else if(!busted && SomeoneCanRevive(partner)){
+				if(s_reviveTime == 0)
+					s_reviveTime = now;
+				else if(now - s_reviveTime >= kReviveHoldMs){
+					s_reviveTime = 0;
+					if(partner->DyingOrDead()){
+						if(partner->bInVehicle && partner->m_pMyVehicle != nil){
+							// Dead in a vehicle -- a car that drowned, a bike that
+							// threw them.  Nowhere to stand them up, so this is the
+							// ordinary return, beside player 1.
+							RemovePartner("revived", false);
+						}else{
+							// Dead on the ground: a fresh partner where the body is,
+							// through the same machinery as every other arrival, and
+							// with the pair's set -- a partner's death is not a reset.
+							const CVector at = partner->GetPosition();
+							RemovePartner("revived", false);
+							s_reviveAt = at;
+							s_reviveValid = true;
+						}
+						s_spawnTime = now;
+					}else{
+						// Not dead yet: one point of health in a car, waiting to get
+						// out and die.  Healed where they sit, and the order to die
+						// taken off them.
+						partner->m_fHealth = CWorld::Players[LEAD].m_nMaxHealth;
+						if(partner->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE)
+							partner->SetObjective(OBJECTIVE_NONE);
+						partner->m_leaveCarTimer = 0;
+						s_downTime = 0;
+					}
+					Tell("WII_P2R");
+				}
+			}else{
+				s_reviveTime = 0;
+				if(now - s_downTime > kDownedBleedMs){
+					RemovePartner(busted ? "busted" : "wasted", false);
+					s_spawnTime = now;
+				}
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, leadTeleported)) != nil){
 			// A partner who is driving their own car is moved with it.  The

@@ -264,6 +264,41 @@ DrawCoopMarks(void)
 			CSprite2d::DrawRect(CRect(screen.x - half - ex, top - ey, screen.x + half + ex, bottom + ey), CRGBA(0, 0, 0, 255));
 			if (health > 0.0f)
 				CSprite2d::DrawRect(CRect(screen.x - half, top, screen.x - half + 2.0f*half*health, bottom), kCoopColours[i]);
+
+			// The partner has no HUD of their own, so their ammo is shown here
+			// or nowhere: the same "total-clip" the HUD proper gives player 1,
+			// in the same colour, right-aligned under the bar's right end.  A
+			// weapon with no clip to speak of -- the fists, a bat, the
+			// detonator -- shows nothing, exactly as it does up there.
+			CWeapon *weapon = ped->GetWeapon();
+			const eWeaponType weaponType = weapon->m_eWeaponType;
+			CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(weaponType);
+			if(weaponInfo->m_nWeaponSlot > 1 && weaponType != WEAPONTYPE_DETONATOR){
+				char sAmmo[16];
+				const int32 ammoAmount = weaponInfo->m_nAmountofAmmunition;
+				const int32 ammoInClip = weapon->m_nAmmoInClip;
+				const int32 totalAmmo = weapon->m_nAmmoTotal;
+				if(ammoAmount <= 1 || ammoAmount >= 1000)
+					sprintf(sAmmo, "%d", totalAmmo);
+				else if(weaponType == WEAPONTYPE_FLAMETHROWER)
+					sprintf(sAmmo, "%d-%d", Min((totalAmmo - ammoInClip)/10, 9999), ammoInClip/10);
+				else
+					sprintf(sAmmo, "%d-%d", Min(totalAmmo - ammoInClip, 9999), ammoInClip);
+				wchar sAmmoText[16];
+				AsciiToUnicode(sAmmo, sAmmoText);
+				CFont::SetPropOff();
+				CFont::SetBackgroundOff();
+				CFont::SetScale(SCREEN_SCALE_X(0.35f), SCREEN_SCALE_Y(0.5f));
+				CFont::SetCentreOff();
+				CFont::SetRightJustifyOn();
+				CFont::SetRightJustifyWrap(0.0f);
+				CFont::SetFontStyle(FONT_STANDARD);
+				CFont::SetDropShadowPosition(1);
+				CFont::SetDropColor(CRGBA(0, 0, 0, 255));
+				CFont::SetColor(CRGBA(AMMO_COLOR.r, AMMO_COLOR.g, AMMO_COLOR.b, 255));
+				CFont::PrintString(screen.x + half, bottom + SCREEN_SCALE_Y(1.0f), sAmmoText);
+				CFont::SetRightJustifyOff();
+			}
 		}
 	}
 

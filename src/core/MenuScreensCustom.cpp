@@ -130,6 +130,8 @@
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_CENTER,
+	#define FRIENDLY_FIRE_TOGGLE MENUACTION_CFO_SELECT, "WII_FF", { new CCFOSelect((int8*)&CoopFriendlyFire, "Wii", "FriendlyFire", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define SHARED_WANTED_TOGGLE MENUACTION_CFO_SELECT, "WII_SHW", { new CCFOSelect((int8*)&CoopSharedWanted, "Wii", "SharedWanted", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -138,6 +140,8 @@
 	#define POINTER_CAR_TOGGLE
 	#define DRIVEBY_WEAPONS_TOGGLE
 	#define COOP_SKIN_SELECT
+	#define FRIENDLY_FIRE_TOGGLE
+	#define SHARED_WANTED_TOGGLE
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -162,7 +166,8 @@ const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
 // text tables like every other label on the screen, so a literal here renders as
 // "<word> missing" on a card carrying the user's own GXT.  The words are in
 // Text.cpp's fallback table with the rest of the port's.
-const char *coopSkins[] = { "WII_SK0", "WII_SK1", "WII_SK2", "WII_SK3", "WII_SK4", "WII_SK5", "WII_SK6" };
+const char *coopSkins[] = { "WII_SK0", "WII_SK1", "WII_SK2", "WII_SK3", "WII_SK4", "WII_SK5", "WII_SK6",
+	"WII_SK7", "WII_SK8", "WII_SK9", "WII_SK10", "WII_SK11" };
 const int COOP_NUM_SKINS = ARRAY_SIZE(coopSkins);
 
 // A short buzz when vibration is switched on, so it can be felt from the menu.  The
@@ -1133,6 +1138,8 @@ CMenuScreenCustom aScreens[] = {
 	{ "WII_COP", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		COUCH_COOP_TOGGLE
 		COOP_SKIN_SELECT
+		FRIENDLY_FIRE_TOGGLE
+		SHARED_WANTED_TOGGLE
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 #endif

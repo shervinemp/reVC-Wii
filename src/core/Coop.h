@@ -28,6 +28,13 @@ class CVector2D;
 //   the moment the ped is deleted -- and the engine may delete it, for instance
 //   along with a vehicle it was sitting in.  Everything here re-reads that slot
 //   and treats nil as "bring them back", so there is nothing to dangle.
+//
+// The co-op options that are not pad settings: whether a player's shots can
+// hurt the other, and whether the pair shares one wanted level.  Set from the
+// co-op page and saved in the INI under "Wii".
+extern int8_t CoopFriendlyFire;
+extern int8_t CoopSharedWanted;
+
 class CCoop
 {
 public:

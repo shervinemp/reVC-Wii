@@ -117,11 +117,30 @@ player peds.
   if it bites, batch the drain per geometry per frame.
 - **One screen.** At a 24 m tether a four-player spread can force a ~40 m view (the zoom already caps
   at `kCoopMaxDistance` 40). Expect to tighten the tether or the zoom for three or four.
-- **A pair asymmetry worth deciding on.** `PlayerInfo.cpp:611` lets player 1 ride in the partner's car
-  but not the reverse. With N this should become symmetric — any other player's car with a driver is
-  not enterable, except a fellow player's — or stay lead-only. Pick during stage 3.
+- **The car-entry gate, corrected.** `PlayerInfo.cpp:611` lets player 1 ride in the partner's car; the
+  reverse goes through the partner's own enter path (`Coop.cpp`'s `UpdatePartnerVehicle`), which
+  already rides with player 1 — both directions work today, so there was no asymmetry to fix. For N,
+  the gate should allow any co-op player's car, and `UpdatePartnerVehicle`'s "a seat with player 1"
+  should become "a seat with any co-op player". Stage 3.
 - **Hardware.** Four remotes need four Nunchuks (or GameCube pads); the join rule stays "something to
   walk with".
+
+## Also on this branch
+
+Not part of the four-player stages: a batch of co-op options and fixes built alongside stages 1-2.
+
+- **Downed + revive.** A downed partner is brought back by another player reaching them (a second's
+  hold within 2 m); otherwise they come back beside player 1 after 10 s, as before. A revive puts
+  them back where they fell, through the ordinary spawn; someone at their last point of health in a
+  car is healed where they sit instead.
+- **Friendly fire toggle** on the co-op page (`CoopFriendlyFire`, default on): with it off, one
+  player's damage to another — gun, fists or the car they are driving — is not damage at all.
+- **Shared wanted toggle** (`CoopSharedWanted`, default on): with it off, each player keeps their own
+  heat.
+- **More partner skins.** Sonny, Colonel, Jezz, Hilary and Gonzalez, named from the game's own model
+  archive (`gta3.dir`), each with a special-model slot of its own.
+- **Ammo on the pips.** Each pip now shows that player's "total-clip" in the HUD's ammo colour, so
+  the partner can see their ammo at all; the ammo is the pip's one line of text, no kill counter.
 
 ## Gate
 
