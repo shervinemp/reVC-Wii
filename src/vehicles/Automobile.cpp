@@ -1660,7 +1660,9 @@ CAutomobile::ProcessControl(void)
 			speed = Sqrt(speed);
 			if(suspShake > 0.0f){
 				uint8 freq = Min(200.0f*suspShake*speed*2000.0f/m_fMass + 100.0f, 250.0f);
-				CPad::GetPad(0)->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
+				// The suspension is felt by whoever is driving it.
+				CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
+				shakePad->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
 			}else{
 				uint8 freq = Min(200.0f*surfShake*speed*2000.0f/m_fMass + 40.0f, 150.0f);
 				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
@@ -4186,7 +4188,9 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 
 		if(GetStatus() == STATUS_PLAYER && impulse > 50.0f){
 			uint8 freq = Min(0.4f*impulse*2000.0f/m_fMass + 100.0f, 250.0f);
-			CPad::GetPad(0)->StartShake(40000/freq, freq);
+			// A collision is felt by whoever is at the wheel of this car.
+			CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
+			shakePad->StartShake(40000/freq, freq);
 		}
 
 		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer){
