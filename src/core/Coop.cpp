@@ -1040,16 +1040,20 @@ UpdateAim(int index)
 	if(ped->DyingOrDead())
 		return;
 	// Inside a vehicle the driver aims, and so does a passenger with a window
-	// or a side to shoot out of -- a car's seat (CAutomobile's drive-by) or a
-	// bike's pillion (CBike's).  A boat's or an aircraft's passenger has no
-	// drive-by to aim, so no reticle.
+	// or a side to shoot out of -- a car's seat (CAutomobile's drive-by), a
+	// bike's pillion (CBike's), or an unarmed helicopter's open cabin, whose
+	// passenger has the drive-by.  An armed helicopter's passenger waits for
+	// the mounted gun; a plane's or a boat's has no drive-by to aim.
 	if(ped->bInVehicle){
 		CVehicle *vehicle = ped->m_pMyVehicle;
 		if(vehicle == nil)
 			return;
 		if(vehicle->pDriver != ped){
-			const bool carSeat = vehicle->IsCar() && !vehicle->IsRealHeli() && !vehicle->IsRealPlane();
-			if(!carSeat && !vehicle->IsBike())
+			const bool gunSeat =
+				(vehicle->IsCar() && !vehicle->IsRealPlane() &&
+				 vehicle->GetModelIndex() != MI_HUNTER && vehicle->GetModelIndex() != MI_SEASPAR) ||
+				vehicle->IsBike();
+			if(!gunSeat)
 				return;
 		}
 	}

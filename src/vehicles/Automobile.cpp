@@ -4028,11 +4028,15 @@ CAutomobile::DoDriveByShootings(void)
 	// Couch co-op: a player in a passenger seat shoots out of their own window,
 	// whether or not the driver has anything to shoot with.  Co-op only: in a
 	// mission a scripted ride leaves the player a passenger, and that scene was
-	// written without a gun out of the window.  Cars only: a helicopter and a
-	// plane are CAutomobiles too, but their seats are not car seats and the car
-	// drive-by animations do not belong in them -- the aim gate excludes them
-	// as well, so the two answers stay the same.
-	if (CCoop::PairActive() && !IsRealHeli() && !IsRealPlane())
+	// written without a gun out of the window.
+	//
+	// An unarmed helicopter counts: its cabin is open to the air and this is
+	// the passenger's own gun.  The armed ones (Hunter, Sea Sparrow) keep their
+	// passenger for the mounted gun instead; the aim gate in CCoop reads the
+	// same answer.  A plane stays out: its seats are not car seats and the car
+	// drive-by animations do not belong in them.
+	if (CCoop::PairActive() && !IsRealPlane() &&
+	    GetModelIndex() != MI_HUNTER && GetModelIndex() != MI_SEASPAR)
 		for (int seat = 0; seat < m_nNumMaxPassengers; seat++)
 			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
 				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);
