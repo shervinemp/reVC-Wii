@@ -4041,6 +4041,15 @@ CAutomobile::DoDriveByShootings(void)
 			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
 				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);
 
+	// A pilot does not fire their own gun out of an aircraft: their hands are on
+	// the controls, and an armed helicopter fires its mounted guns instead --
+	// the Hunter's rockets on the fire button, its gun and the Sea Sparrow's on
+	// the handbrake.  Without this the fire button in a Hunter fired the
+	// pilot's own gun alongside the rockets, and a plane's pilot could shoot
+	// out of the Dodo.
+	if (IsRealHeli() || IsRealPlane())
+		return;
+
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
 		return;
 
