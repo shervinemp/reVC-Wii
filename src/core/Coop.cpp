@@ -222,8 +222,11 @@ Tell(const char *key)
 	CHud::SetHelpMessage(TheText.Get(key), true);
 }
 
-// What a partner who is only being moved, not replaced, keeps.  No ammo: the
-// weapons are, and the ammo is the shared pool.
+// What a partner who is only being moved, not replaced, keeps.  The ammo comes
+// with the weapons: the pool is player 1's, and a partner who is moved while
+// player 1 is without the same gun -- which is what player 1's own wasted does
+// to the pair, clearing his weapons at the hospital -- would otherwise come back
+// holding an empty one.
 struct Carry
 {
 	bool valid;
@@ -231,6 +234,7 @@ struct Carry
 	float armour;
 	int8 slot;
 	eWeaponType weapon[TOTAL_WEAPON_SLOTS];
+	int32 ammo[TOTAL_WEAPON_SLOTS];
 };
 Carry s_carry;
 // The weapon slot the partner should end up holding once it arrives.
@@ -255,13 +259,18 @@ uint32 s_wantSlotUntil;
 // left, so it cannot hold rounds the other player has already spent.
 //
 // What has been seen of player 1's weapons is kept for as long as the game is,
-// not for as long as the partner is.  A partner who is only being moved takes
-// their own weapons with them (Carry); one who is new, or who died, starts
-// from nothing seen and so from a copy of everything player 1 has.
+// not for as long as the partner is.  A partner who is being moved, and one who
+// died, keep what they were carrying (Carry) -- the same player comes back --
+// and the mirror adds anything player 1 has picked up since.  Only a partner who
+// is new, arriving on a controller that has just been picked up, starts from
+// nothing seen and so from a copy of everything player 1 has.
 eWeaponType s_seenType[TOTAL_WEAPON_SLOTS];
 // Owed but not yet handed over, because its model is still streaming in.  Given
-// with no ammo: the pool is the ammo.
+// empty unless the partner is being moved rather than replaced, in which case
+// they bring their own rounds back with the weapon: the pool is player 1's, and
+// while player 1 is without that gun there is nowhere else for them to live.
 eWeaponType s_owedType[TOTAL_WEAPON_SLOTS];
+int32 s_owedAmmo[TOTAL_WEAPON_SLOTS];
 // The shared pool as of the last sync, per slot.  -1 means this slot is not
 // shared yet (nothing there, or a weapon the partner has not been given).
 int32 s_poolAmmo[TOTAL_WEAPON_SLOTS];
@@ -304,6 +313,7 @@ ForgetArsenal(void)
 	for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 		s_seenType[slot] = WEAPONTYPE_UNARMED;
 		s_owedType[slot] = WEAPONTYPE_UNARMED;
+		s_owedAmmo[slot] = 0;
 		s_poolAmmo[slot] = -1;
 	}
 }
@@ -368,8 +378,9 @@ UpdateArsenal(CPlayerPed *lead, CPlayerPed *partner)
 			CStreaming::RequestModel(model2, STREAMFLAGS_DEPENDENCY);
 		if((model1 == -1 || CStreaming::HasModelLoaded(model1)) &&
 		   (model2 == -1 || CStreaming::HasModelLoaded(model2))){
-			partner->GiveWeapon(s_owedType[slot], 0, true);
+			partner->GiveWeapon(s_owedType[slot], s_owedAmmo[slot], true);
 			s_owedType[slot] = WEAPONTYPE_UNARMED;
+			s_owedAmmo[slot] = 0;
 			// A different weapon in the slot is a different pool for it.
 			s_poolAmmo[slot] = -1;
 		}
@@ -525,13 +536,22 @@ RemovePartner(const char *why, bool carry)
 	if(partner == nil)
 		return;
 
-	s_carry.valid = carry && !partner->DyingOrDead();
+	s_carry.valid = carry;
 	if(s_carry.valid){
-		s_carry.health = partner->m_fHealth;
-		s_carry.armour = partner->m_fArmour;
+		// A partner who died is still the same player, so they keep the weapons
+		// and the rounds they were carrying -- which, after player 1's own
+		// wasted, may be the pair's only gun.  Health and armour are not carried
+		// off a corpse: they come back the way a fresh partner's do, from
+		// player 1.
+		const bool dead = partner->DyingOrDead();
+		CPlayerPed *lead = CWorld::Players[LEAD].m_pPed;
+		s_carry.health = dead ? CWorld::Players[LEAD].m_nMaxHealth : partner->m_fHealth;
+		s_carry.armour = dead ? (lead != nil ? lead->m_fArmour : 0.0f) : partner->m_fArmour;
 		s_carry.slot = partner->m_nSelectedWepSlot;
-		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++)
+		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 			s_carry.weapon[slot] = partner->GetWeapon(slot).m_eWeaponType;
+			s_carry.ammo[slot] = partner->GetWeapon(slot).m_nAmmoTotal;
+		}
 	}
 
 	// The destructor below gives back the one door the ped was using.  Stepping
@@ -659,8 +679,10 @@ SpawnPartner(CPlayerPed *lead)
 		for(int slot = 0; slot < TOTAL_WEAPON_SLOTS; slot++){
 			if(s_carry.weapon[slot] == WEAPONTYPE_UNARMED)
 				continue;
-			if(s_owedType[slot] == WEAPONTYPE_UNARMED)
+			if(s_owedType[slot] == WEAPONTYPE_UNARMED){
 				s_owedType[slot] = s_carry.weapon[slot];
+				s_owedAmmo[slot] = s_carry.ammo[slot];
+			}
 		}
 	}else{
 		partner->m_fHealth = CWorld::Players[LEAD].m_nMaxHealth;
@@ -1303,7 +1325,7 @@ CCoop::Update(void)
 			if(s_downTime == 0)
 				s_downTime = now;
 			else if(now - s_downTime > kRespawnAfterMs){
-				RemovePartner(partner->m_nPedState == PED_ARRESTED ? "busted" : "wasted", false);
+				RemovePartner(partner->m_nPedState == PED_ARRESTED ? "busted" : "wasted", true);
 				s_spawnTime = now;
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, leadTeleported)) != nil){
