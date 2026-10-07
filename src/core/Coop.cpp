@@ -625,6 +625,28 @@ FindSpotBeside(const CVector &base, const CVector &right, const CVector &forward
 // gone by then reads as nil rather than dangling.
 CVehicle *s_rideInto[NUMPLAYERS];
 
+// Which passenger seat a teleport may use.  Seat 0 is the front passenger
+// door (RF), 1 the rear left and 2 the rear right -- the seats
+// CPed::PedSetInCarCB hands to exactly those doors.  A seat whose door is
+// flagged is one somebody is walking to: taking it by teleport would leave
+// that walker finishing their door animation with no seat, marked as in the
+// car and in nobody's passenger list.  A bus has no door-to-seat map (its
+// walkers take the first free seat), so there the plain rule stands.
+bool
+FreeTeleportSeat(CVehicle *vehicle, uint8 &seat)
+{
+	static const int8 kSeatFlags[3] = { CAR_DOOR_FLAG_RF, CAR_DOOR_FLAG_LR, CAR_DOOR_FLAG_RR };
+	for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++){
+		if(vehicle->pPassengers[i] != nil)
+			continue;
+		if(!vehicle->bIsBus && i < 3 && (vehicle->m_nGettingInFlags & kSeatFlags[i]))
+			continue;
+		seat = (uint8)i;
+		return true;
+	}
+	return false;
+}
+
 // Whether a player can sit in this vehicle while another player drives it.
 // Only ever a vehicle a player is driving: the engine makes any player who
 // gets onto a bike or into a boat its driver whatever seat they asked for,
@@ -641,10 +663,8 @@ CanRideAlong(CPlayerPed *driver, CVehicle *vehicle)
 		return false;
 	if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
 		return false;
-	for(int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
-		if(vehicle->pPassengers[i] == nil)
-			return true;
-	return false;
+	uint8 seat;
+	return FreeTeleportSeat(vehicle, seat);
 }
 
 // Whether a player can sit in this vehicle while a player drives it, however
@@ -658,11 +678,16 @@ CanRideAlongAnyPlayer(CVehicle *vehicle)
 
 // Straight into a seat, the way COMMAND_CREATE_CHAR_AS_PASSENGER seats a ped
 // it has just made.  Deliberately not CPed::WarpPedIntoCar, which marks the car
-// as the player's to drive for any ped that IsPlayer().
+// as the player's to drive for any ped that IsPlayer().  The seat is the first
+// one no one is walking to; AddPassenger refuses an occupied one either way, so
+// two teleports can never share a seat.
 bool
 SeatPartner(CPlayerPed *partner, CVehicle *vehicle)
 {
-	if(!vehicle->AddPassenger(partner))
+	uint8 seat;
+	if(!FreeTeleportSeat(vehicle, seat))
+		return false;
+	if(!vehicle->AddPassenger(partner, seat))
 		return false;
 	if(vehicle->bIsBus)
 		partner->bRenderPedInCar = false;
@@ -1077,11 +1102,8 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 		   vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater ||
 		   (vehicle->GetPosition() - partner->GetPosition()).Magnitude() > kBoardingRange)
 			continue;
-		bool seat = false;
-		for(int s = 0; s < vehicle->m_nNumMaxPassengers; s++)
-			if(vehicle->pPassengers[s] == nil)
-				seat = true;
-		if(!seat)
+		uint8 seat = 0;
+		if(!FreeTeleportSeat(vehicle, seat))
 			continue;
 		// Standing still, or nearly: walk to a door and get in like anybody
 		// else.  Already rolling: straight into the seat.

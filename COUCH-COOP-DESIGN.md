@@ -160,7 +160,10 @@ back at once line up along the road instead of piling onto one node.
   again would be left on a bike with no rider, which the bike's own code does
   not survive. The seat's vehicle travels with them through the respawn, so a
   moving car or a bike that belongs to partner 2 seats them into *that*
-  vehicle, not player 1's.
+  vehicle, not player 1's. A seat somebody is already walking to is never
+  offered to a teleport -- the vehicle flags the door -- so a partner can
+  never land in the seat another player is climbing into, and nobody finishes
+  their entry with no seat.
 - **Taking their own car.** With no free seat beside another player -- player 1
   on foot, in a full car, or in a boat -- the same button takes the nearest car
   or bike within 10 m that another player is not driving and enters it as its
