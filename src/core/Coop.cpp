@@ -825,10 +825,15 @@ FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 			continue;
 		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
 			continue;
-		// The one player 1 is entering has no driver yet, and two players
-		// finishing the same car's enter as its driver would leave one of them
-		// in the seat with the other's ped as the car's driver.
-		if(vehicle == lead->m_carInObjective)
+		// The one player 1 is entering: two players finishing the same car's
+		// enter as its driver would leave one of them in the seat with the
+		// other's ped as the car's driver.  Tested on the state, not on
+		// m_carInObjective alone: the field is left pointing at the last car
+		// player 1 entered -- the game clears it only through ClearObjective,
+		// which the player's own enter never goes through -- so a car they had
+		// driven once could never be taken by the partner again.
+		if((lead->m_nPedState == PED_ENTER_CAR || lead->m_nPedState == PED_CARJACK) &&
+		   vehicle == lead->m_carInObjective)
 			continue;
 		const float dist = (vehicle->GetPosition() - pos).MagnitudeSqr();
 		if(dist < bestDist){
@@ -1616,14 +1621,23 @@ CCoop::Update(void)
 			partner->bFleeAfterExitingCar = false;
 			partner->bHeldHostageInCar = false;
 			partner->m_area = lead->m_area;
-			// The partner gets into a car as a passenger or not at all.  They
-			// are only ever sent to a seat that is empty, but if somebody takes
-			// it while they are walking over, CPed::SeekCar has them drag that
-			// somebody out instead -- and CPed::PedSetInCarCB makes whoever did
-			// the dragging the car's driver, over the top of player 1, who is
-			// still sitting in it.  Stopped here, on the frame it starts, before
-			// anyone has been pulled anywhere.
-			if(partner->m_nPedState == PED_CARJACK)
+			// Player 1's car is entered as a passenger or not at all.  The
+			// partner is sent to an empty seat, but if somebody takes it while
+			// they walk over, CPed::SeekCar has them drag that somebody out
+			// instead -- and CPed::PedSetInCarCB then makes the partner the
+			// car's driver, over the top of player 1, who is sitting in it.
+			// Stopped here, on the frame it starts, before anyone is pulled
+			// anywhere.
+			//
+			// A car the partner is taking as its driver is meant to be a
+			// carjack, occupied or not -- cancelling every PED_CARJACK is what
+			// stopped the partner stealing an occupied car at all -- but never
+			// with a player in the driver's seat: that is not a carjack, it is
+			// one player pulling the other out of their own car.
+			if(partner->m_nPedState == PED_CARJACK &&
+			   (partner->m_objective == OBJECTIVE_ENTER_CAR_AS_PASSENGER ||
+			    (partner->m_carInObjective != nil && partner->m_carInObjective->pDriver != nil &&
+			     partner->m_carInObjective->pDriver->IsPlayer())))
 				partner->QuitEnteringCar();
 			if(UpdatePartnerVehicle(lead, partner, partnerPad)){
 				// Replaced, like every other time the partner is moved; the new
