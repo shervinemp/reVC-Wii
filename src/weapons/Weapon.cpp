@@ -1738,8 +1738,14 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 	else
 		CBulletTraces::AddTrace(source, target, m_eWeaponType, shooter);
 
-	if ( shooter == FindPlayerPed() )
-		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+	// The shooter's own pad, not player 1's: a partner's shot should shake the
+	// remote in their hands.  It used to be gated on the shooter being player 1,
+	// so their fire never shook anything at all.
+	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() ) {
+		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
+		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
+			shooterPlayer->GetPosition().x, shooterPlayer->GetPosition().y, shooterPlayer->GetPosition().z);
+	}
 
 	BlowUpExplosiveThings(victim);
 }
@@ -2173,8 +2179,14 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		}
 	}
 
-	if ( shooter == FindPlayerPed() )
-		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerPed()->GetPosition().x, FindPlayerPed()->GetPosition().y, FindPlayerPed()->GetPosition().z);
+	// The shooter's own pad, not player 1's: a partner's shot should shake the
+	// remote in their hands.  It used to be gated on the shooter being player 1,
+	// so their fire never shook anything at all.
+	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() ) {
+		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
+		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
+			shooterPlayer->GetPosition().x, shooterPlayer->GetPosition().y, shooterPlayer->GetPosition().z);
+	}
 
 	return true;
 }
@@ -2439,12 +2451,13 @@ CWeapon::FireSniper(CEntity *shooter)
 
 	CBulletInfo::AddBullet(shooter, m_eWeaponType, source, dir);
 
-	if ( shooter == FindPlayerPed() )
+	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
 	{
-		CPad::GetPad(0)->StartShake_Distance(240, 128,
-			FindPlayerPed()->GetPosition().x,
-			FindPlayerPed()->GetPosition().y,
-			FindPlayerPed()->GetPosition().z);
+		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
+		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
+			shooterPlayer->GetPosition().x,
+			shooterPlayer->GetPosition().y,
+			shooterPlayer->GetPosition().z);
 			
 		CParticle::HandleShootableBirdsStuff(shooter, source);
 
@@ -2834,8 +2847,12 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 		CBulletTraces::AddTrace(&source, &traceTarget, m_eWeaponType, shooter);
 	}
 
-	if ( shooter == FindPlayerVehicle() )
-		CPad::GetPad(0)->StartShake_Distance(240, 128, FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y, FindPlayerVehicle()->GetPosition().z);
+	// A drive-by shakes the driver's pad, whoever is driving it.
+	if ( shooter != nil && shooter == FindPlayerVehicle() && shooter->pDriver != nil && shooter->pDriver->IsPlayer() ) {
+		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter->pDriver;
+		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
+			shooter->GetPosition().x, shooter->GetPosition().y, shooter->GetPosition().z);
+	}
 
 	return true;
 }
