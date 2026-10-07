@@ -30,8 +30,9 @@ class CVector2D;
 //   and treats nil as "bring them back", so there is nothing to dangle.
 //
 // The co-op options that are not pad settings: whether a player's shots can
-// hurt the other, and whether the pair shares one wanted level.  Set from the
-// co-op page and saved in the INI under "Wii".
+// hurt the other, and whether the pair shares one wanted level.  With sharing
+// off each player keeps their own record, but a partner's crime is still the
+// pair's problem.  Set from the co-op page and saved in the INI under "Wii".
 extern int8_t CoopFriendlyFire;
 extern int8_t CoopSharedWanted;
 
@@ -56,6 +57,12 @@ public:
 	static CPlayerPed *GetPartner(void);
 	// 0 for player 1, 1 for the partner, -1 for anything else.
 	static int GetPlayerIndex(const CEntity *entity);
+	// Whether damage from one player to another is switched off.  With friendly
+	// fire off, a hit that lands on a player from a player -- or from a car one
+	// of them is driving -- costs nothing.  The weapon paths still show their
+	// hit feedback on purpose: a glance, the blood.  Only CPed::InflictDamage
+	// drops the damage, and every path ends up there.
+	static bool FriendlyFireBlocked(CEntity *attacker, CEntity *victim);
 
 	// --- staying together ----------------------------------------------------
 	// The limit on how far apart the two players can get on foot.  Given the

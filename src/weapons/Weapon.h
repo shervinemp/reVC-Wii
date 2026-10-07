@@ -89,7 +89,7 @@ public:
 };
 VALIDATE_SIZE(CWeapon, 0x18);
 
-void FireOneInstantHitRound(CVector *source, CVector *target, int32 damage);
+void FireOneInstantHitRound(CEntity *shooter, CVector *source, CVector *target, int32 damage);
 
 #ifdef NINTENDO_WII
 // For the drive-by loops, in place of their own "next shot in 70 ms": sets when the

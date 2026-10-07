@@ -1431,7 +1431,7 @@ CVehicle::FireFixedMachineGuns(void)
 		((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.015f,
 		((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.02f);
 	CWeapon::DoTankDoomAiming(this, pDriver, &source, &target);
-	FireOneInstantHitRound(&source, &target, 15);
+	FireOneInstantHitRound(this, &source, &target, 15);
 
 	source = GetMatrix() * CVector(-2.0f, 2.5f, 1.0f);
 	target = source + CVector(dx, dy, 0.0f) * 60.0f;
@@ -1440,7 +1440,7 @@ CVehicle::FireFixedMachineGuns(void)
 		((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.015f,
 		((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.02f);
 	CWeapon::DoTankDoomAiming(this, pDriver, &source, &target);
-	FireOneInstantHitRound(&source, &target, 15);
+	FireOneInstantHitRound(this, &source, &target, 15);
 
 	DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 

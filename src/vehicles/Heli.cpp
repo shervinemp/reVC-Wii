@@ -522,7 +522,7 @@ CHeli::ProcessControl(void)
 					shotTarget += 3.0f * direction;
 					CVector shotSource = GetPosition();
 					shotSource += 3.0f * direction;
-					FireOneInstantHitRound(&shotSource, &shotTarget, 20);
+					FireOneInstantHitRound(this, &shotSource, &shotTarget, 20);
 					DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
 					m_nLastShotTime = CTimer::GetTimeInMilliseconds();
 				}

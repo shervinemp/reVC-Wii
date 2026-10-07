@@ -136,7 +136,8 @@ Not part of the four-player stages: a batch of co-op options and fixes built alo
 - **Friendly fire toggle** on the co-op page (`CoopFriendlyFire`, default on): with it off, one
   player's damage to another — gun, fists or the car they are driving — is not damage at all.
 - **Shared wanted toggle** (`CoopSharedWanted`, default on): with it off, each player keeps their own
-  heat.
+  record — but a partner's rise is still put on player 1, because every cop in the city reads
+  player 1's wanted level and nobody else's; without that, a partner's crimes would call nobody.
 - **More partner skins.** Sonny, Colonel, Jezz, Hilary and Gonzalez, named from the game's own model
   archive (`gta3.dir`), each with a special-model slot of its own.
 - **Ammo on the pips.** Each pip now shows that player's "total-clip" in the HUD's ammo colour, so

@@ -50,7 +50,9 @@ bool CCoop::ms_bPartnerFocus = false;
 // The co-op options that are not pad settings, set from the co-op page and
 // saved in the INI under "Wii".  Friendly fire is on by default -- the game as
 // it was, with no rule against players shooting each other -- and the pair
-// shares one wanted level, which is what the pair was designed around.
+// shares one wanted level, which is what the pair was designed around.  With
+// sharing off a partner's crimes are still the pair's problem, because the
+// police only ever read player 1; see ShareWantedLevel.
 int8_t CoopFriendlyFire = 1;
 int8_t CoopSharedWanted = 1;
 
@@ -306,20 +308,28 @@ int32 s_partnerWanted;
 void
 ShareWantedLevel(CPlayerPed *lead, CPlayerPed *partner)
 {
-	// With the option off each player carries their own heat, and the police
-	// come for whoever earned it.  See the co-op page.
-	if(!CoopSharedWanted)
-		return;
 	if(lead->m_pWanted == nil || partner->m_pWanted == nil)
 		return;
 	const int32 leadLevel = lead->m_pWanted->GetWantedLevel();
 	const int32 partnerLevel = partner->m_pWanted->GetWantedLevel();
-	if(leadLevel > s_leadWanted || partnerLevel > s_partnerWanted){
-		const int32 level = Max(leadLevel, partnerLevel);
-		if(leadLevel != level)
-			lead->m_pWanted->SetWantedLevel(level);
-		if(partnerLevel != level)
-			partner->m_pWanted->SetWantedLevel(level);
+	if(CoopSharedWanted){
+		if(leadLevel > s_leadWanted || partnerLevel > s_partnerWanted){
+			const int32 level = Max(leadLevel, partnerLevel);
+			if(leadLevel != level)
+				lead->m_pWanted->SetWantedLevel(level);
+			if(partnerLevel != level)
+				partner->m_pWanted->SetWantedLevel(level);
+		}
+	}else{
+		// With the option off the pair does not share one level: player 1's
+		// crimes are not the partner's, and the partner's record is their own.
+		// But the law is still the pair's problem.  Every cop in the city reads
+		// player 1's wanted level and nobody else's, so a partner's crime the
+		// police never hear about is a crime with no consequence at all.  A
+		// rise of theirs is therefore put on player 1 -- the stars and the
+		// chase both follow -- while a rise of his is not put on them.
+		if(partnerLevel > s_partnerWanted && partnerLevel > leadLevel)
+			lead->m_pWanted->SetWantedLevel(partnerLevel);
 	}
 	s_leadWanted = lead->m_pWanted->GetWantedLevel();
 	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
@@ -1227,6 +1237,21 @@ CCoop::GetPlayerIndex(const CEntity *entity)
 	if(entity == CWorld::Players[PARTNER].m_pPed)
 		return PARTNER;
 	return -1;
+}
+
+bool
+CCoop::FriendlyFireBlocked(CEntity *attacker, CEntity *victim)
+{
+	if(CoopFriendlyFire || attacker == nil || victim == nil || attacker == victim)
+		return false;
+	if(!victim->IsPed())
+		return false;
+	CPed *victimPed = (CPed*)victim;
+	if(!victimPed->IsPlayer())
+		return false;
+	CPed *culprit = attacker->IsPed() ? (CPed*)attacker :
+		attacker->IsVehicle() ? ((CVehicle*)attacker)->pDriver : nil;
+	return culprit != nil && culprit != victimPed && culprit->IsPlayer();
 }
 
 void

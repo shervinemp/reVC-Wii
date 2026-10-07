@@ -2680,14 +2680,11 @@ bool
 CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPieceTypes pedPiece, uint8 direction)
 {
 	// Couch co-op: with friendly fire off, one player's damage to another is not
-	// damage at all -- their gun, their fists, or the car they are driving.
-	// Explosions carry their creator the same way, so those are covered too.
-	if(!CoopFriendlyFire && IsPlayer() && damagedBy != nil && damagedBy != this){
-		CPed *culprit = damagedBy->IsPed() ? (CPed*)damagedBy :
-			damagedBy->IsVehicle() ? ((CVehicle*)damagedBy)->pDriver : nil;
-		if(culprit != nil && culprit != this && culprit->IsPlayer())
-			return false;
-	}
+	// damage at all -- their gun, their fists, the car they are driving, or the
+	// explosion they set off.  Every path ends up here, so this is the whole of
+	// it; the hit itself still shows its feedback -- a glance, the blood.
+	if(CCoop::FriendlyFireBlocked(damagedBy, this))
+		return false;
 
 	CPlayerPed *player = FindPlayerPed();
 	float dieDelta = 4.0f;

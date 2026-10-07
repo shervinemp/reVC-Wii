@@ -3200,7 +3200,7 @@ CWeapon::Update(int32 audioEntity, CPed *pedToAdjustSound)
 }
 
 void
-FireOneInstantHitRound(CVector *source, CVector *target, int32 damage)
+FireOneInstantHitRound(CEntity *shooter, CVector *source, CVector *target, int32 damage)
 {
 	ASSERT(source!=nil);
 	ASSERT(target!=nil);
@@ -3236,7 +3236,7 @@ FireOneInstantHitRound(CVector *source, CVector *target, int32 damage)
 				asoc->blendAmount = 0.0f;
 				asoc->blendDelta  = 8.0f;
 
-				victimPed->InflictDamage(nil, WEAPONTYPE_UZI, damage, (ePedPieceTypes)point.pieceB, localDir);
+				victimPed->InflictDamage(shooter, WEAPONTYPE_UZI, damage, (ePedPieceTypes)point.pieceB, localDir);
 
 				pos.z += 0.8f;
 
