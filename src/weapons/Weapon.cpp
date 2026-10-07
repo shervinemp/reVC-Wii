@@ -2719,13 +2719,35 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	}
 #endif
 
+	// Couch co-op: a player's drive-by goes where their reticle is, the same
+	// way an on-foot shot does.  The stock direction is square out of the
+	// window, and the cone keeps it for a reticle that is nowhere near it --
+	// a driver cannot shoot across their own car.
+	if ( CCoop::UsesReticleAim() && shooter->pDriver != nil && shooter->pDriver->IsPlayer() )
+	{
+		CPlayerPed *driver = (CPlayerPed*)shooter->pDriver;
+		if ( CCoop::HasAim(driver) )
+		{
+			CVector stock = target - source;
+			stock.Normalise();
+			const float heading = CCoop::GetAimHeading(driver);
+			CVector aimed(-Sin(heading), Cos(heading), 0.0f);
+			if ( DotProduct(aimed, stock) > kDriveByAimCone )
+				target = source + info->m_fRange * aimed;
+		}
+	}
+
 	target += CVector(float(CGeneral::GetRandomNumber()&255)*0.01f-1.28f,
 						float(CGeneral::GetRandomNumber()&255)*0.01f-1.28f,
 						float(CGeneral::GetRandomNumber()&255)*0.01f-1.28f);
 
-	DoDriveByAutoAiming(FindPlayerPed(), shooter, &source, &target);
+	// Whoever is driving is the one shooting: the auto-aim, the crime and the
+	// damage all belong to them, not to player 1.
+	CPlayerPed *culprit = (shooter->pDriver != nil && shooter->pDriver->IsPlayer()) ? (CPlayerPed*)shooter->pDriver : FindPlayerPed();
 
-	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, FindPlayerPed(), FindPlayerPed(), 1000);
+	DoDriveByAutoAiming(culprit, shooter, &source, &target);
+
+	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_PED, culprit, culprit, 1000);
 
 	if ( !TheCamera.GetLookingLRBFirstPerson() )
 	{
@@ -2737,7 +2759,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 	else
 		CParticle::AddParticle(PARTICLE_GUNFLASH_NOANIM, source, 1.6f*shooter->m_vecMoveSpeed, nil, 0.18f);
 
-	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, FindPlayerPed(), 1000);
+	CEventList::RegisterEvent(EVENT_GUNSHOT, EVENT_ENTITY_VEHICLE, shooter, culprit, 1000);
 
 	CPointLights::AddLight(CPointLights::LIGHT_POINT, source, CVector(0.0f, 0.0f, 0.0f), 5.0f,
 		1.0f, 0.8f, 0.0f, CPointLights::FOG_NONE, false);
@@ -2770,7 +2792,7 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 				CVector2D posOffset(source.x-pos.x, source.y-pos.y);
 				int32 localDir = victimPed->GetLocalDirection(posOffset);
 
-				victimPed->ReactToAttack(FindPlayerPed());
+				victimPed->ReactToAttack(culprit);
 				victimPed->ClearAttackByRemovingAnim();
 
 				CAnimBlendAssociation *asoc = CAnimManager::AddAnimation(victimPed->GetClump(), ASSOCGRP_STD, AnimationId(ANIM_STD_HITBYGUN_FRONT + localDir));
@@ -2799,13 +2821,13 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, bool left, bool right)
 				}
 
 				if ( victimPed->m_nPedType == PEDTYPE_COP )
-					CEventList::RegisterEvent(EVENT_SHOOT_COP, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
+					CEventList::RegisterEvent(EVENT_SHOOT_COP, EVENT_ENTITY_PED, victimPed, culprit, 10000);
 				else
-					CEventList::RegisterEvent(EVENT_SHOOT_PED, EVENT_ENTITY_PED, victimPed, FindPlayerPed(), 10000);
+					CEventList::RegisterEvent(EVENT_SHOOT_PED, EVENT_ENTITY_PED, victimPed, culprit, 10000);
 			}
 		}
 		else if ( victim->IsVehicle() )
-			((CVehicle *)victim)->InflictDamage(FindPlayerPed(), WEAPONTYPE_UZI_DRIVEBY, info->m_nDamage);
+			((CVehicle *)victim)->InflictDamage(culprit, WEAPONTYPE_UZI_DRIVEBY, info->m_nDamage);
 		else
 			CGlass::WasGlassHitByBullet(victim, point.point);
 

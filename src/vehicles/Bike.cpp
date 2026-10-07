@@ -31,6 +31,7 @@
 #include "AnimBlendAssociation.h"
 #include "Ped.h"
 #include "PlayerPed.h"
+#include "Coop.h"
 #include "DamageManager.h"
 #include "Vehicle.h"
 #include "Automobile.h"
@@ -239,10 +240,16 @@ CBike::ProcessControl(void)
 
 	switch(GetStatus()){
 	case STATUS_PLAYER:
+	{
+		// Couch co-op: the rider may be either player.  The controls, the lean
+		// and the bomb come from whoever is on it, not from player 1.
+		const int driverPad = (pDriver != nil && pDriver->IsPlayer())
+			? GetPadIndexFromPlayer((CPlayerPed*)pDriver) : 0;
 		bBalancedByRider = true;
 		bIsBeingPickedUp = false;
-		if(FindPlayerPed()->GetPedState() != PED_EXIT_CAR && FindPlayerPed()->GetPedState() != PED_DRAG_FROM_CAR){
-			ProcessControlInputs(0);
+		if(pDriver != nil && pDriver->IsPlayer() &&
+		   pDriver->GetPedState() != PED_EXIT_CAR && pDriver->GetPedState() != PED_DRAG_FROM_CAR){
+			ProcessControlInputs(driverPad);
 
 			if(m_fLeanInput < 0.0f){
 				m_vecCentreOfMass.y = pHandling->CentreOfMass.y + pBikeHandling->fLeanBakCOM*m_fLeanInput;
@@ -296,9 +303,10 @@ CBike::ProcessControl(void)
 				ApplyMoveForce(parallelSpeed * -CTimer::GetTimeStep()*SAND_SLOWDOWN*m_fMass);
 			}
 		}
-		if(CPad::GetPad(0)->WeaponJustDown())
+		if(CPad::GetPad(driverPad)->WeaponJustDown())
 			ActivateBomb();
 		break;
+	}
 
 	case STATUS_PLAYER_PLAYBACKFROMBUFFER:
 		bBalancedByRider = true;
@@ -1091,7 +1099,8 @@ CBike::ProcessControl(void)
 			if(!IsAlarmOn())
 #endif
 			{
-				if(Pads[0].GetHorn())
+				CPad *hornPad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
+				if(hornPad->GetHorn())
 					m_nCarHornTimer = 1;
 				else
 					m_nCarHornTimer = 0;
@@ -1186,14 +1195,14 @@ CBike::ProcessControl(void)
 		float speed = m_vecMoveSpeed.MagnitudeSqr();
 		if(speed > sq(0.1f)){
 			speed = Sqrt(speed);
+			// Whoever is riding it feels it.
+			CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
 			if(suspShake > 0.0f){
 				uint8 freq = Min(200.0f*suspShake*speed*2000.0f/m_fMass + 100.0f, 250.0f);
-				// The suspension is felt by whoever is riding it.
-				CPad *shakePad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
 				shakePad->StartShake(20000.0f*CTimer::GetTimeStep()/freq, freq);
 			}else{
 				uint8 freq = Min(200.0f*surfShake*speed*2000.0f/m_fMass + 40.0f, 150.0f);
-				CPad::GetPad(0)->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
+				shakePad->StartShake(5000.0f*CTimer::GetTimeStep()/freq, freq);
 			}
 		}
 	}
@@ -1934,7 +1943,8 @@ CBike::ProcessControlInputs(uint8 pad)
 		bIsHandbrakeOn = true;
 		m_fGasPedal = 0.0f;
 
-		FindPlayerPed()->KeepAreaAroundPlayerClear();
+		CPlayerPed *rider = (pDriver != nil && pDriver->IsPlayer()) ? (CPlayerPed*)pDriver : FindPlayerPed();
+		rider->KeepAreaAroundPlayerClear();
 
 		// slow down car immediately
 		speed = m_vecMoveSpeed.Magnitude();
@@ -2027,13 +2037,14 @@ CBike::DoDriveByShootings(void)
 
 	bool lookingLeft = false;
 	bool lookingRight = false;
+	CPad *pad = (pDriver != nil && pDriver->IsPlayer()) ? GetPadFromPlayer((CPlayerPed*)pDriver) : CPad::GetPad(0);
 	// (MODE_WII_COOP: see CAutomobile::DoDriveByShootings.)
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
 	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP ||
 	   TheCamera.m_bObbeCinematicCarCamOn){
-		if(CPad::GetPad(0)->GetLookLeft())
+		if(pad->GetLookLeft())
 			lookingLeft = true;
-		if(CPad::GetPad(0)->GetLookRight())
+		if(pad->GetLookRight())
 			lookingRight = true;
 	}else{
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingLeft)
@@ -2044,8 +2055,21 @@ CBike::DoDriveByShootings(void)
 #ifdef NINTENDO_WII
 	PickDriveBySideFromView(lookingLeft, lookingRight);
 #endif
+	// Couch co-op: with a reticle the arm goes to the side it is on, so a
+	// player who aims out of a window fires out of that window.  A reticle
+	// straight ahead leaves the side to the buttons -- a bike has a forward
+	// drive-by for it.
+	if(CCoop::UsesReticleAim() && pDriver != nil && CCoop::HasAim(pDriver)){
+		const float aimHeading = CCoop::GetAimHeading(pDriver);
+		const CVector aimDir(-Sin(aimHeading), Cos(aimHeading), 0.0f);
+		const float side = DotProduct(aimDir, GetRight());
+		if(side < -0.3f)
+			lookingLeft = true;
+		else if(side > 0.3f)
+			lookingRight = true;
+	}
 
-	if(lookingLeft || lookingRight || CPad::GetPad(0)->GetCarGunFired()){
+	if(lookingLeft || lookingRight || pad->GetCarGunFired()){
 		if(lookingLeft){
 			anim = RpAnimBlendClumpGetAssociation(pDriver->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
 			if(anim)
@@ -2079,7 +2103,7 @@ CBike::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, lookingLeft, lookingRight);
 #ifdef NINTENDO_WII
 				WiiDriveByPaceShot(weapon);

@@ -39,6 +39,7 @@
 #include "CarAI.h"
 #include "Stats.h"
 #include "Garages.h"
+#include "Coop.h"
 #include "PathFind.h"
 #include "Replay.h"
 #include "AnimManager.h"
@@ -3949,6 +3950,18 @@ CAutomobile::DoDriveByShootings(void)
 #ifdef NINTENDO_WII
 	PickDriveBySideFromView(lookingLeft, lookingRight);
 #endif
+	// Couch co-op: with a reticle the arm goes to the side it is on, so a
+	// player who aims out of a window fires out of that window.  A reticle
+	// straight ahead leaves the side to the buttons.
+	if(CCoop::UsesReticleAim() && pDriver != nil && CCoop::HasAim(pDriver)){
+		const float aimHeading = CCoop::GetAimHeading(pDriver);
+		const CVector aimDir(-Sin(aimHeading), Cos(aimHeading), 0.0f);
+		const float side = DotProduct(aimDir, GetRight());
+		if(side < -0.3f)
+			lookingLeft = true;
+		else if(side > 0.3f)
+			lookingRight = true;
+	}
 
 	AnimationId rightAnim = ANIM_STD_CAR_DRIVEBY_RIGHT;
 	AnimationId leftAnim = ANIM_STD_CAR_DRIVEBY_LEFT;
