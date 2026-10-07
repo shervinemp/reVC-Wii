@@ -94,6 +94,12 @@ public:
 	// Which of the shared camera's framings is in use; see Cam.cpp.  Cycled by
 	// player 1's camera button, kept in the INI.
 	static int8 ms_nFraming;
+	// Which car the shared camera turns with when both players are driving.  False
+	// follows player 1's; true follows the partner's.  The camera can only follow
+	// one nose, and following player 1's leaves the partner driving half blind, so
+	// the partner's camera button hands it over -- the job San Andreas gives its
+	// Select button.
+	static bool ms_bPartnerFocus;
 	enum { NUM_FRAMINGS = 4 };
 
 private:

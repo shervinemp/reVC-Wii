@@ -42,6 +42,7 @@
 
 bool CCoop::ms_bRunning;
 int8 CCoop::ms_nFraming = 1;
+bool CCoop::ms_bPartnerFocus = false;
 
 namespace
 {
@@ -1122,6 +1123,8 @@ CCoop::Update(void)
 			RemovePartner(blocker, true);
 		s_aim[LEAD].active = false;
 		s_aim[LEAD].drawReticle = false;
+		// A focus the partner chose for a drive does not outlive the session.
+		ms_bPartnerFocus = false;
 		return;
 	}
 
@@ -1143,6 +1146,17 @@ CCoop::Update(void)
 			ms_nFraming = 0;
 		COOP_LOG("WII coop: framing %d\n", (int)ms_nFraming);
 		Tell(kFramingKeys[ms_nFraming]);
+	}
+
+	// The partner's camera button hands the shared camera's turn to their car.
+	// The camera can only follow one nose, and following player 1's leaves a
+	// partner in their own car driving half blind whenever player 1 turns.  Only
+	// the partner has this button free: player 1's camera button is the framing
+	// cycle above.
+	if(partnerPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
+		ms_bPartnerFocus = !ms_bPartnerFocus;
+		COOP_LOG("WII coop: camera focus %s\n", ms_bPartnerFocus ? "player 2" : "player 1");
+		Tell(ms_bPartnerFocus ? "WII_CFP" : "WII_CFL");
 	}
 
 	// A script moving player 1 somewhere else -- into a building, to a safe

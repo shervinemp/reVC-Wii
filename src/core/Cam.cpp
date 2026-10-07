@@ -1225,11 +1225,14 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			s_coopYaw = lead->m_fRotationCur;
 	}
 	float speed = 0.0f;
-	// Which car the view turns with.  Player 1's, or -- when player 1 is on
-	// foot and the partner is driving -- the partner's.  A car the shared
-	// camera does not follow is a car driven blind.
+	// Which car the view turns with.  Player 1's by default; the partner's when
+	// player 1 is on foot, or when the partner has asked for it with their camera
+	// button because both are driving and following player 1's nose leaves them
+	// half blind.  A car the shared camera does not follow is a car driven blind.
 	CVehicle *driveVehicle = nil;
-	if(leadVehicle != nil && leadVehicle->pDriver == lead)
+	if(CCoop::ms_bPartnerFocus && partnerVehicle != nil && partnerVehicle->pDriver == partner)
+		driveVehicle = partnerVehicle;
+	else if(leadVehicle != nil && leadVehicle->pDriver == lead)
 		driveVehicle = leadVehicle;
 	else if(partnerVehicle != nil && partnerVehicle->pDriver == partner)
 		driveVehicle = partnerVehicle;
