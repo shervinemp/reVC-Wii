@@ -172,6 +172,18 @@ render(rw::ObjPipeline *pipeline, Atomic *atomic)
 	assert(geometry->instData != nil);
 	assert(geometry->instData->platform == PLATFORM_GX);
 	InstanceDataHeader *header = (InstanceDataHeader*)geometry->instData;
+	// Every clone of a geometry shares these blended vertices -- a clump clone
+	// shares the geometry (librw clump.cpp) -- and GX reads a vertex array when
+	// it executes the draw, not when the draw is queued.  Two clones of one
+	// model in the same frame, which is every frame with two player peds, would
+	// otherwise blend over each other's vertices while the GPU may still be
+	// reading them: one mesh drawn half in one pose and half in the other, which
+	// is what a vertex explosion on a second player ped is.  The first draw of a
+	// geometry in a frame needs no help; a repeat waits for the GPU to finish,
+	// the same wait a texture eviction does (gxraster.cpp).
+	if(header->lastSkinFrame == presentedFrames)
+		GX_DrawDone();
+	header->lastSkinFrame = presentedFrames;
 	skinAtomic(atomic, header);
 	renderAtomic(atomic, header);
 }

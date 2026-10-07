@@ -112,6 +112,10 @@ struct InstanceDataHeader : rw::InstanceDataHeader
 	bool32 hasNormals;
 	bool32 hasTexCoords;
 	bool32 vertexCacheDirty;
+	// The frame the geometry's blended vertices were last skinned in.  Every
+	// clone of a geometry shares them, so a second clone skinned in the same
+	// frame has to wait for the GPU before blending over the first one's.
+	uint32 lastSkinFrame;
 	uint8 *vertexData;
 	V3d *positions;
 	V3d *normals;
@@ -120,6 +124,9 @@ struct InstanceDataHeader : rw::InstanceDataHeader
 	uint16 *indices;
 	InstanceData *meshes;
 };
+
+// The displayed frame number, from gxdevice.cpp.
+extern uint32 presentedFrames;
 
 class ObjPipeline : public rw::ObjPipeline
 {

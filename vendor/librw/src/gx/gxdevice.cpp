@@ -386,6 +386,12 @@ clearCamera(Camera *camera, RGBA *color, uint32 mode)
 
 static bool32 frameTrace;
 
+// Frames the display has shown.  The renderer outside this file reads it to
+// tell one frame from the next -- see the skin path in gxskin.cpp, where a
+// geometry's blended vertices must not be rewritten while the FIFO still
+// points into them.
+uint32 presentedFrames;
+
 void
 setFrameTrace(bool32 enabled)
 {
@@ -395,7 +401,6 @@ setFrameTrace(bool32 enabled)
 static void
 showRaster(Raster *raster, uint32 flags)
 {
-	static uint32 presentedFrames;
 	if(raster == nil || raster->type != Raster::CAMERA)
 		return;
 	if(frameTrace && (presentedFrames < 8 || (presentedFrames + 1) % 300 == 0))
