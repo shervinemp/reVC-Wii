@@ -131,9 +131,11 @@ float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 //   screen (CCoop works out what is under it), and two people can share one
 //   view without fighting over it.
 //
-//   Its pitch is fixed.  Only the distance changes -- further back as the
-//   players separate or the car speeds up -- so splitting up zooms out rather
-//   than swinging the camera around.
+//   Its pitch is fixed on foot -- lower while a car is being followed, so
+//   driving looks down the road -- and otherwise only the distance changes:
+//   closer when the players are together, further back as they separate or the
+//   car speeds up, so splitting up zooms out rather than swinging the camera
+//   around.
 //
 // Its heading is fixed too, with one exception: it follows a car player 1 is
 // driving, because a camera pitched down from behind sees four times as far
@@ -180,6 +182,17 @@ static const float kCoopSpeedRoom = 12.0f;
 static const float kCoopMaxDistance = 40.0f;
 // Never closer than this, however low the ceiling.
 static const float kCoopMinDistance = 3.0f;
+// The view comes in when the players are together and backs off as they
+// separate: the framing's distance is what it stands at kCoopSeparationFree
+// apart, and each metre closer than that brings it in this much.  A shared
+// camera that stayed at its full distance while both players stood still read as
+// a map rather than a game.
+static const float kCoopCloseGain = 1.8f;
+// And while a car is being followed the view drops by this much: the walking
+// pitch looks straight at the roof from behind a car.  It comes back as the car
+// slows, so parking returns the framing the player chose.
+static const float kCoopDrivePitch = DEGTORAD(14.0f);
+static const float kCoopPitchRate = 2.5f;
 // Players closer together than this share one test for what is overhead.
 static const float kCoopSeparateClip = 2.0f;
 // The view's height may trail the players' by this much and no more, and a
@@ -213,6 +226,7 @@ int8 CCamera::bWiiCoopCamera = 0;
 
 static float s_coopYaw;
 static float s_coopDistance;
+static float s_coopPitch;
 static float s_coopClip = 1.0f;
 static CVector s_coopTarget;
 
@@ -1257,9 +1271,15 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	if(framingIndex < 0 || framingIndex >= CCoop::NUM_FRAMINGS)
 		framingIndex = 1;
 	const CoopFraming &framing = kCoopFramings[framingIndex];
-	const float wantedDistance = Min(kCoopMaxDistance, framing.distance +
+	const float closeIn = Max(0.0f, kCoopSeparationFree - separation)*kCoopCloseGain;
+	const float wantedDistance = Clamp(framing.distance - closeIn +
 		Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain +
-		Min(kCoopSpeedRoom, speed*kCoopSpeedGain));
+		Min(kCoopSpeedRoom, speed*kCoopSpeedGain), kCoopMinDistance, kCoopMaxDistance);
+
+	// Lower while a car is being followed, so driving looks down the road rather
+	// than at the roof.  The framing's own pitch comes back as the car slows.
+	const float wantedPitch = framing.pitch -
+		(driveVehicle != nil && speed > kCoopYawMinSpeed ? kCoopDrivePitch : 0.0f);
 
 	const CVector moved = target - s_coopTarget;
 	if(ResetStatics || moved.MagnitudeSqr2D() > SQR(20.0f) || Abs(moved.z) > kCoopSnapHeight){
@@ -1267,6 +1287,7 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		// glide there across the map.
 		s_coopTarget = target;
 		s_coopDistance = wantedDistance;
+		s_coopPitch = wantedPitch;
 		s_coopClip = 1.0f;
 #ifdef NINTENDO_WII
 		if(ResetStatics){
@@ -1285,6 +1306,7 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		// been moved somewhere else, and reset the view every few frames.
 		s_coopTarget.z = Clamp(s_coopTarget.z, target.z - kCoopHeightLag, target.z + kCoopHeightLag);
 		s_coopDistance += (wantedDistance - s_coopDistance)*(1.0f - exp(-kCoopZoomRate*dt));
+		s_coopPitch += (wantedPitch - s_coopPitch)*(1.0f - exp(-kCoopPitchRate*dt));
 	}
 
 	// The field of view follows how far the players have separated, the way San
@@ -1301,9 +1323,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	const float zoom = Clamp(separationRoom/kCoopZoomSpan, 0.0f, 1.0f);
 	FOV = DefaultFOV + zoom*kCoopZoomFov;
 
-	// Back along the view by the distance: the pitch never changes.
-	const float level = Cos(framing.pitch);
-	const CVector view(-Sin(s_coopYaw)*level, Cos(s_coopYaw)*level, -Sin(framing.pitch));
+	// Back along the view by the distance: the pitch is the smoothed one, which
+	// is the framing's own on foot and lower behind a moving car.
+	const float level = Cos(s_coopPitch);
+	const CVector view(-Sin(s_coopYaw)*level, Cos(s_coopYaw)*level, -Sin(s_coopPitch));
 
 	// A camera this high up looks straight into rooftops, awnings and the
 	// undersides of bridges.  Whatever the scenery puts between it and the
