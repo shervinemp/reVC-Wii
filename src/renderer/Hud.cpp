@@ -276,8 +276,12 @@ DrawCoopMarks(void)
 		CPlayerPed *ped = CWorld::Players[i].m_pPed;
 		if (ped == nil || !CCoop::GetReticle(i, x, y, engaged))
 			continue;
-		const bool armed = CWeaponInfo::GetWeaponInfo(ped->GetWeapon()->m_eWeaponType)->m_eWeaponFire != WEAPON_FIRE_MELEE;
-		const float size = armed ? 32.0f * 0.4f : 3.0f;
+		const eWeaponType weapon = ped->GetWeapon()->m_eWeaponType;
+		const bool armed = CWeaponInfo::GetWeaponInfo(weapon)->m_eWeaponFire != WEAPON_FIRE_MELEE;
+		// The single-player HUD draws the heavy automatics a size wider, and this
+		// is meant to be the same mark, so it draws them the same way.
+		const float size = !armed ? 3.0f :
+			(weapon == WEAPONTYPE_M4 || weapon == WEAPONTYPE_RUGER || weapon == WEAPONTYPE_M60) ? 32.0f * 0.6f : 32.0f * 0.4f;
 		const float px = SCREEN_WIDTH * x;
 		const float py = SCREEN_HEIGHT * y;
 		const float rx = SCREEN_SCALE_X(size);

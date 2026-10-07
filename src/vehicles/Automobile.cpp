@@ -3371,7 +3371,24 @@ CAutomobile::TankControl(void)
 #ifdef FREE_CAM
 	if(!CCamera::UseFreeCarCam())
 #endif
-		m_fCarGunLR -= pad->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
+	{
+		if(CCoop::UsesReticleAim() && CCoop::HasAim(driver)){
+			// The reticle, when the driver has one: a turret is pointed at a
+			// thing rather than steered like a wheel, and each player has their
+			// own reticle to point it with.  Slewed at the rate the engine's own
+			// camera-followed turret uses, so it turns as it always has.
+			const float heading = CCoop::GetAimHeading(driver);
+			float turn = CGeneral::LimitRadianAngle(heading - m_fCarGunLR);
+			const float maxTurn = CTimer::GetTimeStep()*0.015f;
+			if(Abs(turn) < maxTurn)
+				m_fCarGunLR = heading;
+			else if(turn > 0.0f)
+				m_fCarGunLR += maxTurn;
+			else
+				m_fCarGunLR -= maxTurn;
+		}else
+			m_fCarGunLR -= pad->GetCarGunLeftRight() * 0.00015f * CTimer::GetTimeStep();
+	}
 
 	if(m_fCarGunLR < 0.0f)
 		m_fCarGunLR += TWOPI;

@@ -590,29 +590,32 @@ SpawnPartner(CPlayerPed *lead)
 	const float timeScale = CTimer::GetTimeScale();
 	CPlayerPed *partner = new CPlayerPed();
 	CTimer::SetTimeScale(timeScale);
-	// The skin chosen on the co-op page, if any.  The same request-and-wait the
-	// player's own model gets: a ped made with a model that is not in memory has
-	// nothing to draw.  Index 0 is "same as player 1", which is what the
-	// constructor has already given them.
+	// The characters are special models, not model slots of their own: the name
+	// is loaded into the slot that goes with its number in the game's own list
+	// (CStreaming::RequestSpecialChar), the same slots the cutscenes spawn their
+	// characters from -- which is safe here because a cutscene, like a mission,
+	// stands co-op down and takes the partner with it.  Looking the name up as a
+	// model finds nothing, which is how a chosen skin used to come out as
+	// player 1.
 	static const char *const kCoopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
-	if(WiiCoopSkin > 0 && WiiCoopSkin < (int)ARRAY_SIZE(kCoopSkinModels)){
-		int skinModel = -1;
-		if(CModelInfo::GetModelInfo(kCoopSkinModels[WiiCoopSkin], &skinModel) != nil && skinModel >= 0){
-			CStreaming::RequestModel(skinModel, STREAMFLAGS_DEPENDENCY);
-			CStreaming::LoadAllRequestedModels(false);
-			if(CStreaming::HasModelLoaded(skinModel)){
-				// The model brings an animation group of its own.  The player's is
-				// what the controls and the weapon animations are written against,
-				// and STILLLIKEDRESSINGUP keeps it for the same reason.
-				AssocGroupId animGroup = partner->m_animGroup;
-				// Same sequence the cheat uses to change a player's model: the old
-				// clump has to go and the model index has to be invalid before
-				// SetModelIndex, or the ped keeps the clump it was built with.
-				partner->DeleteRwObject();
-				partner->m_modelIndex = -1;
-				partner->SetModelIndex(skinModel);
-				partner->m_animGroup = animGroup;
-			}
+	static const int kCoopSkinChars[] = { -1, 12, 11, 14, 17, 20, 18 };
+	if(WiiCoopSkin > 0 && WiiCoopSkin < (int)ARRAY_SIZE(kCoopSkinChars) && kCoopSkinChars[WiiCoopSkin] >= 0){
+		const int charId = kCoopSkinChars[WiiCoopSkin];
+		const int skinModel = MI_SPECIAL01 + charId;
+		CStreaming::RequestSpecialChar(charId, kCoopSkinModels[WiiCoopSkin], STREAMFLAGS_DEPENDENCY);
+		CStreaming::LoadAllRequestedModels(false);
+		if(CStreaming::HasModelLoaded(skinModel)){
+			// The model brings an animation group of its own.  The player's is
+			// what the controls and the weapon animations are written against,
+			// and STILLLIKEDRESSINGUP keeps it for the same reason.
+			AssocGroupId animGroup = partner->m_animGroup;
+			// Same sequence the cheat uses to change a player's model: the old
+			// clump has to go and the model index has to be invalid before
+			// SetModelIndex, or the ped keeps the clump it was built with.
+			partner->DeleteRwObject();
+			partner->m_modelIndex = -1;
+			partner->SetModelIndex(skinModel);
+			partner->m_animGroup = animGroup;
 		}
 	}
 	// Not PEDTYPE_PLAYER1, and that is what keeps this ped out of the save:

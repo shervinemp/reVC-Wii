@@ -155,17 +155,14 @@ extern uint32 TimeToStopPadShaking;
 const char *pointerBoxSizes[] = { "WII_SML", "WII_MED", "WII_LRG" };
 const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
 
-// The partner's skins.  Index 0 leaves them looking like player 1; the rest name
-// a model the partner is made with, from the special-character set.  Those are
-// the models a script will not reuse for a mission, which is what makes them safe
-// to put on a second player ped -- and they are the same ones the
-// STILLLIKEDRESSINGUP chain dresses player 1 in.
+// The partner's skins.  Index 0 leaves them looking like player 1; the rest are
+// the named characters, which Coop.cpp loads into the special-model slots the
+// cutscenes use (they are not model slots of their own).
 // Text keys, not the words: the menu looks a select's right-hand value up in the
 // text tables like every other label on the screen, so a literal here renders as
 // "<word> missing" on a card carrying the user's own GXT.  The words are in
 // Text.cpp's fallback table with the rest of the port's.
 const char *coopSkins[] = { "WII_SK0", "WII_SK1", "WII_SK2", "WII_SK3", "WII_SK4", "WII_SK5", "WII_SK6" };
-const char *coopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
 const int COOP_NUM_SKINS = ARRAY_SIZE(coopSkins);
 
 // A short buzz when vibration is switched on, so it can be felt from the menu.  The
@@ -1020,11 +1017,16 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_CENTER,
 
 	// MENUPAGE_CHEATS
+	//
+	// The layout is the one the game's own option pages use -- rows from 78 on a
+	// 25 pixel line -- rather than the defaults: a full page then ends where a
+	// native one does, instead of running down into the help box.  Every page
+	// this port adds carries it.
 
 	// Parent is the Enhancements page, not MENUPAGE_NONE: GetPreviousPageOption
 	// resolves a NONE parent to the pause menu, so Back out of the cheats would
 	// have skipped straight past the page that opened it.
-	{ "WII_CHT", MENUPAGE_ENHANCEMENTS, nil, nil,
+	{ "WII_CHT", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_CENTER,
@@ -1039,7 +1041,7 @@ CMenuScreenCustom aScreens[] = {
 	// to sit wherever they were first added -- the pedestrians-carry-weapons code was
 	// under Player, and the handling change under nothing vehicle-shaped at all.
 
-	{ "WII_CPL", MENUPAGE_CHEATS, nil, nil,
+	{ "WII_CPL", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		WII_CHEAT_ROW("WII_HLT", WiiCheat_Health)
 		WII_CHEAT_ROW("WII_ARO", WiiCheat_Armour)
 		WII_CHEAT_ROW("WII_MON", WiiCheat_Money)
@@ -1053,7 +1055,7 @@ CMenuScreenCustom aScreens[] = {
 
 	// MENUPAGE_CHEATS_WORLD
 
-	{ "WII_CWH", MENUPAGE_CHEATS, nil, nil,
+	{ "WII_CWH", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		WII_CHEAT_ROW("WII_SUN", WiiCheat_Sunny)
 		WII_CHEAT_ROW("WII_CLD", WiiCheat_Cloudy)
 		WII_CHEAT_ROW("WII_RAI", WiiCheat_Rainy)
@@ -1070,7 +1072,7 @@ CMenuScreenCustom aScreens[] = {
 
 	// MENUPAGE_CHEATS_VEHICLES
 
-	{ "WII_CVH", MENUPAGE_CHEATS, nil, nil,
+	{ "WII_CVH", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		WII_CHEAT_ROW("WII_RHI", WiiCheat_Rhino)
 		WII_CHEAT_ROW("WII_BLD", WiiCheat_Bloodra)
 		WII_CHEAT_ROW("WII_ROM", WiiCheat_Romero)
@@ -1094,7 +1096,7 @@ CMenuScreenCustom aScreens[] = {
 	// are here rather than hidden because on this port they are the only way to reach
 	// anything like a debug view at all.
 
-	{ "WII_CDB", MENUPAGE_CHEATS, nil, nil,
+	{ "WII_CDB", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		WII_CHEAT_ROW("WII_WHL", WiiCheat_OnlyRenderWheels)
 		WII_CHEAT_ROW("WII_NSB", WiiCheat_NoSeaBed)
 		WII_CHEAT_ROW("WII_WLY", WiiCheat_RenderWaterLayers)
@@ -1111,7 +1113,7 @@ CMenuScreenCustom aScreens[] = {
 	// and the pause page.  Co-op is here rather than on the pause page itself because
 	// it is a mode, not a destination, and because it is one of these.
 
-	{ "WII_ENH", MENUPAGE_NONE, nil, nil,
+	{ "WII_ENH", MENUPAGE_NONE, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		MENUACTION_CHANGEMENU,	"WII_CHE",	{ nil, SAVESLOT_NONE, MENUPAGE_CHEATS }, 0, 0, MENUALIGN_CENTER,
 		MENUACTION_CHANGEMENU,	"WII_COP",	{ nil, SAVESLOT_NONE, MENUPAGE_COOP }, 0, 0, MENUALIGN_CENTER,
 		DRIVEBY_WEAPONS_TOGGLE
@@ -1128,7 +1130,7 @@ CMenuScreenCustom aScreens[] = {
 	// Enhancements page: co-op is a mode with settings of its own, and
 	// Enhancements was becoming the place everything went.
 
-	{ "WII_COP", MENUPAGE_ENHANCEMENTS, nil, nil,
+	{ "WII_COP", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({320, 78, 25, false}), nil,
 		COUCH_COOP_TOGGLE
 		COOP_SKIN_SELECT
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
