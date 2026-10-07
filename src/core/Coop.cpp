@@ -548,6 +548,11 @@ RemovePartner(const char *why, bool carry)
 	CPlayerPed *partner = CWorld::Players[PARTNER].m_pPed;
 	s_downTime = 0;
 	s_reviveTime = 0;
+	// A revive that has not spawned yet dies with the partner: the next arrival
+	// is beside player 1 again, not at a body that is no longer there.  This is
+	// what keeps a session pause -- a mission, player 1 going down -- between
+	// the revive and the spawn from leaving the position behind.
+	s_reviveValid = false;
 	s_aim[PARTNER].active = false;
 	s_aim[PARTNER].drawReticle = false;
 	if(partner == nil)

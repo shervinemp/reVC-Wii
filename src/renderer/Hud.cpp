@@ -289,6 +289,7 @@ DrawCoopMarks(void)
 				CFont::SetPropOff();
 				CFont::SetBackgroundOff();
 				CFont::SetScale(SCREEN_SCALE_X(0.35f), SCREEN_SCALE_Y(0.5f));
+				CFont::SetJustifyOff();
 				CFont::SetCentreOff();
 				CFont::SetRightJustifyOn();
 				CFont::SetRightJustifyWrap(0.0f);
