@@ -2018,9 +2018,10 @@ CBike::ProcessBuoyancy(void)
 
 // A player on the back of a bike, shooting out of their own side.  There is no
 // seat to pick the side here -- both of the pillion's hands are free -- so the
-// reticle picks it when there is one, the look buttons when there is not, and
-// straight ahead otherwise, which is where the bike's own drive-by goes.  Only
-// players: the traffic's passengers do not fight.
+// reticle picks it when there is one and the look buttons when there is not.
+// The trigger alone does nothing: the bike's own forward drive-by would put the
+// shot through the rider in front.  Only players: the traffic's passengers do
+// not fight.
 static void
 DoPillionDriveBy(CBike *bike, CPlayerPed *pillion)
 {

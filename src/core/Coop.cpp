@@ -268,10 +268,15 @@ int32 s_poolAmmo[TOTAL_WEAPON_SLOTS];
 
 // --- the wanted level ---------------------------------------------------------
 // One heat for the pair, in the direction that matters: a crime by either is
-// the pair's crime, so when either player's level rises the other's rises with
-// it -- and the stars on the HUD, player 1's, are the ones the pair is judged
-// by.  Drops are left alone: each level decays on its own, and holding both at
-// the higher of the two every frame would keep the pair wanted for good.
+// the pair's crime, so when either player's level rises both go to the higher
+// of the two -- and the stars on the HUD, player 1's, are the ones the pair is
+// judged by.  Drops are left alone: each level decays on its own, and holding
+// both at the higher of the two every frame would keep the pair wanted for
+// good.
+//
+// The one cost is a statistic: SetWantedLevel is also what counts
+// CStats::WantedStarsAttained and WantedStarsEvaded, so the pair's crimes and
+// evasions count those twice.  Nothing reads them but the stats screen.
 int32 s_leadWanted;
 int32 s_partnerWanted;
 
@@ -282,10 +287,13 @@ ShareWantedLevel(CPlayerPed *lead, CPlayerPed *partner)
 		return;
 	const int32 leadLevel = lead->m_pWanted->GetWantedLevel();
 	const int32 partnerLevel = partner->m_pWanted->GetWantedLevel();
-	if(leadLevel > s_leadWanted && leadLevel > partnerLevel)
-		partner->m_pWanted->SetWantedLevel(leadLevel);
-	else if(partnerLevel > s_partnerWanted && partnerLevel > leadLevel)
-		lead->m_pWanted->SetWantedLevel(partnerLevel);
+	if(leadLevel > s_leadWanted || partnerLevel > s_partnerWanted){
+		const int32 level = Max(leadLevel, partnerLevel);
+		if(leadLevel != level)
+			lead->m_pWanted->SetWantedLevel(level);
+		if(partnerLevel != level)
+			partner->m_pWanted->SetWantedLevel(level);
+	}
 	s_leadWanted = lead->m_pWanted->GetWantedLevel();
 	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
 }
@@ -1317,11 +1325,21 @@ CCoop::Update(void)
 				const CVector forward(-Sin(heading), Cos(heading), 0.0f);
 				if(driven->IsBoat()){
 					// A boat belongs on water, and a road node is not one.  Back
-					// on the sea behind player 1 when there is any there, and
-					// otherwise left where it is -- a boat in the road is worse
-					// than a boat out of sight.
+					// on the sea behind player 1 when there is any there -- the
+					// direction a boat would have come from -- and ahead of them
+					// if not, which is where the water is when they are standing
+					// on a pier.  Otherwise it is left where it is: a boat in the
+					// road is worse than a boat out of sight.
 					for(float back = kRegroupBack; back <= kRegroupBack*3.0f && !boat; back += kRegroupBack){
 						const CVector pos = leadAt - forward*back;
+						float level;
+						if(CWaterLevel::GetWaterLevel(pos, &level, true)){
+							boatPos = CVector(pos.x, pos.y, level + 1.0f);
+							boat = true;
+						}
+					}
+					for(float ahead = kRegroupBack; ahead <= kRegroupBack*3.0f && !boat; ahead += kRegroupBack){
+						const CVector pos = leadAt + forward*ahead;
 						float level;
 						if(CWaterLevel::GetWaterLevel(pos, &level, true)){
 							boatPos = CVector(pos.x, pos.y, level + 1.0f);
