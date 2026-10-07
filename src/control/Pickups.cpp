@@ -3,6 +3,7 @@
 #include "main.h"
 
 #include "Camera.h"
+#include "Coop.h"
 #include "Coronas.h"
 #include "Darkel.h"
 #include "Entity.h"
@@ -295,6 +296,10 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 {
 	bool result = false;
 	float waterLevel;
+	// Who walked over it, before the co-op routing below may hand the grant to
+	// player 1: the shake and the control hint belong to the body that touched
+	// the pickup.
+	CPlayerPed *collector = player;
 
 	if (m_pObject) {
 		m_pObject->GetMatrix().GetPosition() = m_vecPos;
@@ -367,16 +372,31 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 		if (isPickupTouched) {
 			eWeaponType weaponType = CPickups::WeaponForModel(m_pObject->GetModelIndex());
+			// Co-op: player 1 is the wallet and the arsenal.  A weapon or ammo
+			// pickup arms both players, and both the guns and the rounds live on
+			// player 1 -- CCoop mirrors the weapon to the partner and shares one
+			// pool of ammo.  The money, the packages and the property are one
+			// player's too.  So those, when the partner is the one who walked
+			// over them, are credited to player 1; health, armour, adrenaline
+			// and a bribe stay with whoever collected them.  The touch test
+			// above was still the collector's: it is their body on the pickup.
+			if (playerId > 0 && ((weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) ||
+			                     m_eType == PICKUP_MONEY || m_eType == PICKUP_COLLECTABLE1 ||
+			                     m_eType == PICKUP_ASSET_REVENUE || m_eType == PICKUP_PROPERTY_LOCKED ||
+			                     m_eType == PICKUP_PROPERTY_FORSALE)) {
+				player = FindPlayerPed();
+				playerId = CWorld::PlayerInFocus;
+			}
 			if (weaponType < WEAPONTYPE_TOTALWEAPONS && CDarkel::FrenzyOnGoing()) {
 				isPickupTouched = false;
 				m_bWasControlMessageShown = false;
 			} else if (weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) {
 				uint32 slot = CWeaponInfo::GetWeaponInfo(weaponType)->m_nWeaponSlot;
-				eWeaponType plrWeaponSlot = FindPlayerPed()->GetWeapon(slot).m_eWeaponType;
+				eWeaponType plrWeaponSlot = player->GetWeapon(slot).m_eWeaponType;
 				if (plrWeaponSlot != weaponType) {
 					if (CStreaming::ms_aInfoForModel[m_pObject->GetModelIndex()].m_loadState == STREAMSTATE_LOADED) {
-						if (plrWeaponSlot == WEAPONTYPE_UNARMED || (FindPlayerPed()->GetWeapon(slot).m_nAmmoTotal == 0 && !CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))) {
-							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_nPadDownPressedInMilliseconds < 1500) {
+						if (plrWeaponSlot == WEAPONTYPE_UNARMED || (player->GetWeapon(slot).m_nAmmoTotal == 0 && !CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))) {
+							if (CTimer::GetTimeInMilliseconds() - player->m_nPadDownPressedInMilliseconds < 1500) {
 								CPickups::PlayerOnWeaponPickup = 6;
 								isPickupTouched = false;
 							}
@@ -385,11 +405,11 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 							if (CWeaponInfo::IsWeaponSlotAmmoMergeable(slot)) {
 								if (m_eType == PICKUP_ONCE_TIMEOUT || m_eType == PICKUP_ONCE || m_eType == PICKUP_ON_STREET) {
 									ExtractAmmoFromPickup(player);
-									FindPlayerPed()->GetWeapon(slot).Reload();
+									player->GetWeapon(slot).Reload();
 								}
 							}
 							if (!m_bWasControlMessageShown) {
-								switch (CPad::GetPad(0)->Mode)
+								switch (GetPadFromPlayer(collector)->Mode)
 								{
 								case 0:
 								case 1:
@@ -408,7 +428,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 							}
 							if (CollectPickupBuffer == 0)
 								isPickupTouched = false;
-							if (CTimer::GetTimeInMilliseconds() - FindPlayerPed()->m_nPadDownPressedInMilliseconds < 1500)
+							if (CTimer::GetTimeInMilliseconds() - player->m_nPadDownPressedInMilliseconds < 1500)
 								isPickupTouched = false;
 						}
 					} else
@@ -421,7 +441,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 		// if we didn't then we've got nothing to do
 		if (isPickupTouched && CanBePickedUp(player, playerId)) {
 			if (m_pObject->GetModelIndex() != MI_PICKUP_PROPERTY && m_pObject->GetModelIndex() != MI_PICKUP_PROPERTY_FORSALE)
-				CPad::GetPad(0)->StartShake(120, 100);
+				GetPadFromPlayer(collector)->StartShake(120, 100);
 
 			eWeaponType weaponType = CPickups::WeaponForModel(m_pObject->GetModelIndex());
 			switch (m_eType)
@@ -791,7 +811,7 @@ CPickups::GivePlayerGoodiesWithPickUpMI(int16 modelIndex, int playerIndex)
 		DMAudio.PlayFrontEndSound(SOUND_PICKUP_BONUS, 0);
 		return true;
 	} else if (modelIndex == MI_PICKUP_BRIBE) {
-		int32 level = Max(FindPlayerPed()->m_pWanted->GetWantedLevel() - 1, 0);
+		int32 level = Max(player->m_pWanted->GetWantedLevel() - 1, 0);
 		player->SetWantedLevel(level);
 		DMAudio.PlayFrontEndSound(SOUND_PICKUP_BONUS, 0);
 		return true;
@@ -972,7 +992,8 @@ CPickups::Update()
 		}
 	}
 #endif
-	if (CPad::GetPad(0)->CollectPickupJustDown())
+	if (CPad::GetPad(0)->CollectPickupJustDown() ||
+	    (CCoop::GetPartner() != nil && CPad::GetPad(PAD_COOP)->CollectPickupJustDown()))
 		CollectPickupBuffer = 6;
 	else
 		CollectPickupBuffer = Max(0, CollectPickupBuffer - 1);
@@ -980,18 +1001,33 @@ CPickups::Update()
 	if (PlayerOnWeaponPickup)
 		PlayerOnWeaponPickup = Max(0, PlayerOnWeaponPickup - 1);
 
+	// Both players collect.  Player 1 is asked first, so a pickup the two are
+	// both standing on is his, the way it has always been; the partner (slot 1
+	// of CWorld::Players; see CCoop) is asked for the rest.  The two calls
+	// cannot both take the same pickup: the first one that touches it removes
+	// it, and the second sees it removed.
+	CPlayerPed *partner = CCoop::GetPartner();
+
 #define PICKUPS_FRAME_SPAN (6)
 #ifdef FIX_BUGS
 	for (uint32 i = NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN) / PICKUPS_FRAME_SPAN; i < NUMGENERALPICKUPS * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1) / PICKUPS_FRAME_SPAN; i++) {
 #else // BUG: this code can only reach 318 out of 320 pickups
 	for (uint32 i = NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN); i < NUMGENERALPICKUPS / PICKUPS_FRAME_SPAN * (CTimer::GetFrameCounter() % PICKUPS_FRAME_SPAN + 1); i++) {
 #endif
-		if (aPickUps[i].m_eType != PICKUP_NONE && aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus))
+		bool taken = aPickUps[i].m_eType != PICKUP_NONE &&
+			aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus);
+		if (!taken && partner != nil && aPickUps[i].m_eType != PICKUP_NONE)
+			taken = aPickUps[i].Update(partner, partner->bInVehicle ? partner->m_pMyVehicle : nil, 1);
+		if (taken)
 			AddToCollectedPickupsArray(i);
 	}
 #undef PICKUPS_FRAME_SPAN
 	for (uint32 i = NUMGENERALPICKUPS; i < NUMPICKUPS; i++) {
-		if (aPickUps[i].m_eType != PICKUP_NONE && aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus))
+		bool taken = aPickUps[i].m_eType != PICKUP_NONE &&
+			aPickUps[i].Update(FindPlayerPed(), FindPlayerVehicle(), CWorld::PlayerInFocus);
+		if (!taken && partner != nil && aPickUps[i].m_eType != PICKUP_NONE)
+			taken = aPickUps[i].Update(partner, partner->bInVehicle ? partner->m_pMyVehicle : nil, 1);
+		if (taken)
 			AddToCollectedPickupsArray(i);
 	}
 }
