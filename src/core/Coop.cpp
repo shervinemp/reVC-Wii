@@ -93,6 +93,13 @@ const uint32 kRetryMs = 400;
 const float kTetherStart = 18.0f;
 const float kTetherMax = 24.0f;
 const float kLeash = 28.0f;
+// And the longer one a driver gets.  A car covers ground far faster than a walk,
+// and a convoy is useless if the one behind is hauled forward every second -- at
+// 28 m that is about a second at speed.  Still bounded, because the leash exists
+// for the streaming and not for taste; this is the number to move if the ground
+// under a driving partner ever looks thin, and it wants checking on hardware
+// rather than trusting.
+const float kLeashDriving = 50.0f;
 // Below player 1 by this much means they fell through something.
 const float kFallLimit = 25.0f;
 // Player 1 moving further than this in one frame was a teleport, not travel.
@@ -786,7 +793,10 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, bool leadTeleported)
 	const CVector partnerPos = partnerVehicle != nil ? partnerVehicle->GetPosition() : partner->GetPosition();
 	if(partnerPos.z < leadPos.z - kFallLimit)
 		return "fell";
-	if((leadPos - partnerPos).Magnitude() > kLeash)
+	// A partner at the wheel of their own car gets the longer leash; everybody
+	// else, including a passenger in player 1's car, gets the walking one.
+	const float leash = (partnerVehicle != nil && partnerVehicle->pDriver == partner) ? kLeashDriving : kLeash;
+	if((leadPos - partnerPos).Magnitude() > leash)
 		return "too far from player 1";
 	return nil;
 }
