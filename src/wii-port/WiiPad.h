@@ -50,10 +50,15 @@ void WiiPadScan(void);
 void WiiPadCapture(int padID, CControllerState &state);
 
 // The Nunchuk's lean, in the right stick's units (-128..128), when the ped the
-// pad drives is in a helicopter or the Rhino -- the two vehicles where that
-// axis is the yaw and the turret.  Zero in anything else, or with no Nunchuk,
-// so the D-pad and any right stick keep working exactly as they did.
+// pad drives is in a helicopter, the Rhino or the fire truck -- the vehicles
+// where that axis is the yaw, the turret or the hose.  Zero in anything else,
+// or with no Nunchuk, so the D-pad and any right stick keep working exactly as
+// they did.
 s16 WiiNunchukTiltSteering(int padID);
+
+// The same, forward and back, for the fire truck's hose elevation -- the one
+// other axis its stick does not drive.  Zero everywhere else.
+s16 WiiNunchukTiltPitch(int padID);
 
 // The Wiimote pointer, as the mouse the engine already knows how to use.  In
 // game it reports a turn rate as relative motion; in a menu it drives the

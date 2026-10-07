@@ -3453,8 +3453,8 @@ CPed::IsPedDoingDriveByShooting(void)
 	// buttons would have protected.  The loops
 	// also only get that far with a gun the car can fire, which covers the
 	// "Drive-By Weapons" option's guns as well as the submachine gun.
-	if (FindPlayerPed() == this)
-		return bInVehicle && CVehicle::WiiPlayerLeaningOut();
+	if (IsPlayer())
+		return bInVehicle && CVehicle::WiiPlayerLeaningOut(this);
 #endif
 #ifdef FIX_BUGS
 	if (FindPlayerPed() == this && CWeaponInfo::GetWeaponInfo(GetWeapon()->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN) {

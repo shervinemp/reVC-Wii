@@ -2331,6 +2331,14 @@ int16 CPad::GetCarGunUpDown(void)
 		case 1:
 		case 2:
 		{
+#ifdef NINTENDO_WII
+			// A Wiimote and Nunchuk have no right stick; the fire truck's hose
+			// elevation is the one use of this axis the lean can reach.
+			const int padID = (this == CPad::GetPad(PAD_COOP)) ? PAD_COOP : 0;
+			const s16 lean = WiiNunchukTiltPitch(padID);
+			if (lean != 0)
+				return lean;
+#endif
 			return NewState.RightStickY;
 
 			break;

@@ -186,7 +186,7 @@ CBoat::ProcessControl(void)
 	case STATUS_PLAYER:
 		m_bIsAnchored = false;
 		m_fOrientation = INVALID_ORIENTATION;
-		ProcessControlInputs(0);
+		ProcessControlInputs(GetPadIndexFromPlayer((CPlayerPed*)pDriver));
 		if(GetModelIndex() == MI_PREDATOR)
 			DoFixedMachineGuns();
 
@@ -384,7 +384,7 @@ CBoat::ProcessControl(void)
 			float steerFactor = 1.0f;
 			if(GetStatus() == STATUS_PLAYER){
 				float steerLoss = DotProduct(m_vecMoveSpeed, GetForward())*pHandling->fTractionBias;
-				if(CPad::GetPad(0)->GetHandBrake())
+				if(GetPadFromVehicleDriver(this)->GetHandBrake())
 					steerLoss *= 0.5f;
 				steerFactor -= steerLoss;
 				steerFactor = Clamp(steerFactor, 0.0f, 1.0f);
@@ -488,7 +488,7 @@ CBoat::ProcessControl(void)
 				ApplyMoveForce(right - impulse * 0.3f * CVector(-right.y, right.x, 0.0f));
 			}
 
-			if(GetStatus() == STATUS_PLAYER && CPad::GetPad(0)->GetHandBrake()){
+			if(GetStatus() == STATUS_PLAYER && GetPadFromVehicleDriver(this)->GetHandBrake()){
 				float fwdSpeed = DotProduct(m_vecMoveSpeed, GetForward());
 				if(fwdSpeed > 0.0f){
 					float impulse = -0.1f*pHandling->fSuspensionLowerLimit * m_fMass * m_fVolumeUnderWater * fwdSpeed * CTimer::GetTimeStep();
@@ -962,18 +962,19 @@ CBoat::PreRender(void)
 				matrix.UpdateRW();
 			}
 			// FIX: Planes can also be controlled with GetCarGunUpDown
+			CPad *flapPad = GetPadFromVehicleDriver(this);
 #ifdef FIX_BUGS
 			static float steeringUpDown = 0.0f;
 #ifdef FREE_CAM
 			if(!CCamera::bFreeCam || (CCamera::bFreeCam && !CPad::IsAffectedByController))
 #endif
-			steeringUpDown += ((Abs(CPad::GetPad(0)->GetCarGunUpDown()) > 1.0f ? (-CPad::GetPad(0)->GetCarGunUpDown()/128.0f) : (-CPad::GetPad(0)->GetSteeringUpDown()/128.0f)) - steeringUpDown) * Min(1.f, CTimer::GetTimeStep()/5.f);
+			steeringUpDown += ((Abs(flapPad->GetCarGunUpDown()) > 1.0f ? (-flapPad->GetCarGunUpDown()/128.0f) : (-flapPad->GetSteeringUpDown()/128.0f)) - steeringUpDown) * Min(1.f, CTimer::GetTimeStep()/5.f);
 #ifdef FREE_CAM
 			else
-				steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
+				steeringUpDown = -flapPad->GetSteeringUpDown()/128.0f;
 #endif
 #else
-			float steeringUpDown = -CPad::GetPad(0)->GetSteeringUpDown()/128.0f;
+			float steeringUpDown = -flapPad->GetSteeringUpDown()/128.0f;
 #endif
 			if(m_aBoatNodes[BOAT_REARFLAP_LEFT]){
 				matrix.Attach(RwFrameGetMatrix(m_aBoatNodes[BOAT_REARFLAP_LEFT]));
@@ -1428,15 +1429,19 @@ CBoat::DoDriveByShootings(void)
 
 	weapon->Update(pDriver->m_audioEntityId, nil);
 
+	// Couch co-op: a drive-by belongs to whoever is driving, so the side and the
+	// trigger come off that player's pad.
+	CPad *pad = GetPadFromVehicleDriver(this);
+
 	bool lookingLeft = false;
 	bool lookingRight = false;
 	// (MODE_WII_COOP: see CAutomobile::DoDriveByShootings.)
 	if(TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_TOPDOWN ||
 	   TheCamera.Cams[TheCamera.ActiveCam].Mode == CCam::MODE_WII_COOP ||
 	   TheCamera.m_bObbeCinematicCarCamOn){
-		if(CPad::GetPad(0)->GetLookLeft())
+		if(pad->GetLookLeft())
 			lookingLeft = true;
-		if(CPad::GetPad(0)->GetLookRight())
+		if(pad->GetLookRight())
 			lookingRight = true;
 	}else{
 		if(TheCamera.Cams[TheCamera.ActiveCam].LookingLeft)
@@ -1445,7 +1450,7 @@ CBoat::DoDriveByShootings(void)
 			lookingRight = true;
 	}
 #ifdef NINTENDO_WII
-	PickDriveBySideFromView(lookingLeft, lookingRight);
+	PickDriveBySideFromView((CPlayerPed*)pDriver, lookingLeft, lookingRight);
 #endif
 
 	if(lookingLeft || lookingRight){
@@ -1466,7 +1471,7 @@ CBoat::DoDriveByShootings(void)
 		}
 
 		if (!anim || !anim->IsRunning()) {
-			if (CPad::GetPad(0)->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
+			if (pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer) {
 				weapon->FireFromCar(this, (CPlayerPed*)pDriver, lookingLeft, true);
 #ifdef NINTENDO_WII
 				WiiDriveByPaceShot(weapon);

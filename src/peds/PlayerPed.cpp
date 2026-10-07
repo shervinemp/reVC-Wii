@@ -2147,11 +2147,16 @@ CPlayerPed::PlayIdleAnimations(CPad *padUsed)
 					assoc->blendDelta = -8.0f;
 				}
 			}
-			// In co-op the block is not released: either player may be idle or
-			// still blending an idle animation out, and one unloading it would
-			// leave the other holding animations from a block that is gone.  It
-			// is a small block, and the session ends with it.
-			if (!hasIdleAnim && !CCoop::IsRunning())
+			// Released only once neither player is idle and neither still has an
+			// idle animation blending out: the block is shared, and one player
+			// unloading it would leave the other holding animations from a
+			// block that is gone.
+			const int other = player == 0 ? 1 : 0;
+			CPlayerPed *otherPed = CWorld::Players[other].m_pPed;
+			const bool otherNeeds = otherPed != nil &&
+				(GetPadFromPlayer(otherPed)->InputHowLongAgo() > 30000 ||
+				 RpAnimBlendClumpGetFirstAssociation(otherPed->GetClump(), ASSOC_IDLE) != nil);
+			if (!hasIdleAnim && !otherNeeds)
 				CStreaming::RemoveAnim(idleAnimBlockIndex);
 		} else {
 			lastTime[player] = 0;

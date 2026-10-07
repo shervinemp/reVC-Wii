@@ -3271,15 +3271,24 @@ CAutomobile::ProcessControlInputs(uint8 pad)
 void
 CAutomobile::FireTruckControl(void)
 {
-	if(this == FindPlayerVehicle()){
-		if(!CPad::GetPad(0)->GetCarGunFired())
+	// Whose fire truck this is: player 1's, or in co-op the partner's.  Both
+	// work the hose from their own pad; a fire truck with nobody in it puts its
+	// own fires out below.
+	CPad *pad = CPad::GetPad(0);
+	bool playerDriven = this == FindPlayerVehicle();
+	if(!playerDriven && this->pDriver != nil && this->pDriver != FindPlayerPed() && this->pDriver->IsPlayer()){
+		pad = GetPadFromPlayer((CPlayerPed*)this->pDriver);
+		playerDriven = true;
+	}
+	if(playerDriven){
+		if(!pad->GetCarGunFired())
 			return;
 #ifdef FREE_CAM
 		if (!CCamera::UseFreeCarCam())
 #endif 
 		{
-			m_fCarGunLR += CPad::GetPad(0)->GetCarGunLeftRight() * 0.00025f * CTimer::GetTimeStep();
-			m_fCarGunUD += CPad::GetPad(0)->GetCarGunUpDown() * 0.0001f * CTimer::GetTimeStep();
+			m_fCarGunLR += pad->GetCarGunLeftRight() * 0.00025f * CTimer::GetTimeStep();
+			m_fCarGunUD += pad->GetCarGunUpDown() * 0.0001f * CTimer::GetTimeStep();
 		}
 		m_fCarGunUD = Clamp(m_fCarGunUD, 0.05f, 0.3f);
 
@@ -3954,7 +3963,7 @@ DoPassengerDriveBy(CVehicle *vehicle, CPlayerPed *passenger, int seat)
 #ifdef NINTENDO_WII
 		// Notes the frame for CPed::IsPedDoingDriveByShooting, so a passenger
 		// leaning out is not dragged out of the seat either.
-		vehicle->PickDriveBySideFromView(lookingLeft, lookingRight);
+		vehicle->PickDriveBySideFromView(passenger, lookingLeft, lookingRight);
 #endif
 		if (lookingLeft) {
 			anim = RpAnimBlendClumpGetAssociation(passenger->GetClump(), rightAnim);
@@ -4050,7 +4059,7 @@ CAutomobile::DoDriveByShootings(void)
 			lookingRight = true;
 	}
 #ifdef NINTENDO_WII
-	PickDriveBySideFromView(lookingLeft, lookingRight);
+	PickDriveBySideFromView((CPlayerPed*)pDriver, lookingLeft, lookingRight);
 #endif
 	// Couch co-op: with a reticle the arm goes to the side it is on, so a
 	// player who aims out of a window fires out of that window.  A reticle

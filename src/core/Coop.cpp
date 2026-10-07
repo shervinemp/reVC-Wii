@@ -23,6 +23,8 @@
 #include "Text.h"
 #include "Timer.h"
 #include "Vehicle.h"
+#include "Wanted.h"
+#include "WaterLevel.h"
 #include "WeaponInfo.h"
 #include "World.h"
 #include "Zones.h"
@@ -263,6 +265,30 @@ eWeaponType s_owedType[TOTAL_WEAPON_SLOTS];
 // The shared pool as of the last sync, per slot.  -1 means this slot is not
 // shared yet (nothing there, or a weapon the partner has not been given).
 int32 s_poolAmmo[TOTAL_WEAPON_SLOTS];
+
+// --- the wanted level ---------------------------------------------------------
+// One heat for the pair, in the direction that matters: a crime by either is
+// the pair's crime, so when either player's level rises the other's rises with
+// it -- and the stars on the HUD, player 1's, are the ones the pair is judged
+// by.  Drops are left alone: each level decays on its own, and holding both at
+// the higher of the two every frame would keep the pair wanted for good.
+int32 s_leadWanted;
+int32 s_partnerWanted;
+
+void
+ShareWantedLevel(CPlayerPed *lead, CPlayerPed *partner)
+{
+	if(lead->m_pWanted == nil || partner->m_pWanted == nil)
+		return;
+	const int32 leadLevel = lead->m_pWanted->GetWantedLevel();
+	const int32 partnerLevel = partner->m_pWanted->GetWantedLevel();
+	if(leadLevel > s_leadWanted && leadLevel > partnerLevel)
+		partner->m_pWanted->SetWantedLevel(leadLevel);
+	else if(partnerLevel > s_partnerWanted && partnerLevel > leadLevel)
+		lead->m_pWanted->SetWantedLevel(partnerLevel);
+	s_leadWanted = lead->m_pWanted->GetWantedLevel();
+	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
+}
 
 void
 ForgetArsenal(void)
@@ -635,6 +661,11 @@ SpawnPartner(CPlayerPed *lead)
 	// The new ped's ammo counts start from the pool, not from a spend measured
 	// against the last partner's.
 	ForgetSharedAmmo();
+	// The pair shares its heat: a partner who arrives while player 1 is wanted
+	// is wanted too, and the mirror starts from there.
+	partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
+	s_leadWanted = lead->m_pWanted->GetWantedLevel();
+	s_partnerWanted = partner->m_pWanted->GetWantedLevel();
 	s_wantSlotUntil = CTimer::GetTimeInMilliseconds() + 4000;
 
 	if(ride != nil && !SeatPartner(partner, ride)){
@@ -681,13 +712,12 @@ SessionBlocker(void)
 	return nil;
 }
 
-// The nearest car or bike the partner could take as its driver.  A boat is
-// handled as a different problem entirely; a bike is not: the rider's controls
-// and drive-by come off their own pad now (CBike::ProcessControl), and a bike
-// makes whoever climbs on it the rider, which is what the partner wants.
-// Never one a player is driving -- that would be a carjack of player 1 -- and
-// not one player 1 is already walking to, a wreck or one in the water, which
-// nobody can enter.
+// The nearest car, bike or boat the partner could take as its driver.  All
+// three come off the driver's own pad now; a bike makes whoever climbs on it
+// the rider, and a boat makes whoever boards it the driver, which is what the
+// partner wants in every case.  Never one a player is driving -- that would be
+// a carjack of player 1 -- and not one player 1 is already walking to, a wreck
+// or one on its roof, which nobody can enter.
 CVehicle *
 FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 {
@@ -696,9 +726,12 @@ FindCarToSteal(CPlayerPed *lead, CPlayerPed *partner)
 	const CVector pos = partner->GetPosition();
 	for(int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--){
 		CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
-		if(vehicle == nil || (!vehicle->IsCar() && !vehicle->IsBike()))
+		if(vehicle == nil || (!vehicle->IsCar() && !vehicle->IsBike() && !vehicle->IsBoat()))
 			continue;
-		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
+		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->IsUpsideDown())
+			continue;
+		// A boat is in the water by definition; a car in the water is sunk.
+		if(!vehicle->IsBoat() && vehicle->bIsInWater)
 			continue;
 		if(vehicle->pDriver != nil && vehicle->pDriver->IsPlayer())
 			continue;
@@ -912,15 +945,18 @@ UpdateAim(int index)
 	if(ped->DyingOrDead())
 		return;
 	// Inside a vehicle the driver aims, and so does a passenger with a window
-	// to shoot out of -- a car's passenger seat (CAutomobile's drive-by).  A
-	// pillion or a boat passenger has no drive-by to aim, so no reticle.
+	// or a side to shoot out of -- a car's seat (CAutomobile's drive-by) or a
+	// bike's pillion (CBike's).  A boat's or an aircraft's passenger has no
+	// drive-by to aim, so no reticle.
 	if(ped->bInVehicle){
 		CVehicle *vehicle = ped->m_pMyVehicle;
 		if(vehicle == nil)
 			return;
-		if(vehicle->pDriver != ped &&
-		   (!vehicle->IsCar() || vehicle->IsRealHeli() || vehicle->IsRealPlane()))
-			return;
+		if(vehicle->pDriver != ped){
+			const bool carSeat = vehicle->IsCar() && !vehicle->IsRealHeli() && !vehicle->IsRealPlane();
+			if(!carSeat && !vehicle->IsBike())
+				return;
+		}
 	}
 
 	const uint32 now = CTimer::GetTimeInMilliseconds();
@@ -1077,6 +1113,8 @@ CCoop::Init(void)
 	s_carry.valid = false;
 	s_wantSlot = -1;
 	ForgetArsenal();
+	s_leadWanted = 0;
+	s_partnerWanted = 0;
 	for(int i = 0; i < 2; i++){
 		s_aim[i].pointerSeen = false;
 		s_aim[i].stickSeen = false;
@@ -1271,11 +1309,26 @@ CCoop::Update(void)
 			bool beside = false;
 			bool airborne = false;
 			CVector airPos;
-			if(driven != nil && !driven->IsBoat()){
+			bool boat = false;
+			CVector boatPos;
+			if(driven != nil){
 				const CVector leadAt = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
 				const float heading = leadVehicle != nil ? leadVehicle->GetForward().Heading() : lead->m_fRotationCur;
 				const CVector forward(-Sin(heading), Cos(heading), 0.0f);
-				if(driven->IsRealHeli() || driven->IsRealPlane()){
+				if(driven->IsBoat()){
+					// A boat belongs on water, and a road node is not one.  Back
+					// on the sea behind player 1 when there is any there, and
+					// otherwise left where it is -- a boat in the road is worse
+					// than a boat out of sight.
+					for(float back = kRegroupBack; back <= kRegroupBack*3.0f && !boat; back += kRegroupBack){
+						const CVector pos = leadAt - forward*back;
+						float level;
+						if(CWaterLevel::GetWaterLevel(pos, &level, true)){
+							boatPos = CVector(pos.x, pos.y, level + 1.0f);
+							boat = true;
+						}
+					}
+				}else if(driven->IsRealHeli() || driven->IsRealPlane()){
 					// An aircraft is not on the road, and a path node would put it
 					// in the street: it goes back into the air behind player 1,
 					// level with them if they are flying and well above them if
@@ -1312,7 +1365,21 @@ CCoop::Update(void)
 					}
 				}
 			}
-			if(airborne){
+			if(boat){
+				driven->SetPosition(boatPos);
+				if(leadVehicle != nil){
+					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
+					// A boat only keeps pace with another boat; a car's speed is
+					// not a speed this one can hold.
+					driven->m_vecMoveSpeed = leadVehicle->IsBoat() ? leadVehicle->GetMoveSpeed() : CVector(0.0f, 0.0f, 0.0f);
+				}else
+					driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				if(now - s_regroupLogTime >= 3000){
+					s_regroupLogTime = now;
+					COOP_LOG("WII coop: player 2's boat brought back (%s)\n", regroup);
+				}
+			}else if(airborne){
 				driven->SetPosition(airPos);
 				if(leadVehicle != nil)
 					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
@@ -1344,6 +1411,13 @@ CCoop::Update(void)
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player 2's car brought back (%s)\n", regroup);
+				}
+			}else if(driven != nil && driven->IsBoat()){
+				// Nowhere to put it: left alone rather than deleted.  The world
+				// around it is thin, but a boat respawned on foot is worse.
+				if(now - s_regroupLogTime >= 3000){
+					s_regroupLogTime = now;
+					COOP_LOG("WII coop: player 2's boat left where it is (no water by player 1)\n");
 				}
 			}else{
 				// Replaced rather than moved.  Moving a ped that might be halfway
@@ -1379,8 +1453,10 @@ CCoop::Update(void)
 				UpdateArsenal(lead, partner);
 		}
 		partner = GetPartner();
-		if(partner != nil)
+		if(partner != nil){
 			SyncSharedAmmo(lead, partner);
+			ShareWantedLevel(lead, partner);
+		}
 	}
 	if(partner == nil && padPresent && s_joined && now >= s_spawnTime){
 		if(!SpawnPartner(lead))

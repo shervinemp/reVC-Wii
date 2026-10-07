@@ -2016,11 +2016,119 @@ CBike::ProcessBuoyancy(void)
 	}
 }
 
+// A player on the back of a bike, shooting out of their own side.  There is no
+// seat to pick the side here -- both of the pillion's hands are free -- so the
+// reticle picks it when there is one, the look buttons when there is not, and
+// straight ahead otherwise, which is where the bike's own drive-by goes.  Only
+// players: the traffic's passengers do not fight.
+static void
+DoPillionDriveBy(CBike *bike, CPlayerPed *pillion)
+{
+	// Seated and alive, like the car's passenger: a ped climbing off is still
+	// in the passenger list for a moment.
+	if(pillion->DyingOrDead() || pillion->m_nPedState != PED_DRIVING)
+		return;
+
+	CPlayerInfo *playerInfo = pillion->GetPlayerInfoForThisPlayerPed();
+	if(playerInfo && !playerInfo->m_bDriveByAllowed)
+		return;
+
+	CWeapon *weapon = pillion->GetWeapon();
+	bool canDriveBy = CWeaponInfo::GetWeaponInfo(weapon->m_eWeaponType)->m_nWeaponSlot == WEAPONSLOT_SUBMACHINEGUN;
+#ifdef NINTENDO_WII
+	canDriveBy = canDriveBy || WiiDriveByWeaponAllowed(weapon->m_eWeaponType);
+#endif
+	if(!canDriveBy)
+		return;
+
+	weapon->Update(pillion->m_audioEntityId, nil);
+
+	CPad *pad = GetPadFromPlayer(pillion);
+	bool lookingLeft = false;
+	bool lookingRight = false;
+	if(CCoop::UsesReticleAim() && CCoop::HasAim(pillion)){
+		const float aimHeading = CCoop::GetAimHeading(pillion);
+		const CVector aimDir(-Sin(aimHeading), Cos(aimHeading), 0.0f);
+		const float side = DotProduct(aimDir, bike->GetRight());
+		if(side < -0.3f)
+			lookingLeft = true;
+		else if(side > 0.3f)
+			lookingRight = true;
+	}else{
+		if(pad->GetLookLeft())
+			lookingLeft = true;
+		if(pad->GetLookRight())
+			lookingRight = true;
+	}
+#ifdef NINTENDO_WII
+	// Notes the frame for CPed::IsPedDoingDriveByShooting, so a pillion leaning
+	// out is not dragged off either.
+	bike->PickDriveBySideFromView(pillion, lookingLeft, lookingRight);
+#endif
+
+	// The side has to be meant.  A pillion has the rider directly in front, so
+	// the bike's own forward drive-by -- what the trigger alone gives -- would
+	// put the shot through them; left and right go past.
+	if(!lookingLeft && !lookingRight){
+		weapon->Reload();
+		CAnimBlendAssociation *anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_LHS);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_FORWARD);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		return;
+	}
+
+	CAnimBlendAssociation *anim = nil;
+	if(lookingLeft){
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_FORWARD);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_LHS);
+		if(anim == nil || anim->blendDelta < 0.0f)
+			anim = CAnimManager::AddAnimation(pillion->GetClump(), bike->m_bikeAnimType, ANIM_BIKE_DRIVEBY_LHS);
+	}else{
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_LHS);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_FORWARD);
+		if(anim)
+			anim->blendDelta = -1000.0f;
+		anim = RpAnimBlendClumpGetAssociation(pillion->GetClump(), ANIM_BIKE_DRIVEBY_RHS);
+		if(anim == nil || anim->blendDelta < 0.0f)
+			anim = CAnimManager::AddAnimation(pillion->GetClump(), bike->m_bikeAnimType, ANIM_BIKE_DRIVEBY_RHS);
+	}
+
+	if(!anim || !anim->IsRunning()){
+		if(pad->GetCarGunFired() && CTimer::GetTimeInMilliseconds() > weapon->m_nTimer){
+			weapon->FireFromCar(bike, pillion, lookingLeft, lookingRight);
+#ifdef NINTENDO_WII
+			WiiDriveByPaceShot(weapon);
+#else
+			weapon->m_nTimer = CTimer::GetTimeInMilliseconds() + 70;
+#endif
+		}
+	}
+}
+
 void
 CBike::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
+
+	// Couch co-op: a player on the back shoots too, whether or not the rider has
+	// anything to shoot with.
+	if (CCoop::IsRunning() && pPassengers[0] != nil && pPassengers[0]->IsPlayer())
+		DoPillionDriveBy(this, (CPlayerPed*)pPassengers[0]);
+
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
 		return;
 
@@ -2053,7 +2161,7 @@ CBike::DoDriveByShootings(void)
 			lookingRight = true;
 	}
 #ifdef NINTENDO_WII
-	PickDriveBySideFromView(lookingLeft, lookingRight);
+	PickDriveBySideFromView((CPlayerPed*)pDriver, lookingLeft, lookingRight);
 #endif
 	// Couch co-op: with a reticle the arm goes to the side it is on, so a
 	// player who aims out of a window fires out of that window.  A reticle
