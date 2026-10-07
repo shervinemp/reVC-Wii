@@ -265,6 +265,29 @@ releaseCallBuffer(void)
 	}
 }
 
+// Hands the call buffer to libogc, which then reads it at its own pace.  Done
+// once, either when the first of the line is encoded -- the usual way -- or when
+// the speaker finishes powering up with the line already written: a short line
+// can decode in full while the speaker is still coming up, and only an encode
+// ever hands a buffer over, so waiting for the next one can wait forever.
+void
+startCallStream(void)
+{
+	const u64 now = gettime();
+	WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
+	s_call.started = true;
+	s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
+	s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
+	s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
+	// One line per session, when the first call actually starts streaming: the
+	// signal that the remote is being fed, rather than merely asked for.
+	static bool s_loggedFirstCall;
+	if(!s_loggedFirstCall){
+		s_loggedFirstCall = true;
+		WiiTraceReport("WII speaker: first call streaming\n");
+	}
+}
+
 // Encodes whatever has been resampled so far into the call buffer.  ADPCM packs
 // two samples a byte, so an odd one out is carried to the next call.
 void
@@ -291,15 +314,8 @@ encodeCall(const s16 *samples, u32 count)
 	s_call.encoderFresh = false;
 	s_call.written += pairs/2;
 
-	if(!s_call.started && s_state == STATE_ON){
-		// The first of the line is in place: let libogc start reading.
-		const u64 now = gettime();
-		WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
-		s_call.started = true;
-		s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
-		s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
-		s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
-	}
+	if(!s_call.started && s_state == STATE_ON)
+		startCallStream();
 }
 
 // Asks for a clip, powering the speaker up if it is off.  A request that is still
@@ -395,16 +411,6 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	s_call.encoderFresh = true;
 	s_call.active = true;
 	s_pending = CLIP_NONE;
-	// One line per session, not one per line of dialogue: this is the signal
-	// that the remote is in use at all, and a phone call is otherwise silent in
-	// the log.  (The gate-by-gate diagnostics that used to be here served their
-	// purpose when the speaker was being fixed; if it ever goes quiet again,
-	// they are the thing to bring back for one build.)
-	static bool s_loggedFirstCall;
-	if(!s_loggedFirstCall){
-		s_loggedFirstCall = true;
-		WiiTraceReport("WII speaker: first call started %ums\n", (unsigned)lengthMs);
-	}
 	return true;
 }
 
@@ -505,6 +511,11 @@ WiiSpeakerService(void)
 		// allowed to take kWarmupTimeoutMs, which is longer than the ring's whole
 		// tolerance, so a lone ring was always discarded before it could ever play.
 		s_pendingTime = now;
+		// And a call that arrived during the power-up has its first words written
+		// with nothing reading them: hand the buffer over now, before the next
+		// encode (which a short line may never need) can do it.
+		if(s_call.active && !s_call.started && s_call.written > 0)
+			startCallStream();
 	}
 
 	// Whatever waited too long, through warm-up or behind another clip, is dropped.

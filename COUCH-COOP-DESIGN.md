@@ -272,10 +272,10 @@ script directs.
 
   | | pitch | distance |
   |---|---|---|
-  | 0 low | 41° | 18 m |
-  | 1 middle (default) | 50° | 22 m |
-  | 2 high | 60° | 26 m |
-  | 3 overhead | 78° | 28 m |
+  | 0 low | 36° | 18 m |
+  | 1 middle (default) | 45° | 22 m |
+  | 2 high | 55° | 26 m |
+  | 3 overhead | 73° | 28 m |
 
   The distances are what the camera stands at six metres apart (the point the
   view starts backing off); closer together it comes in. The pitch has been

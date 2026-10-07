@@ -162,10 +162,10 @@ struct CoopFraming
 	float distance;		// from the players, along the view
 };
 static const CoopFraming kCoopFramings[CCoop::NUM_FRAMINGS] = {
-	{ DEGTORAD(41.0f), 18.0f },	// low: the angle this camera started at, pulled back
-	{ DEGTORAD(50.0f), 22.0f },	// middle, and the default
-	{ DEGTORAD(60.0f), 26.0f },	// high
-	{ DEGTORAD(78.0f), 28.0f },	// overhead
+	{ DEGTORAD(36.0f), 18.0f },	// low: the angle this camera started at, pulled back
+	{ DEGTORAD(45.0f), 22.0f },	// middle, and the default
+	{ DEGTORAD(55.0f), 26.0f },	// high
+	{ DEGTORAD(73.0f), 28.0f },	// overhead
 };
 // How far apart the players can be before the camera starts backing off, and
 // how far it backs off per metre beyond that.  Sized against the limit CCoop
