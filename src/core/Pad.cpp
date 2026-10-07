@@ -2322,6 +2322,7 @@ int16 CPad::GetSteeringUpDown(void)
 	return 0;
 }
 
+#ifdef NINTENDO_WII
 // The pad slot a CPad is, or -1 if it is not one of the player pads.  The
 // Nunchuk lean is read from whichever pad is asking, and these getters have no
 // pad parameter to trust.
@@ -2334,6 +2335,7 @@ PadSlotOf(CPad *pad)
 	}
 	return -1;
 }
+#endif
 
 int16 CPad::GetCarGunUpDown(void)
 {
