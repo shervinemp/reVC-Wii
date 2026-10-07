@@ -1258,7 +1258,7 @@ void
 CCoop::ReportPartnerPad(int partner, bool present)
 {
 	// Only the first partner is listened to until the co-op layer grows its own
-	// four player loops (COOP-4-PLAN.md, stage 3).  The pad layer already
+	// four player loops (stage 3 of the four player work).  The pad layer already
 	// reports every partner slot, so that stage is a change of this guard and
 	// not of the pads.
 	if(partner != 0)

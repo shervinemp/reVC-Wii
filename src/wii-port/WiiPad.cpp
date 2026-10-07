@@ -586,7 +586,7 @@ padPlayer(int padID)
 	if(player == PLAYER_TWO)
 		return CCoop::GetPartner();
 	// Partners two and three arrive with the co-op layer's own four player
-	// loops (COOP-4-PLAN.md, stage 3).
+	// loops (stage 3 of the four player work).
 	return nil;
 }
 

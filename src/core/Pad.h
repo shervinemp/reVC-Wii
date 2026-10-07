@@ -156,7 +156,7 @@ enum
 	// PAD_COOP: slots of their own, read only by the player peds they belong
 	// to.  The device layer captures and drives them from the start; the co-op
 	// layer starts using them when it grows its own four player loops
-	// (COOP-4-PLAN.md, stage 3).
+	// (stage 3 of the four player work).
 	PAD_COOP2,
 	PAD_COOP3,
 
