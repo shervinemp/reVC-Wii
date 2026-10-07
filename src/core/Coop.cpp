@@ -14,6 +14,7 @@
 #include "PedIK.h"
 #include "PedPlacement.h"
 #include "PlayerPed.h"
+#include "WiiPointerAim.h"
 #include "Pools.h"
 #include "Replay.h"
 #include "Script.h"
@@ -544,6 +545,20 @@ SpawnPartner(CPlayerPed *lead)
 	const float timeScale = CTimer::GetTimeScale();
 	CPlayerPed *partner = new CPlayerPed();
 	CTimer::SetTimeScale(timeScale);
+	// The skin chosen on the co-op page, if any.  The same request-and-wait the
+	// player's own model gets: a ped made with a model that is not in memory has
+	// nothing to draw.  Index 0 is "same as player 1", which is what the
+	// constructor has already given them.
+	static const char *const kCoopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
+	if(WiiCoopSkin > 0 && WiiCoopSkin < (int)ARRAY_SIZE(kCoopSkinModels)){
+		int skinModel = -1;
+		if(CModelInfo::GetModelInfo(kCoopSkinModels[WiiCoopSkin], &skinModel) != nil && skinModel >= 0){
+			CStreaming::RequestModel(skinModel, STREAMFLAGS_DEPENDENCY);
+			CStreaming::LoadAllRequestedModels(false);
+			if(CStreaming::HasModelLoaded(skinModel))
+				partner->SetModelIndex(skinModel);
+		}
+	}
 	// Not PEDTYPE_PLAYER1, and that is what keeps this ped out of the save:
 	// CPools::SavePedPool picks what to write by exactly that type, and
 	// LoadPedPool would hand a second one to CWorld::Players[0].  It still

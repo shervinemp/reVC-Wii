@@ -159,6 +159,8 @@ WiiFallbackText(const char *key)
 		{ "WII_BTH", "BOTH" },
 		{ "WII_BOX", "POINTER BOX" },
 		{ "WII_ENH", "ENHANCEMENTS" },
+		{ "WII_COP", "CO-OP" },
+		{ "WII_COS", "PARTNER SKIN" },
 		{ "WII_CC", "COUCH CO-OP" },
 		{ "WII_P2J", "Player 2: press any button to join." },
 		{ "WII_P2I", "Player 2 has joined." },

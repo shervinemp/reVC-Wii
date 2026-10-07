@@ -128,6 +128,7 @@
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false) }, 0, 0, MENUALIGN_CENTER,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -135,6 +136,7 @@
 	#define VIBRATION_TOGGLE
 	#define POINTER_CAR_TOGGLE
 	#define DRIVEBY_WEAPONS_TOGGLE
+	#define COOP_SKIN_SELECT
 #endif
 
 #ifdef GAMEPAD_MENU
@@ -151,6 +153,15 @@ extern uint32 TimeToStopPadShaking;
 
 const char *pointerBoxSizes[] = { "WII_SML", "WII_MED", "WII_LRG" };
 const char *phoneRemoteModes[] = { "FEM_OFF", "WII_RMT", "WII_BTH" };
+
+// The partner's skins.  Index 0 leaves them looking like player 1; the rest name
+// a model the partner is made with, from the special-character set.  Those are
+// the models a script will not reuse for a mission, which is what makes them safe
+// to put on a second player ped -- and they are the same ones the
+// STILLLIKEDRESSINGUP chain dresses player 1 in.
+const char *coopSkins[] = { "SAME AS PLAYER 1", "CANDY", "KEN", "LANCE", "PHIL", "DIAZ", "MERCEDES" };
+const char *coopSkinModels[] = { nil, "igcandy", "igken", "igbuddy", "igphil", "igdiaz", "igmerc" };
+const int COOP_NUM_SKINS = ARRAY_SIZE(coopSkins);
 
 // A short buzz when vibration is switched on, so it can be felt from the menu.  The
 // game is paused behind the menu and a shake is only ever spent down by the game
@@ -1070,12 +1081,24 @@ CMenuScreenCustom aScreens[] = {
 
 	{ "WII_ENH", MENUPAGE_NONE, nil, nil,
 		MENUACTION_CHANGEMENU,	"WII_CHE",	{ nil, SAVESLOT_NONE, MENUPAGE_CHEATS }, 0, 0, MENUALIGN_CENTER,
-		COUCH_COOP_TOGGLE
+		MENUACTION_CHANGEMENU,	"WII_COP",	{ nil, SAVESLOT_NONE, MENUPAGE_COOP }, 0, 0, MENUALIGN_CENTER,
 		DRIVEBY_WEAPONS_TOGGLE
 		AIM_ASSIST_TOGGLE
 		POINTER_AIM_TOGGLE
 		POINTER_BOX_SELECT
 		POINTER_CAR_TOGGLE
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+	},
+
+	// MENUPAGE_COOP
+	//
+	// Couch co-op's own settings.  Its own page rather than more rows on the
+	// Enhancements page: co-op is a mode with settings of its own, and
+	// Enhancements was becoming the place everything went.
+
+	{ "WII_COP", MENUPAGE_ENHANCEMENTS, nil, nil,
+		COUCH_COOP_TOGGLE
+		COOP_SKIN_SELECT
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
 	},
 #endif

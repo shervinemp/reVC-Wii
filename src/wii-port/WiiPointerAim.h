@@ -33,6 +33,11 @@ extern int8_t WiiAimInCar;
 // WiiDriveByWeaponAllowed in WeaponInfo.h and WiiDriveByPaceShot in Weapon.h.
 extern int8_t WiiDriveByAnyWeapon;
 
+// The "Partner Skin" row on the co-op page, persisted to the INI.  Index into the
+// list that page shows; 0 is "same as player 1".  The partner is made with this
+// model when they next arrive, so changing it takes effect on the next join.
+extern int8_t WiiCoopSkin;
+
 // True while that is in force: the Standard method with Pointer Aim and Aim In Car all
 // on, and player 1 not on a GameCube pad (which silences the pointer).  The engine
 // asks this in the few places a vehicle has to behave differently for it.

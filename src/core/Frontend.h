@@ -264,6 +264,8 @@ enum eMenuScreen
 	// The port's own options, gathered off the pause menu.  Appended here like the
 	// cheats pages above, for the same reason.
 	MENUPAGE_ENHANCEMENTS,
+	// Couch co-op's own settings, reached from Enhancements.
+	MENUPAGE_COOP,
 #endif
 
 	MENUPAGE_OUTRO, // Originally 34, but CFO needs last screen to be empty to count number of menu pages

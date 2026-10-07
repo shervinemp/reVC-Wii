@@ -5035,6 +5035,7 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					WiiPointerBox = 0;
 					WiiAimInCar = 1;
 					WiiDriveByAnyWeapon = 0;
+					WiiCoopSkin = 0;
 					m_PrefsUseVibration = true;
 #endif
 					SaveSettings();
