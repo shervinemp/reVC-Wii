@@ -555,8 +555,14 @@ SpawnPartner(CPlayerPed *lead)
 		if(CModelInfo::GetModelInfo(kCoopSkinModels[WiiCoopSkin], &skinModel) != nil && skinModel >= 0){
 			CStreaming::RequestModel(skinModel, STREAMFLAGS_DEPENDENCY);
 			CStreaming::LoadAllRequestedModels(false);
-			if(CStreaming::HasModelLoaded(skinModel))
+			if(CStreaming::HasModelLoaded(skinModel)){
+				// The model brings an animation group of its own.  The player's is
+				// what the controls and the weapon animations are written against,
+				// and STILLLIKEDRESSINGUP keeps it for the same reason.
+				AssocGroupId animGroup = partner->m_animGroup;
 				partner->SetModelIndex(skinModel);
+				partner->m_animGroup = animGroup;
+			}
 		}
 	}
 	// Not PEDTYPE_PLAYER1, and that is what keeps this ped out of the save:
