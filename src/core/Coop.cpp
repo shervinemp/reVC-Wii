@@ -560,6 +560,11 @@ SpawnPartner(CPlayerPed *lead)
 				// what the controls and the weapon animations are written against,
 				// and STILLLIKEDRESSINGUP keeps it for the same reason.
 				AssocGroupId animGroup = partner->m_animGroup;
+				// Same sequence the cheat uses to change a player's model: the old
+				// clump has to go and the model index has to be invalid before
+				// SetModelIndex, or the ped keeps the clump it was built with.
+				partner->DeleteRwObject();
+				partner->m_modelIndex = -1;
 				partner->SetModelIndex(skinModel);
 				partner->m_animGroup = animGroup;
 			}
