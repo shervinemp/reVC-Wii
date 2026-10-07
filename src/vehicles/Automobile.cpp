@@ -3912,6 +3912,11 @@ CAutomobile::ProcessBuoyancy(void)
 static void
 DoPassengerDriveBy(CVehicle *vehicle, CPlayerPed *passenger, int seat)
 {
+	// Seated and alive: a ped climbing out is still in the passenger list, and
+	// a corpse should not fire.
+	if (passenger->DyingOrDead() || passenger->m_nPedState != PED_DRIVING)
+		return;
+
 	CPlayerInfo *playerInfo = passenger->GetPlayerInfoForThisPlayerPed();
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
 		return;
@@ -3992,8 +3997,11 @@ CAutomobile::DoDriveByShootings(void)
 	// Couch co-op: a player in a passenger seat shoots out of their own window,
 	// whether or not the driver has anything to shoot with.  Co-op only: in a
 	// mission a scripted ride leaves the player a passenger, and that scene was
-	// written without a gun out of the window.
-	if (CCoop::IsRunning())
+	// written without a gun out of the window.  Cars only: a helicopter and a
+	// plane are CAutomobiles too, but their seats are not car seats and the car
+	// drive-by animations do not belong in them -- the aim gate excludes them
+	// as well, so the two answers stay the same.
+	if (CCoop::IsRunning() && !IsRealHeli() && !IsRealPlane())
 		for (int seat = 0; seat < m_nNumMaxPassengers; seat++)
 			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
 				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);
