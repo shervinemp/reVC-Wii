@@ -248,9 +248,18 @@ WiiFallbackText(const char *key)
 		{ "WII_AWP", "OURGODGIVENRIGHTTOBEARARMS - Peds Carry Weapons" },
 		{ "WII_BUP", "BIGBANG - Blow Up All Cars" },
 
-		// Vehicles: the spawns, then the ones that change how a car drives.
+		// Vehicles: the ten spawns the original cheat words reach, then the ones
+		// that change how a car drives.
 		{ "WII_RHI", "PANZER - Rhino Tank" },
 		{ "WII_BLD", "TRAVELINSTYLE - Bloodring Banger" },
+		{ "WII_ROM", "THELASTRIDE - Romero's Hearse" },
+		{ "WII_LOV", "ROCKANDROLLCAR - Love Fist Limo" },
+		{ "WII_TRS", "RUBBISHCAR - Trashmaster" },
+		{ "WII_BLB", "GETTHEREQUICKLY - Bloodring Banger B" },
+		{ "WII_SBT", "GETTHEREFAST - Sabre Turbo" },
+		{ "WII_CAD", "BETTERTHANWALKING - Golf Caddy" },
+		{ "WII_HTA", "GETTHEREFASTINDEED - Hotring Racer A" },
+		{ "WII_HTB", "GETTHEREAMAZINGLYFAST - Hotring Racer B" },
 		{ "WII_CCB", "COMEFLYWITHME - Flying Cars" },
 		{ "WII_GRP", "GRIPISEVERYTHING - Better Handling" },
 		{ "WII_WCL", "SPIDERCAR - Cars Climb Walls" },

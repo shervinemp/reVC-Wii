@@ -501,10 +501,20 @@ WII_CHEAT_BUTTON(WiiCheat_WallClimbing,             (void)WallClimbingCheat())
 WII_CHEAT_BUTTON(WiiCheat_NoSeaBed,                 (void)NoSeaBedCheat())
 
 WII_CHEAT_BUTTON(WiiCheat_AllCarsHeli,              (void)AllCarsHeliCheat())
-// VehicleCheat takes a model rather than being a toggle, so it gets a button each.
-// MI_BLOODRA is the other model the original chain passes it.
+// The ten vehicles the original keyboard cheats spawn.  VehicleCheat takes a
+// model rather than being a toggle, so each gets a button of its own; the row
+// carries the cheat word the desktop build types for it (Pad.cpp's matcher),
+// so the menu and the keyboard do the same thing.
 WII_CHEAT_BUTTON(WiiCheat_Rhino,                    (void)VehicleCheat(MI_RHINO))
 WII_CHEAT_BUTTON(WiiCheat_Bloodra,                  (void)VehicleCheat(MI_BLOODRA))
+WII_CHEAT_BUTTON(WiiCheat_Romero,                   (void)VehicleCheat(MI_ROMERO))
+WII_CHEAT_BUTTON(WiiCheat_Lovefist,                 (void)VehicleCheat(MI_LOVEFIST))
+WII_CHEAT_BUTTON(WiiCheat_Trash,                    (void)VehicleCheat(MI_TRASH))
+WII_CHEAT_BUTTON(WiiCheat_Bloodrb,                  (void)VehicleCheat(MI_BLOODRB))
+WII_CHEAT_BUTTON(WiiCheat_Sabretur,                 (void)VehicleCheat(MI_SABRETUR))
+WII_CHEAT_BUTTON(WiiCheat_Caddy,                    (void)VehicleCheat(MI_CADDY))
+WII_CHEAT_BUTTON(WiiCheat_Hotrina,                  (void)VehicleCheat(MI_HOTRINA))
+WII_CHEAT_BUTTON(WiiCheat_Hotrinb,                  (void)VehicleCheat(MI_HOTRINB))
 WII_CHEAT_BUTTON(WiiCheat_ChittyChittyBangBang,     (void)ChittyChittyBangBangCheat())
 
 WII_CHEAT_BUTTON(WiiCheat_FastTime,                 (void)FastTimeCheat())
@@ -1053,6 +1063,14 @@ CMenuScreenCustom aScreens[] = {
 	{ "WII_CVH", MENUPAGE_CHEATS, nil, nil,
 		WII_CHEAT_ROW("WII_RHI", WiiCheat_Rhino)
 		WII_CHEAT_ROW("WII_BLD", WiiCheat_Bloodra)
+		WII_CHEAT_ROW("WII_ROM", WiiCheat_Romero)
+		WII_CHEAT_ROW("WII_LOV", WiiCheat_Lovefist)
+		WII_CHEAT_ROW("WII_TRS", WiiCheat_Trash)
+		WII_CHEAT_ROW("WII_BLB", WiiCheat_Bloodrb)
+		WII_CHEAT_ROW("WII_SBT", WiiCheat_Sabretur)
+		WII_CHEAT_ROW("WII_CAD", WiiCheat_Caddy)
+		WII_CHEAT_ROW("WII_HTA", WiiCheat_Hotrina)
+		WII_CHEAT_ROW("WII_HTB", WiiCheat_Hotrinb)
 		WII_CHEAT_ROW("WII_CCB", WiiCheat_ChittyChittyBangBang)
 		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
 		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
