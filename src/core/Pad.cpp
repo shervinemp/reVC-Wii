@@ -1796,12 +1796,14 @@ void CPad::UpdatePads(void)
 #endif
 
 #ifdef NINTENDO_WII
-	// Player 2.  Captured every frame whether or not a second player is in the
-	// game, because this capture is also how co-op finds out that a second
-	// controller has turned up: see WiiPadCapture.  With none connected the state
-	// simply stays clear.
-	CapturePad(PAD_COOP);
-	GetPad(PAD_COOP)->Update(PAD_COOP);
+	// The co-op slots.  Captured every frame whether or not a partner is in the
+	// game, because this capture is also how co-op finds out that a controller
+	// has turned up: see WiiPadCapture.  With none connected the state simply
+	// stays clear.
+	for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
+		CapturePad(coop);
+		GetPad(coop)->Update(coop);
+	}
 #endif
 
 	// Improve keyboard input latency part 2
@@ -2320,6 +2322,19 @@ int16 CPad::GetSteeringUpDown(void)
 	return 0;
 }
 
+// The pad slot a CPad is, or -1 if it is not one of the player pads.  The
+// Nunchuk lean is read from whichever pad is asking, and these getters have no
+// pad parameter to trust.
+static int
+PadSlotOf(CPad *pad)
+{
+	for(int slot = 0; slot < MAX_PADS; slot++){
+		if(pad == CPad::GetPad(slot))
+			return slot;
+	}
+	return -1;
+}
+
 int16 CPad::GetCarGunUpDown(void)
 {
 	if ( ArePlayerControlsDisabled() )
@@ -2334,8 +2349,8 @@ int16 CPad::GetCarGunUpDown(void)
 #ifdef NINTENDO_WII
 			// A Wiimote and Nunchuk have no right stick; the fire truck's hose
 			// elevation is the one use of this axis the lean can reach.
-			const int padID = (this == CPad::GetPad(PAD_COOP)) ? PAD_COOP : 0;
-			const s16 lean = WiiNunchukTiltPitch(padID);
+			const int padID = PadSlotOf(this);
+			const s16 lean = padID >= 0 ? WiiNunchukTiltPitch(padID) : 0;
 			if (lean != 0)
 				return lean;
 #endif
@@ -2370,8 +2385,8 @@ int16 CPad::GetCarGunLeftRight(void)
 			// A Wiimote and Nunchuk have no right stick.  In the two vehicles
 			// that steer with this axis the Nunchuk's lean stands in for it;
 			// everywhere else this is zero and the stick is the stick.
-			const int padID = (this == CPad::GetPad(PAD_COOP)) ? PAD_COOP : 0;
-			const s16 lean = WiiNunchukTiltSteering(padID);
+			const int padID = PadSlotOf(this);
+			const s16 lean = padID >= 0 ? WiiNunchukTiltSteering(padID) : 0;
 			if (lean != 0)
 				return lean;
 #endif

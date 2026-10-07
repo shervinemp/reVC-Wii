@@ -198,8 +198,28 @@ struct PadDevice
 	Kind kind;
 	int channel;
 };
-enum { PLAYER_ONE = 0, PLAYER_TWO = 1 };
-PadDevice s_devices[2];
+enum { PLAYER_ONE = 0, PLAYER_TWO, PLAYER_THREE, PLAYER_FOUR, NUM_PLAYERS };
+PadDevice s_devices[NUM_PLAYERS];
+
+// Which player a pad slot belongs to: pad 0 is player 1, and the co-op slots
+// follow in order -- PAD_COOP is the first partner, PAD_COOP2 the second.
+// -1 for anything else (PAD2 is the engine's debug pad and is nobody's).
+int
+playerForPad(int padID)
+{
+	if(padID == 0)
+		return PLAYER_ONE;
+	if(padID >= PAD_COOP && padID < MAX_PADS)
+		return PLAYER_TWO + (padID - PAD_COOP);
+	return -1;
+}
+
+// The inverse, for the places that walk the players.
+int
+padForPlayer(int player)
+{
+	return player == PLAYER_ONE ? 0 : PAD_COOP + (player - PLAYER_TWO);
+}
 
 // --- Nunchuk flick-down jump -------------------------------------------------
 // WiiPadScan measures the gesture and raises the player's pulse for exactly one
@@ -226,7 +246,7 @@ struct FlickDetector
 	bool  settling;       // deaf while a flick rings down
 	float settleT;
 };
-static FlickDetector s_flick[2];
+static FlickDetector s_flick[NUM_PLAYERS];
 static const float kFlickGravityFollow = 0.04f;  // slow baseline follow, per scan
 static const float kFlickFraction = 0.65f;       // a jolt must exceed ~65% of g: a decisive flick only
 static const float kFlickRearmFraction = 0.35f;  // "settled" below ~35% of g
@@ -560,7 +580,14 @@ playerInVehicle(void)
 CPlayerPed *
 padPlayer(int padID)
 {
-	return padID == PAD_COOP ? CCoop::GetPartner() : FindPlayerPed();
+	const int player = playerForPad(padID);
+	if(player == PLAYER_ONE)
+		return FindPlayerPed();
+	if(player == PLAYER_TWO)
+		return CCoop::GetPartner();
+	// Partners two and three arrive with the co-op layer's own four player
+	// loops (COOP-4-PLAN.md, stage 3).
+	return nil;
 }
 
 bool
@@ -704,7 +731,7 @@ captureWiimote(int padID, const WPADData &data, u32 expansion, CControllerState 
 	// two players one of them can be in a car while the other is not.
 	CPlayerPed *player = padPlayer(padID);
 	const bool inCar = player != nil && player->bInVehicle;
-	const bool flickPulse = s_flick[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE].pulse;
+	const bool flickPulse = s_flick[playerForPad(padID)].pulse;
 
 	const bool dpadLeft = (buttons & WPAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & WPAD_BUTTON_RIGHT) != 0;
@@ -1013,16 +1040,16 @@ steerCrosshair(float targetX, float targetY)
 		CCoop::ReportPointer(PLAYER_ONE, s_aimX, s_aimY);
 }
 
-// Player 2's reticle.  There is no camera for it to turn and no crosshair of
-// the engine's for it to be, so it is only ever this: where their remote is
+// Each partner's reticle.  There is no camera for it to turn and no crosshair
+// of the engine's for it to be, so it is only ever this: where their remote is
 // pointing, smoothed, handed to CCoop.
-float s_partnerAimX;
-float s_partnerAimY;
-bool s_partnerAimActive;
-float s_partnerAimLost;
+float s_partnerAimX[NUM_PLAYERS];
+float s_partnerAimY[NUM_PLAYERS];
+bool s_partnerAimActive[NUM_PLAYERS];
+float s_partnerAimLost[NUM_PLAYERS];
 
 void
-capturePartnerPointer(const WPADData &data, u32 expansion)
+capturePartnerPointer(int player, const WPADData &data, u32 expansion)
 {
 	const float width = (float)RsGlobal.maximumWidth;
 	const float height = (float)RsGlobal.maximumHeight;
@@ -1030,25 +1057,25 @@ capturePartnerPointer(const WPADData &data, u32 expansion)
 	// player aims with the right stick, which CCoop reads off the pad itself.
 	if(!WiiPointerAimEnabled || !CCoop::IsRunning() || FrontEndMenuManager.m_bMenuActive ||
 	   expansion == WPAD_EXP_CLASSIC || width <= 0.0f || height <= 0.0f){
-		s_partnerAimActive = false;
+		s_partnerAimActive[player] = false;
 		return;
 	}
 	if(!data.ir.valid){
 		// Off the sensor bar.  Say nothing, and after a moment forget where it
 		// was, so that coming back is a jump to the new place and not a glide
 		// across the screen from the old one.
-		s_partnerAimLost += s_pointerDt;
-		if(s_partnerAimLost > 0.25f)
-			s_partnerAimActive = false;
+		s_partnerAimLost[player] += s_pointerDt;
+		if(s_partnerAimLost[player] > 0.25f)
+			s_partnerAimActive[player] = false;
 		return;
 	}
-	s_partnerAimLost = 0.0f;
+	s_partnerAimLost[player] = 0.0f;
 	float x = data.ir.x/width;
 	float y = data.ir.y/height;
 	x = x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x);
 	y = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
-	smoothReticle(s_partnerAimX, s_partnerAimY, s_partnerAimActive, x, y);
-	CCoop::ReportPointer(PLAYER_TWO, s_partnerAimX, s_partnerAimY);
+	smoothReticle(s_partnerAimX[player], s_partnerAimY[player], s_partnerAimActive[player], x, y);
+	CCoop::ReportPointer(player, s_partnerAimX[player], s_partnerAimY[player]);
 }
 
 // A Wii Remote that is connected and reporting.
@@ -1065,6 +1092,12 @@ wiimoteReady(int channel, u32 &expansion)
 void
 resolveDevices(void)
 {
+	for(int player = 0; player < NUM_PLAYERS; player++){
+		s_devices[player].kind = PadDevice::NONE;
+		s_devices[player].channel = 0;
+	}
+
+	// Player 1 first: the GameCube pad in port 1, or the first Wii Remote.
 	if(s_connectedGameCubePads & 1){
 		s_devices[PLAYER_ONE].kind = PadDevice::GAMECUBE;
 		s_devices[PLAYER_ONE].channel = 0;
@@ -1073,28 +1106,29 @@ resolveDevices(void)
 		s_devices[PLAYER_ONE].channel = WPAD_CHAN_0;
 	}
 
-	// Player 2 is the first controller present that is not player 1's: any
-	// further GameCube pad, then any Wii Remote player 1 is not holding.  A
-	// remote only counts with something to walk with plugged into it -- the same
-	// rule the boot screen holds player 1 to -- which also means a second remote
-	// left on the table does not put a second player in the game.
-	s_devices[PLAYER_TWO].kind = PadDevice::NONE;
-	s_devices[PLAYER_TWO].channel = 0;
-	for(int port = 1; port < 4; port++){
+	// Then everyone else: the remaining GameCube pads in port order, then the
+	// Wii Remotes player 1 is not holding.  A remote only counts with something
+	// to walk with plugged into it -- the same rule the boot screen holds
+	// player 1 to -- which also means a remote left on the table does not put a
+	// player in the game.
+	int next = PLAYER_TWO;
+	for(int port = 1; port < 4 && next < NUM_PLAYERS; port++){
 		if(s_connectedGameCubePads & (1 << port)){
-			s_devices[PLAYER_TWO].kind = PadDevice::GAMECUBE;
-			s_devices[PLAYER_TWO].channel = port;
-			return;
+			s_devices[next].kind = PadDevice::GAMECUBE;
+			s_devices[next].channel = port;
+			next++;
 		}
 	}
-	const int first = s_devices[PLAYER_ONE].kind == PadDevice::GAMECUBE ? 0 : 1;
-	for(int channel = first; channel < WPAD_MAX_WIIMOTES; channel++){
+	for(int channel = 0; channel < WPAD_MAX_WIIMOTES && next < NUM_PLAYERS; channel++){
+		if(s_devices[PLAYER_ONE].kind == PadDevice::WIIMOTE &&
+		   channel == s_devices[PLAYER_ONE].channel)
+			continue;
 		u32 expansion = WPAD_EXP_NONE;
 		if(wiimoteReady(channel, expansion) &&
 		   (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)){
-			s_devices[PLAYER_TWO].kind = PadDevice::WIIMOTE;
-			s_devices[PLAYER_TWO].channel = channel;
-			return;
+			s_devices[next].kind = PadDevice::WIIMOTE;
+			s_devices[next].channel = channel;
+			next++;
 		}
 	}
 }
@@ -1307,9 +1341,10 @@ const float kNunchukLeanFull = 0.61f;	// about 35 degrees: hard over
 static s16
 NunchukLean(int padID, int axis)
 {
-	if(padID != 0 && padID != PAD_COOP)
+	const int player = playerForPad(padID);
+	if(player < 0)
 		return 0;
-	const PadDevice &device = s_devices[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE];
+	const PadDevice &device = s_devices[player];
 	if(device.kind != PadDevice::WIIMOTE)
 		return 0;
 	WPADData *data = WPAD_Data(device.channel);
@@ -1475,12 +1510,11 @@ WiiPadScan(void)
 	// pulse that captureWiimote folds into the pad state (JumpJustDown reads
 	// Square).  One detector per player, each reading its own player's remote: see
 	// updateFlick.
-	updateFlick(s_flick[PLAYER_ONE],
-		s_devices[PLAYER_ONE].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[PLAYER_ONE].channel) : nullptr,
-		FindPlayerPed());
-	updateFlick(s_flick[PLAYER_TWO],
-		s_devices[PLAYER_TWO].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[PLAYER_TWO].channel) : nullptr,
-		CCoop::GetPartner());
+	for(int player = 0; player < NUM_PLAYERS; player++){
+		updateFlick(s_flick[player],
+			s_devices[player].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[player].channel) : nullptr,
+			padPlayer(padForPlayer(player)));
+	}
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which
 	// is monotonic and always alive here, unlike CTimer, which stops with the
@@ -1497,17 +1531,18 @@ WiiPadScan(void)
 void
 WiiPadCapture(int padID, CControllerState &state)
 {
-	// Pad 0 is player 1 and PAD_COOP is couch co-op's partner.  Nothing is ever
-	// read into pad 1: it is the engine's debug pad, and a controller on it
-	// would be pressing debug hotkeys.  See PAD_COOP in Pad.h.
-	if(padID != 0 && padID != PAD_COOP)
+	// Pad 0 is player 1 and the PAD_COOP block is couch co-op's partners.
+	// Nothing is ever read into pad 1: it is the engine's debug pad, and a
+	// controller on it would be pressing debug hotkeys.  See PAD_COOP in Pad.h.
+	const int player = playerForPad(padID);
+	if(player < 0)
 		return;
-	const PadDevice &device = s_devices[padID == PAD_COOP ? PLAYER_TWO : PLAYER_ONE];
-	// This capture runs every frame whether or not anyone is playing player 2,
-	// and it is how co-op learns that somebody could: the partner joins when a
-	// controller turns up here and leaves when it has been gone a while.
-	if(padID == PAD_COOP)
-		CCoop::ReportPartnerPad(device.kind != PadDevice::NONE);
+	const PadDevice &device = s_devices[player];
+	// This capture runs every frame whether or not anyone is playing these
+	// slots, and it is how co-op learns that somebody could: a partner joins
+	// when a controller turns up here and leaves when it has been gone a while.
+	if(player != PLAYER_ONE)
+		CCoop::ReportPartnerPad(player - PLAYER_TWO, device.kind != PadDevice::NONE);
 	if(device.kind == PadDevice::NONE)
 		return;
 
@@ -1528,9 +1563,9 @@ WiiPadCapture(int padID, CControllerState &state)
 			else
 				captureWiimote(padID, *data, expansion, state, sticks, settings);
 			// Player 1's pointer is read in WiiPadCaptureMouse, because for them
-			// it is also the mouse.  The partner's is only ever a reticle.
-			if(padID == PAD_COOP)
-				capturePartnerPointer(*data, expansion);
+			// it is also the mouse.  A partner's is only ever a reticle.
+			if(player != PLAYER_ONE)
+				capturePartnerPointer(player, *data, expansion);
 		}
 	}
 
@@ -1698,42 +1733,49 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 void
 WiiPadUpdateRumble(void)
 {
-	CPad *pad = CPad::GetPad(0);
-
-	// Spending the duration down is this backend's job, the same way it is the
-	// XInput path's in Pad.cpp and glfw's in glfw.cpp.  Without it StartShake
-	// only ever raises ShakeDur and the motors would never stop.
-	if(pad->ShakeDur < CTimer::GetTimeStepInMilliseconds())
-		pad->ShakeDur = 0;
-	else
-		pad->ShakeDur -= CTimer::GetTimeStepInMilliseconds();
-	if(pad->ShakeDur == 0)
-		pad->ShakeFreq = 0;
-
-	// Both motors are on/off, with no speed to set, but the game asks for a strength
-	// (ShakeFreq, 0-255, which the XInput path scales straight onto the motor).  The
-	// way to get one out of an on/off motor is to pulse it: a running total of the
-	// duty cycle asked for decides, frame by frame, whether the motor is on, and the
-	// motor's own spin-up smooths the pulses into something weaker than full.  Never
-	// below kRumbleMinDuty, or a light event would be too faint to feel at all.
+	// One motor per player, driven by that player's own pad: the engine queues
+	// each shake on the pad it belongs to, and player 1's hands have no
+	// business buzzing for a partner's.  The phase is per player too, so one
+	// player's pulse pattern is not spent by another's.
 	constexpr float kRumbleMinDuty = 0.35f;
-	static float s_rumblePhase;
-	int running = 0;
-	if(pad->ShakeFreq != 0){
-		s_rumblePhase += kRumbleMinDuty + (1.0f - kRumbleMinDuty)*((float)pad->ShakeFreq/255.0f);
-		if(s_rumblePhase >= 1.0f){
-			s_rumblePhase -= 1.0f;
-			running = 1;
-		}
-	}else
-		s_rumblePhase = 0.0f;
-	// Player 1's own controller, and only that one.  Both used to be driven
-	// together; with a second player that is the partner's hands buzzing every
-	// time player 1 is shot.  (The partner gets none of their own yet: the
-	// engine sends every shake to pad 0.)
-	const bool onGameCube = s_devices[PLAYER_ONE].kind == PadDevice::GAMECUBE;
-	WPAD_Rumble(WPAD_CHAN_0, onGameCube ? 0 : running);
-	PAD_ControlMotor(PAD_CHAN0, (onGameCube && running) ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+	static float s_rumblePhase[NUM_PLAYERS];
+
+	for(int player = 0; player < NUM_PLAYERS; player++){
+		CPad *pad = CPad::GetPad(padForPlayer(player));
+
+		// Spending the duration down is this backend's job, the same way it is the
+		// XInput path's in Pad.cpp and glfw's in glfw.cpp.  Without it StartShake
+		// only ever raises ShakeDur and the motors would never stop.
+		if(pad->ShakeDur < CTimer::GetTimeStepInMilliseconds())
+			pad->ShakeDur = 0;
+		else
+			pad->ShakeDur -= CTimer::GetTimeStepInMilliseconds();
+		if(pad->ShakeDur == 0)
+			pad->ShakeFreq = 0;
+
+		// Both motors are on/off, with no speed to set, but the game asks for a strength
+		// (ShakeFreq, 0-255, which the XInput path scales straight onto the motor).  The
+		// way to get one out of an on/off motor is to pulse it: a running total of the
+		// duty cycle asked for decides, frame by frame, whether the motor is on, and the
+		// motor's own spin-up smooths the pulses into something weaker than full.  Never
+		// below kRumbleMinDuty, or a light event would be too faint to feel at all.
+		int running = 0;
+		if(pad->ShakeFreq != 0){
+			s_rumblePhase[player] += kRumbleMinDuty + (1.0f - kRumbleMinDuty)*((float)pad->ShakeFreq/255.0f);
+			if(s_rumblePhase[player] >= 1.0f){
+				s_rumblePhase[player] -= 1.0f;
+				running = 1;
+			}
+		}else
+			s_rumblePhase[player] = 0.0f;
+
+		const PadDevice &device = s_devices[player];
+		if(device.kind == PadDevice::NONE)
+			continue;
+		const bool onGameCube = device.kind == PadDevice::GAMECUBE;
+		WPAD_Rumble(device.channel, onGameCube ? 0 : running);
+		PAD_ControlMotor(device.channel, (onGameCube && running) ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+	}
 }
 
 WiiConnectedPad

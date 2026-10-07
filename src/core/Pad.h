@@ -152,6 +152,13 @@ enum
 	// ped it belongs to, which removes the conflict instead of chasing it through
 	// every one of those call sites.
 	PAD_COOP,
+	// Partners two and three of a four player session.  Same reasoning as
+	// PAD_COOP: slots of their own, read only by the player peds they belong
+	// to.  The device layer captures and drives them from the start; the co-op
+	// layer starts using them when it grows its own four player loops
+	// (COOP-4-PLAN.md, stage 3).
+	PAD_COOP2,
+	PAD_COOP3,
 
 	MAX_PADS
 };

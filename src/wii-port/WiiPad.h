@@ -44,8 +44,8 @@ void WiiPadScan(void);
 //
 // padID 0 is player 1: a GameCube pad in port 1 if there is one, which then
 // owns the slot and silences the first Wii Remote, and otherwise that remote.
-// padID PAD_COOP is couch co-op's second player: whichever controller is
-// present besides player 1's.  Capturing it is also what tells CCoop a second
+// The PAD_COOP block is couch co-op's partners: whichever controllers are
+// present besides player 1's.  Capturing them is also what tells CCoop a
 // controller exists, so it is done every frame.  Any other padID reads nothing.
 void WiiPadCapture(int padID, CControllerState &state);
 

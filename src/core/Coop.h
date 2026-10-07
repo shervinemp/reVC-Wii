@@ -58,10 +58,12 @@ public:
 	static void LimitSeparation(CPed *ped, CVector2D &moved);
 
 	// --- from the platform layer --------------------------------------------
-	// Whether a controller for player 2 is connected.  Reported every frame;
-	// the partner joins when one has been there a moment and drops out when it
-	// has been gone a while.
-	static void ReportPartnerPad(bool present);
+	// Whether a controller for a partner is connected.  Reported every frame;
+	// a partner joins when one has been there a moment and drops out when it
+	// has been gone a while.  The partner index is 0 for the first partner;
+	// only that one is listened to until the co-op layer grows its own four
+	// player loops (COOP-4-PLAN.md, stage 3).
+	static void ReportPartnerPad(int partner, bool present);
 	// Where a player's pointer is on the screen, as fractions of it.  Only
 	// reported while a pointer is actually driving that player's reticle.
 	static void ReportPointer(int player, float x, float y);
