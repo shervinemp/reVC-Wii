@@ -57,10 +57,13 @@ where each player is aiming. `CCoop::Update()` runs once a frame from
 `CGame::Process`, after the scripts and before the world.
 
 `CCamera::bWiiCoopCamera` is only the menu toggle — it says the players *want*
-co-op. `CCoop::IsRunning()` says whether co-op is in charge right now, and is
-also false during missions, cutscenes, replays and while player 1 is wasted or
-busted. Anything whose behaviour depends on co-op reads `IsRunning()` (or
-`UsesReticleAim()`, below), never the toggle.
+co-op. `CCoop::PairActive()` says whether the pair is actually in the game: the
+session is on and somebody has pressed a button on the partner's pad. The
+session itself is also off during missions, cutscenes, replays and while player
+1 is wasted or busted — and until the second player joins, the game is the
+ordinary one: the follow camera and its own crosshair, the scopes, the
+drive-bys. Anything outside the co-op layer whose behaviour depends on co-op
+reads `PairActive()` (or `UsesReticleAim()`, below), never the toggle.
 
 ### The second player
 

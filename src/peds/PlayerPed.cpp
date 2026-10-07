@@ -1329,8 +1329,8 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	else
 		m_wepAccuracy = 100;
 
-	// No scope in couch co-op.  The scope is a camera, there is one camera, and
-	// it is the one both players are looking through.
+	// No scope while the view is shared.  The scope is a camera, there is one
+	// camera, and it is the one both players are looking through.
 	//
 	// The weapons that are nothing without one -- the rocket launcher and the
 	// two rifles -- are fired there the way the scope itself fires them
@@ -1341,7 +1341,7 @@ CPlayerPed::ProcessPlayerWeapon(CPad *padUsed)
 	// would have Tommy throw a punch to launch a rocket.  CWeapon::Fire aims
 	// them like everything else in co-op.  The camera needs its viewfinder, and
 	// does nothing.
-	if (CCoop::IsRunning()) {
+	if (CCoop::PairActive()) {
 		eWeaponType weapon = GetWeapon()->m_eWeaponType;
 		if (weapon == WEAPONTYPE_ROCKETLAUNCHER || weapon == WEAPONTYPE_SNIPERRIFLE ||
 			weapon == WEAPONTYPE_LASERSCOPE || weapon == WEAPONTYPE_CAMERA) {
@@ -1900,9 +1900,9 @@ CPlayerPed::ProcessControl(void)
 	const bool coopAim = CCoop::UsesReticleAim();
 	const bool facesReticle = padUsed && CCoop::FacesAim(this, padUsed);
 
-	// (The click of a scoped weapon fired without its scope.  In couch co-op
-	// those weapons fire, so there is nothing to click about.)
-	if (padUsed && padUsed->WeaponJustDown() && !TheCamera.Using1stPersonWeaponMode() && !CCoop::IsRunning()) {
+	// (The click of a scoped weapon fired without its scope.  With the view
+	// shared those weapons fire, so there is nothing to click about.)
+	if (padUsed && padUsed->WeaponJustDown() && !TheCamera.Using1stPersonWeaponMode() && !CCoop::PairActive()) {
 		// ...Really?
 		eWeaponType playerWeapon = FindPlayerPed()->GetWeapon()->m_eWeaponType;
 		if (playerWeapon == WEAPONTYPE_SNIPERRIFLE || playerWeapon == WEAPONTYPE_LASERSCOPE) {

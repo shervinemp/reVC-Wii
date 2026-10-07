@@ -49,10 +49,14 @@ public:
 	// themselves once whatever asked for this is over.
 	static void Suspend(const char *why);
 
-	// Co-op is in charge this frame: the shared camera is wanted and a partner
-	// may be in the world.  False during missions, cutscenes and while player 1
-	// is down, whatever the menu toggle says.
-	static bool IsRunning(void) { return ms_bRunning; }
+	// Whether the second player is actually in it.  The session is on from the
+	// moment the menu row is set -- the pads are watched and the join is
+	// offered -- but until somebody presses a button on the partner's pad
+	// there is one player, and the game is the ordinary game: the follow
+	// camera and its own crosshair, the scopes, the drive-bys.  Everything
+	// that only exists because the view or the pair is shared asks this,
+	// never the menu toggle.
+	static bool PairActive(void);
 	// Player 2's ped, or nil when there is none in the world right now.
 	static CPlayerPed *GetPartner(void);
 	// 0 for player 1, 1 for the partner, -1 for anything else.

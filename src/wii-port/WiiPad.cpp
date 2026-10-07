@@ -1055,7 +1055,7 @@ capturePartnerPointer(int player, const WPADData &data, u32 expansion)
 	const float height = (float)RsGlobal.maximumHeight;
 	// A Classic Controller hangs off a remote that is lying on the sofa; its
 	// player aims with the right stick, which CCoop reads off the pad itself.
-	if(!WiiPointerAimEnabled || !CCoop::IsRunning() || FrontEndMenuManager.m_bMenuActive ||
+	if(!WiiPointerAimEnabled || !CCoop::PairActive() || FrontEndMenuManager.m_bMenuActive ||
 	   expansion == WPAD_EXP_CLASSIC || width <= 0.0f || height <= 0.0f){
 		s_partnerAimActive[player] = false;
 		return;
@@ -1261,9 +1261,10 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 	// nothing for a turn to accomplish.  outCrosshair* is set below either way;
 	// only the turn is dropped.
 	//
-	// CCoop::IsRunning(), not the menu toggle: the toggle stays on through a
-	// mission, where the camera is the ordinary one again and has to turn.
-	const bool reticleOnly = CCoop::IsRunning();
+	// CCoop::PairActive(), not the menu toggle: the toggle stays on through a
+	// mission and while the session waits for a second player, and in both the
+	// camera is the ordinary one, which does turn.
+	const bool reticleOnly = CCoop::PairActive();
 
 	const float pointerX = data.ir.x/width;
 	const float pointerY = data.ir.y/height;
@@ -1607,15 +1608,16 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	if(!aimWithPointer)
 		releaseCrosshair();
 
-	// How long the pointer has been off the sensor bar.  Out of co-op the reticle
-	// is carried along the screen edge for as long as that lasts, because the
-	// camera is still being turned by it.  In co-op nothing is being turned, and
-	// a reticle parked at the bottom of the screen for a player who has put the
-	// remote in their lap would keep that player's body facing down the screen
-	// -- so there it is carried only briefly, and then left for CCoop to retire.
+	// How long the pointer has been off the sensor bar.  Where the view is not
+	// shared the reticle is carried along the screen edge for as long as that
+	// lasts, because the camera is still being turned by it.  Where it is shared
+	// nothing is being turned, and a reticle parked at the bottom of the screen
+	// for a player who has put the remote in their lap would keep that player's
+	// body facing down the screen -- so there it is carried only briefly, and
+	// then left for CCoop to retire.
 	static float untrackedSeconds = 0.0f;
 	untrackedSeconds = tracked ? 0.0f : untrackedSeconds + s_pointerDt;
-	const bool carryReticle = !CCoop::IsRunning() || untrackedSeconds < 0.6f;
+	const bool carryReticle = !CCoop::PairActive() || untrackedSeconds < 0.6f;
 
 	if(FrontEndMenuManager.m_bMenuActive){
 		// A cursor, absolutely: aiming at an option has to put the cursor on that
@@ -1709,9 +1711,9 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		s_heldSeconds += s_pointerDt;
 		if(s_heldSeconds >= kPointerHoldSeconds){
 			stopPointerHold();
-			// (Not in co-op, where the middle of the screen is no resting place: it
-			// is roughly where the players are standing.)
-			if(aimWithPointer && !CCoop::IsRunning())
+			// (Not with the view shared, where the middle of the screen is no
+			// resting place: it is roughly where the players are standing.)
+			if(aimWithPointer && !CCoop::PairActive())
 				steerCrosshair(kAimDefaultX, kAimDefaultY);
 		}else if(aimWithPointer && carryReticle)
 			steerCrosshair(s_lostX, s_lostY);

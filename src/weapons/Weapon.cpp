@@ -228,11 +228,11 @@ CWeapon::Fire(CEntity *shooter, CVector *fireSource)
 			case WEAPONTYPE_LASERSCOPE:
 			{
 				// FireSniper is the scope: it fires along the camera and refuses to
-				// fire at all unless the camera is in a scope mode.  Couch co-op has
-				// no scope, so there the rifle is an instant-hit weapon like any
-				// other, with a very long reach -- which is also what a second
-				// player's would have been anyway, not being FindPlayerPed().
-				if (shooter == FindPlayerPed() && !CCoop::IsRunning())
+				// fire at all unless the camera is in a scope mode.  The shared
+				// view has no scope, so there the rifle is an instant-hit weapon
+				// like any other, with a very long reach -- which is also what a
+				// second player's would have been anyway, not being FindPlayerPed().
+				if (shooter == FindPlayerPed() && !CCoop::PairActive())
 					fired = FireSniper(shooter);
 				else
 					fired = FireInstantHit(shooter, source);
@@ -2208,11 +2208,11 @@ CWeapon::FireProjectile(CEntity *shooter, CVector *fireSource, float power)
 		source = *fireSource;
 		projectileType = WEAPONTYPE_ROCKET;
 
-		if ( CCoop::IsRunning() && IsAnyPlayerPed(shooter) )
+		if ( CCoop::PairActive() && IsAnyPlayerPed(shooter) )
 		{
-			// Couch co-op has no scope to fire this from (the branch below insists
-			// on one), so it goes where this player is aiming, or failing that the
-			// way they are facing.
+			// The shared view has no scope to fire this from (the branch below
+			// insists on one), so it goes where this player is aiming, or failing
+			// that the way they are facing.
 			CVector from, to;
 			CCoop::FindShotVector(shooter, 1.0f, *fireSource, from, to);
 			aimedAlong = to - from;

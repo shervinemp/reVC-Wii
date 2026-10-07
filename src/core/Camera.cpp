@@ -787,10 +787,10 @@ CCamera::CamControl(void)
 					boatTarget = true;
 
 				// Change user selected mode
-				// (Not while couch co-op is running, here or for the ped zoom below: the
-				// same button steps through the shared camera's framings there, and the
+				// (Not while the view is shared, here or for the ped zoom below: the
+				// same button steps through the shared camera's framings then, and the
 				// zoom the player chose for themselves should still be theirs afterwards.)
-				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
+				if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::PairActive() && !CReplay::IsPlayingBack() &&
 				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 				   !m_WideScreenOn){
 					CarZoomIndicator--;
@@ -798,7 +798,7 @@ CCamera::CamControl(void)
 					if(CarZoomIndicator == CAM_ZOOM_TOPDOWN)
 						CarZoomIndicator--;
 				}
-				if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
+				if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::PairActive() && !CReplay::IsPlayingBack() &&
 				   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 				   !m_WideScreenOn){
 					CarZoomIndicator++;
@@ -1036,7 +1036,7 @@ CCamera::CamControl(void)
 		// Ped target
 		else if(pTargetEntity->IsPed()){
 			// Change user selected mode
-			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
+			if(CPad::GetPad(0)->CycleCameraModeUpJustDown() && !CCoop::PairActive() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
@@ -1049,7 +1049,7 @@ CCamera::CamControl(void)
 #endif
 					PedZoomIndicator--;
 			}
-			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::IsRunning() && !CReplay::IsPlayingBack() &&
+			if(CPad::GetPad(0)->CycleCameraModeDownJustDown() && !CCoop::PairActive() && !CReplay::IsPlayingBack() &&
 			   (m_bLookingAtPlayer || WhoIsInControlOfTheCamera == CAMCONTROL_OBBE) &&
 			   !m_WideScreenOn && !m_bFailedCullZoneTestPreviously && !m_bFirstPersonBeingUsed){
 #ifdef GTA_PC_CONTROLS
@@ -1071,12 +1071,12 @@ CCamera::CamControl(void)
 			// Check 1st person mode
 			if((m_bLookingAtPlayer || m_bEnable1rstPersonCamCntrlsScript) && pTargetEntity->IsPed() &&
 			   (!m_WideScreenOn || m_bEnable1rstPersonCamCntrlsScript) && !Cams[0].Using3rdPersonMouseCam()
-			   // Not in couch co-op.  Looking around is the right stick, and
-			   // there the right stick aims; and what this does once it has
-			   // started -- take the controls away so the view can turn --
-			   // would be copied to the second player's pad and hold them
-			   // both still for as long as the first one kept looking.
-			   && !CCoop::IsRunning()
+			   // Not while the view is shared.  Looking around is the right
+			   // stick, and there the right stick aims; and what this does
+			   // once it has started -- take the controls away so the view can
+			   // turn -- would be copied to the second player's pad and hold
+			   // them both still for as long as the first one kept looking.
+			   && !CCoop::PairActive()
 #ifdef FREE_CAM
 			   && (!CCamera::bFreeCam || m_bEnable1rstPersonCamCntrlsScript)
 #endif
@@ -1506,7 +1506,7 @@ CCamera::CamControl(void)
 	// transition state stays consistent, and it yields to everything listed
 	// above CoopCameraReplaces for free, because those are simply modes it does
 	// not replace.  m_bLookingAtPlayer is what leaves scripted cameras alone.
-	if(m_bLookingAtPlayer && CCoop::IsRunning() && CoopCameraReplaces(ReqMode)){
+	if(m_bLookingAtPlayer && CCoop::PairActive() && CoopCameraReplaces(ReqMode)){
 		ReqMode = CCam::MODE_WII_COOP;
 		// No scope and no lock-on camera: there is one view, and it is shared.
 		if(PlayerWeaponMode.Mode != CCam::MODE_NONE)
@@ -1535,12 +1535,13 @@ CCamera::CamControl(void)
 	   ReqMode == CCam::MODE_SNIPER_RUNABOUT || ReqMode == CCam::MODE_ROCKETLAUNCHER_RUNABOUT ||
 	   ReqMode == CCam::MODE_1STPERSON_RUNABOUT || ReqMode == CCam::MODE_M16_1STPERSON_RUNABOUT ||
 	   ReqMode == CCam::MODE_FIGHT_CAM_RUNABOUT || ReqMode == CCam::MODE_HELICANNON_1STPERSON || ReqMode == CCam::MODE_CAMERA ||
-	   // Couch co-op as a whole, not only its own mode.  The cinematic camera
-	   // takes control of the view, and a view that is not looking at the
-	   // player is one co-op leaves alone: switched on while that camera was
-	   // already running, co-op would wait for it to finish, with the button
-	   // that changes the camera taken over for the framing.  It never would.
-	   CCoop::IsRunning() ||
+	   // The pair as a whole, not only the shared camera's own mode.  The
+	   // cinematic camera takes control of the view, and a view that is not
+	   // looking at the player is one co-op leaves alone: switched on while
+	   // that camera was already running, co-op would wait for it to finish,
+	   // with the button that changes the camera taken over for the framing.
+	   // It never would.
+	   CCoop::PairActive() ||
 	   WhoIsInControlOfTheCamera == CAMCONTROL_SCRIPT ||
 	   m_bJustCameOutOfGarage || m_bPlayerIsInGarage)
 		canUseObbeCam = false;

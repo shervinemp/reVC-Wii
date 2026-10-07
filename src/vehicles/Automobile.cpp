@@ -4032,7 +4032,7 @@ CAutomobile::DoDriveByShootings(void)
 	// plane are CAutomobiles too, but their seats are not car seats and the car
 	// drive-by animations do not belong in them -- the aim gate excludes them
 	// as well, so the two answers stay the same.
-	if (CCoop::IsRunning() && !IsRealHeli() && !IsRealPlane())
+	if (CCoop::PairActive() && !IsRealHeli() && !IsRealPlane())
 		for (int seat = 0; seat < m_nNumMaxPassengers; seat++)
 			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
 				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);

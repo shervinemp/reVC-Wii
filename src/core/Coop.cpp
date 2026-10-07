@@ -1227,6 +1227,12 @@ CCoop::GetPartner(void)
 	return CWorld::Players[PARTNER].m_pPed;
 }
 
+bool
+CCoop::PairActive(void)
+{
+	return ms_bRunning && s_joined;
+}
+
 int
 CCoop::GetPlayerIndex(const CEntity *entity)
 {
@@ -1345,7 +1351,7 @@ CCoop::Update(void)
 
 	// Player 1's camera button picks a framing, since the modes it normally
 	// steps through are not on offer while the view is shared.
-	if(leadPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
+	if(PairActive() && leadPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
 		static const char *const kFramingKeys[NUM_FRAMINGS] = { "WII_CF0", "WII_CF1", "WII_CF2", "WII_CF3" };
 		ms_nFraming = (ms_nFraming + 1) % NUM_FRAMINGS;
 		if(ms_nFraming < 0)
@@ -1359,7 +1365,7 @@ CCoop::Update(void)
 	// partner in their own car driving half blind whenever player 1 turns.  Only
 	// the partner has this button free: player 1's camera button is the framing
 	// cycle above.
-	if(partnerPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
+	if(PairActive() && partnerPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
 		ms_bPartnerFocus = !ms_bPartnerFocus;
 		COOP_LOG("WII coop: camera focus %s\n", ms_bPartnerFocus ? "player 2" : "player 1");
 		Tell(ms_bPartnerFocus ? "WII_CFP" : "WII_CFL");

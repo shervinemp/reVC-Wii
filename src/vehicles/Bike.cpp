@@ -2127,7 +2127,7 @@ CBike::DoDriveByShootings(void)
 
 	// Couch co-op: a player on the back shoots too, whether or not the rider has
 	// anything to shoot with.
-	if (CCoop::IsRunning() && pPassengers[0] != nil && pPassengers[0]->IsPlayer())
+	if (CCoop::PairActive() && pPassengers[0] != nil && pPassengers[0]->IsPlayer())
 		DoPillionDriveBy(this, (CPlayerPed*)pPassengers[0]);
 
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)

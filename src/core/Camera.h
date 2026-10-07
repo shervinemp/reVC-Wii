@@ -550,9 +550,10 @@ public:
 	static bool m_bUseMouse3rdPerson;
 	// Couch co-op's switch: the pause menu's COUCH CO-OP row, and nothing more
 	// than that.  It says the players WANT co-op.  Whether co-op is actually in
-	// charge this frame is CCoop::IsRunning(), which is also false during
-	// missions and cutscenes however this is set -- so read that, not this,
-	// anywhere the answer changes what the game does.
+	// charge this frame is CCoop::PairActive() -- running, with a second player
+	// joined -- which is also false during missions and cutscenes however this
+	// is set -- so read that, not this, anywhere the answer changes what the
+	// game does.
 	//
 	// int8 rather than bool because the menu persists it directly as a
 	// CCFOSelect, which writes through an int8*.

@@ -55,15 +55,16 @@ int nPreviousMode = -1;
 // the dispatch below, the zoom distances in Camera.cpp, who turns the turrets --
 // asks here rather than testing bFreeCam itself.
 //
-// Not the pointer's reason while couch co-op is running.  The shared camera stands
-// in for every car camera then, so Process_FollowCar_SA never runs -- and it is
-// what turns a Rhino's turret or a fire truck's hose to the view.  Answering yes
-// would leave both with neither the camera nor the pad to turn them.
+// Not the pointer's reason while the view is shared -- a partner in the session.
+// The shared camera stands in for every car camera then, so Process_FollowCar_SA
+// never runs -- and it is what turns a Rhino's turret or a fire truck's hose to
+// the view.  Answering yes would leave both with neither the camera nor the pad
+// to turn them.
 bool
 CCamera::UseFreeCarCam(void)
 {
 #ifdef NINTENDO_WII
-	if(WiiPointerAimInCar() && !CCoop::IsRunning())
+	if(WiiPointerAimInCar() && !CCoop::PairActive())
 		return true;
 #endif
 	return bFreeCam;

@@ -384,7 +384,7 @@ void CHud::Draw()
 		//
 		// Couch co-op draws its own marks instead, a set per player, and the
 		// single crosshair below is switched off for as long as it does.
-		const bool coopMarks = CCoop::IsRunning();
+		const bool coopMarks = CCoop::PairActive();
 		if (coopMarks)
 			DrawCoopMarks();
 		bool pointerMark = false;
