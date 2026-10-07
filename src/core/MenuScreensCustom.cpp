@@ -106,32 +106,34 @@
 #endif
 
 #ifdef AIM_ASSIST
-	// Centred like the rest of the Enhancements page, which is the only page it is
-	// on now.
-	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	// Left, like every other option row the game itself draws: its own sound and
+	// display pages put the name at the left edge and the value at the right.
+	#define AIM_ASSIST_TOGGLE MENUACTION_CFO_SELECT, "WII_AIM", { new CCFOSelect((int8*)&CAimAssist::bEnabled, "Controller", "AimAssist", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define AIM_ASSIST_TOGGLE
 #endif
 
 #ifdef NINTENDO_WII
-	// All of the port's own toggles are centred, because the only page they are on
-	// now is the Enhancements page, whose rows are all centred -- a page has one
-	// alignment, and mixing them leaves some rows sitting out on their own.
-	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
-	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_CENTER,
+	// Left, like every other option row the game itself draws -- its sound and
+	// display pages put the name at the left edge and the value at the right --
+	// and the pages these rows live on are option pages.  (They used to be
+	// centred under a layout of their own; beside the game's own pages the
+	// difference was plain.)
+	#define POINTER_AIM_TOGGLE MENUACTION_CFO_SELECT, "WII_IRA", { new CCFOSelect((int8*)&WiiPointerAimEnabled, "Controller", "PointerAim", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define POINTER_BOX_SELECT MENUACTION_CFO_SELECT, "WII_BOX", { new CCFOSelect((int8*)&WiiPointerBox, "Controller", "PointerBox", pointerBoxSizes, 3, false) }, 0, 0, MENUALIGN_LEFT,
 	// Couch co-op.  A CCFOSelect rather than a hand-rolled toggle so it persists
 	// through the CUSTOM_FRONTEND_OPTIONS loop in SaveINISettings on its own,
 	// with no new menu action to keep in step.  Works with one player present --
 	// the shared camera simply has one ped to frame -- which is the point: the
 	// mode is meant to be judged before a second remote exists.
-	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define COUCH_COOP_TOGGLE MENUACTION_CFO_SELECT, "WII_CC", { new CCFOSelect((int8*)&CCamera::bWiiCoopCamera, "Controller", "CouchCoop", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	// Vibration stays left: it is on the gamepad page, which is left-aligned.
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
-	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
-	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
-	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_CENTER,
-	#define FRIENDLY_FIRE_TOGGLE MENUACTION_CFO_SELECT, "WII_FF", { new CCFOSelect((int8*)&CoopFriendlyFire, "Wii", "FriendlyFire", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
-	#define SHARED_WANTED_TOGGLE MENUACTION_CFO_SELECT, "WII_SHW", { new CCFOSelect((int8*)&CoopSharedWanted, "Wii", "SharedWanted", off_on, 2, false) }, 0, 0, MENUALIGN_CENTER,
+	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
+	#define FRIENDLY_FIRE_TOGGLE MENUACTION_CFO_SELECT, "WII_FF", { new CCFOSelect((int8*)&CoopFriendlyFire, "Wii", "FriendlyFire", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
+	#define SHARED_WANTED_TOGGLE MENUACTION_CFO_SELECT, "WII_SHW", { new CCFOSelect((int8*)&CoopSharedWanted, "Wii", "SharedWanted", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 #else
 	#define POINTER_AIM_TOGGLE
 	#define POINTER_BOX_SELECT
@@ -1019,24 +1021,26 @@ CMenuScreenCustom aScreens[] = {
 	// Grouped rather than listed flat because a page holds NUM_MENUROWS (18) rows and
 	// there are 29 cheats, and because "All Cars Heli" next to "Kangaroo" helps nobody.
 	#define WII_CHEAT_ROW(label, fn) \
-		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_CFO_DYNAMIC, label, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_LEFT,
 
 	// MENUPAGE_CHEATS
 	//
-	// The layout is the one the game's own option pages use -- rows from 78 on a
-	// 25 pixel line -- rather than the defaults: a full page then ends where a
-	// native one does, instead of running down into the help box.  Every page
+	// The geometry is the game's own option pages': names against the left edge
+	// at x=40, rows from 78 on a 25 pixel line, and the bottom action centred --
+	// the same shape the sound and display pages draw.  (Rows from 78 on a 25
+	// line rather than the defaults, because a full page then ends where a
+	// native one does, instead of running down into the help box.)  Every page
 	// this port adds carries it.
 
 	// Parent is the Enhancements page, not MENUPAGE_NONE: GetPreviousPageOption
 	// resolves a NONE parent to the pause menu, so Back out of the cheats would
 	// have skipped straight past the page that opened it.
-	{ "WII_CHT", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({320, 78, 25, false}), nil,
-		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 0, MENUALIGN_CENTER,
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+	{ "WII_CHT", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
+		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_PLAYER
@@ -1046,7 +1050,7 @@ CMenuScreenCustom aScreens[] = {
 	// to sit wherever they were first added -- the pedestrians-carry-weapons code was
 	// under Player, and the handling change under nothing vehicle-shaped at all.
 
-	{ "WII_CPL", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
+	{ "WII_CPL", MENUPAGE_CHEATS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		WII_CHEAT_ROW("WII_HLT", WiiCheat_Health)
 		WII_CHEAT_ROW("WII_ARO", WiiCheat_Armour)
 		WII_CHEAT_ROW("WII_MON", WiiCheat_Money)
@@ -1055,12 +1059,12 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_KAN", WiiCheat_Kangaroo)
 		WII_CHEAT_ROW("WII_WUU", WiiCheat_WantedLevelUp)
 		WII_CHEAT_ROW("WII_WDN", WiiCheat_WantedLevelDown)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_WORLD
 
-	{ "WII_CWH", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
+	{ "WII_CWH", MENUPAGE_CHEATS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		WII_CHEAT_ROW("WII_SUN", WiiCheat_Sunny)
 		WII_CHEAT_ROW("WII_CLD", WiiCheat_Cloudy)
 		WII_CHEAT_ROW("WII_RAI", WiiCheat_Rainy)
@@ -1072,12 +1076,12 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_ATK", WiiCheat_EverybodyAttacksPlayer)
 		WII_CHEAT_ROW("WII_AWP", WiiCheat_WeaponsForAll)
 		WII_CHEAT_ROW("WII_BUP", WiiCheat_BlowUpCars)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_VEHICLES
 
-	{ "WII_CVH", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
+	{ "WII_CVH", MENUPAGE_CHEATS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		WII_CHEAT_ROW("WII_RHI", WiiCheat_Rhino)
 		WII_CHEAT_ROW("WII_BLD", WiiCheat_Bloodra)
 		WII_CHEAT_ROW("WII_ROM", WiiCheat_Romero)
@@ -1092,7 +1096,7 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
 		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
 		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_CHEATS_DEBUG
@@ -1101,12 +1105,12 @@ CMenuScreenCustom aScreens[] = {
 	// are here rather than hidden because on this port they are the only way to reach
 	// anything like a debug view at all.
 
-	{ "WII_CDB", MENUPAGE_CHEATS, new CCustomScreenLayout({320, 78, 25, false}), nil,
+	{ "WII_CDB", MENUPAGE_CHEATS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		WII_CHEAT_ROW("WII_WHL", WiiCheat_OnlyRenderWheels)
 		WII_CHEAT_ROW("WII_NSB", WiiCheat_NoSeaBed)
 		WII_CHEAT_ROW("WII_WLY", WiiCheat_RenderWaterLayers)
 		WII_CHEAT_ROW("WII_DBG", WiiCheat_SwitchDebugDisplay)
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	#undef WII_CHEAT_ROW
@@ -1118,15 +1122,15 @@ CMenuScreenCustom aScreens[] = {
 	// and the pause page.  Co-op is here rather than on the pause page itself because
 	// it is a mode, not a destination, and because it is one of these.
 
-	{ "WII_ENH", MENUPAGE_NONE, new CCustomScreenLayout({320, 78, 25, false}), nil,
-		MENUACTION_CHANGEMENU,	"WII_CHE",	{ nil, SAVESLOT_NONE, MENUPAGE_CHEATS }, 0, 0, MENUALIGN_CENTER,
-		MENUACTION_CHANGEMENU,	"WII_COP",	{ nil, SAVESLOT_NONE, MENUPAGE_COOP }, 0, 0, MENUALIGN_CENTER,
+	{ "WII_ENH", MENUPAGE_NONE, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
+		MENUACTION_CHANGEMENU,	"WII_CHE",	{ nil, SAVESLOT_NONE, MENUPAGE_CHEATS }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU,	"WII_COP",	{ nil, SAVESLOT_NONE, MENUPAGE_COOP }, 0, 0, MENUALIGN_LEFT,
 		DRIVEBY_WEAPONS_TOGGLE
 		AIM_ASSIST_TOGGLE
 		POINTER_AIM_TOGGLE
 		POINTER_BOX_SELECT
 		POINTER_CAR_TOGGLE
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
 	// MENUPAGE_COOP
@@ -1135,12 +1139,12 @@ CMenuScreenCustom aScreens[] = {
 	// Enhancements page: co-op is a mode with settings of its own, and
 	// Enhancements was becoming the place everything went.
 
-	{ "WII_COP", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({320, 78, 25, false}), nil,
+	{ "WII_COP", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		COUCH_COOP_TOGGLE
 		COOP_SKIN_SELECT
 		FRIENDLY_FIRE_TOGGLE
 		SHARED_WANTED_TOGGLE
-		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 0, 0, MENUALIGN_CENTER,
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 #endif
 
