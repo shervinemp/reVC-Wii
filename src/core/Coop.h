@@ -123,14 +123,13 @@ public:
 	// Which of the shared camera's framings is in use; see Cam.cpp.  Cycled by
 	// player 1's camera button, kept in the INI.
 	static int8 ms_nFraming;
-	// Which car the shared camera turns with when both players are driving.  False
-	// follows player 1's; true follows the partner's.  The camera can only follow
-	// one nose, and following player 1's leaves the partner driving half blind, so
-	// the partner's camera button hands it over -- the job San Andreas gives its
-	// Select button.  Still the first partner's button and a two car choice; the
-	// stage that gives the camera its four player shape (see COOP-4-PLAN.md)
-	// replaces it with the vehicle carrying the most players.
-	static bool ms_bPartnerFocus;
+	// Which car the shared camera turns with by default: the one carrying the
+	// most players, so a party travelling together turns as one, and ties go
+	// to the earliest player's.  A partner's camera button overrides it with
+	// their own car while they drive it -- the job San Andreas gives its
+	// Select button -- and this is that override, the player slot it points at
+	// or -1 for nobody's.  The camera can only follow one nose.
+	static int ms_nCameraFocus;
 	enum { NUM_FRAMINGS = 4 };
 
 private:

@@ -1211,39 +1211,43 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		TheCamera.pTargetEntity->RegisterReference(&TheCamera.pTargetEntity);
 	}
 
-	// Where to look: the midpoint of player 1 and the partner furthest from
-	// them, so the view stays on the line between the two it can see least far
-	// across and can never end up somewhere nobody is.  With one partner that
-	// is exactly the old framing; the stage that gives the camera its four
-	// player shape (see COOP-4-PLAN.md) replaces this with the centroid and
-	// the widest pair.
-	// Player 1 is wherever the game says the player is: in a car that is the
-	// car, and while they stand holding the remote for an RC one it is that.
-	CVehicle *leadVehicle = lead->bInVehicle ? lead->m_pMyVehicle : nil;
-	if(CWorld::Players[CWorld::PlayerInFocus].m_pRemoteVehicle != nil)
-		leadVehicle = CWorld::Players[CWorld::PlayerInFocus].m_pRemoteVehicle;
-	const CVector leadPos = leadVehicle != nil ? leadVehicle->GetPosition() : lead->GetPosition();
-	CVector target = leadPos;
-	CVector partnerPos = leadPos;
-	float separation = 0.0f;
-	CVehicle *partnerVehicle = nil;
-	CPlayerPed *partner = nil;
-	for(int i = 1; i < NUMPLAYERS; i++){
+	// Where to look: the centroid of the party, and how wide the party is
+	// spread: the widest pair, not just the furthest from player 1, since with
+	// three or four it is whichever two are at opposite ends that has to fit.
+	// With one partner both reduce to exactly the old framing.
+	// A player is wherever the game says they are: in a car that is the car,
+	// and while they stand holding the remote for an RC one it is that.
+	CVector pos[NUMPLAYERS];
+	bool present[NUMPLAYERS];
+	CVector target(0.0f, 0.0f, 0.0f);
+	int here = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *other = CWorld::Players[i].m_pPed;
-		if(other == nil)
+		present[i] = other != nil;
+		if(!present[i])
 			continue;
 		CVehicle *vehicle = other->bInVehicle ? other->m_pMyVehicle : nil;
-		const CVector pos = vehicle != nil ? vehicle->GetPosition() : other->GetPosition();
-		const float dist = (pos - leadPos).Magnitude();
-		if(partner == nil || dist > separation){
-			partner = other;
-			partnerVehicle = vehicle;
-			partnerPos = pos;
-			separation = dist;
-		}
+		if(CWorld::Players[i].m_pRemoteVehicle != nil)
+			vehicle = CWorld::Players[i].m_pRemoteVehicle;
+		pos[i] = vehicle != nil ? vehicle->GetPosition() : other->GetPosition();
+		target += pos[i];
+		here++;
 	}
-	if(partner != nil)
-		target = (leadPos + partnerPos)*0.5f;
+	if(here > 0)
+		target = target / (float)here;
+	const CVector leadPos = present[0] ? pos[0] : target;
+
+	float separation = 0.0f;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(!present[i])
+			continue;
+		for(int j = i + 1; j < NUMPLAYERS; j++)
+			if(present[j]){
+				const float dist = (pos[i] - pos[j]).Magnitude();
+				if(dist > separation)
+					separation = dist;
+			}
+	}
 
 	const float dt = CTimer::GetTimeStepInSeconds();
 
@@ -1257,17 +1261,38 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			s_coopYaw = lead->m_fRotationCur;
 	}
 	float speed = 0.0f;
-	// Which car the view turns with.  Player 1's by default; the partner's when
-	// player 1 is on foot, or when the partner has asked for it with their camera
-	// button because both are driving and following player 1's nose leaves them
-	// half blind.  A car the shared camera does not follow is a car driven blind.
+	// Which car the view turns with: the one carrying the most players, so a
+	// party travelling together turns as one, and ties go to the earliest
+	// player's.  A partner's camera button overrides that with their own car
+	// while they drive it; see CCoop::ms_nCameraFocus.  The camera can only
+	// follow one nose, and a car it does not follow is a car driven blind.
 	CVehicle *driveVehicle = nil;
-	if(CCoop::ms_bPartnerFocus && partnerVehicle != nil && partnerVehicle->pDriver == partner)
-		driveVehicle = partnerVehicle;
-	else if(leadVehicle != nil && leadVehicle->pDriver == lead)
-		driveVehicle = leadVehicle;
-	else if(partnerVehicle != nil && partnerVehicle->pDriver == partner)
-		driveVehicle = partnerVehicle;
+	if(CCoop::ms_nCameraFocus >= 0 && CCoop::ms_nCameraFocus < NUMPLAYERS){
+		CPlayerPed *who = CWorld::Players[CCoop::ms_nCameraFocus].m_pPed;
+		if(who != nil && who->bInVehicle && who->m_pMyVehicle != nil && who->m_pMyVehicle->pDriver == who)
+			driveVehicle = who->m_pMyVehicle;
+	}
+	if(driveVehicle == nil){
+		int bestCount = 0;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *driver = CWorld::Players[i].m_pPed;
+			if(driver == nil || !driver->bInVehicle || driver->m_pMyVehicle == nil)
+				continue;
+			CVehicle *vehicle = driver->m_pMyVehicle;
+			if(vehicle->pDriver != driver)
+				continue;
+			int count = 0;
+			for(int j = 0; j < NUMPLAYERS; j++){
+				CPlayerPed *other = CWorld::Players[j].m_pPed;
+				if(other != nil && other->bInVehicle && other->m_pMyVehicle == vehicle)
+					count++;
+			}
+			if(count > bestCount){
+				bestCount = count;
+				driveVehicle = vehicle;
+			}
+		}
+	}
 	// A mode where the cars spin -- the derby -- keeps the view still rather
 	// than turning with a nose; see CCoopModes::SteadyView.
 	if(CCoopModes::SteadyView())
@@ -1349,22 +1374,25 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// players, it comes in along its own line to just this side of -- so the
 	// angle still does not change, and indoors it ends up under the ceiling.
 	//
-	// The line that is tested runs back from player 1 and the framed partner,
-	// not from the point the view is centred on.  That point is an average and
-	// nothing stands on it: between two players on a staircase it is inside
-	// the stairs, and behind one who is climbing it is under the floor.  The
-	// line test hits surfaces from behind as well as in front, so from in
-	// there the first thing it meets is whatever it started underneath, and
-	// the camera came all the way in for nothing.  A player is always standing
-	// in the open.
+	// The line that is tested runs back from the players themselves, not from
+	// the point the view is centred on.  That point is an average and nothing
+	// stands on it: between two players on a staircase it is inside the
+	// stairs, and behind one who is climbing it is under the floor.  The line
+	// test hits surfaces from behind as well as in front, so from in there the
+	// first thing it meets is whatever it started underneath, and the camera
+	// came all the way in for nothing.  A player is always standing in the
+	// open.
 	//
-	// With two answers, the roomier.  The camera cannot be in under one
-	// player's ceiling and still show the other one down the street, and a
-	// view of one of them is better than a view of neither.
+	// The roomiest of the per-player answers.  The camera cannot be in under
+	// one player's ceiling and still show the others, and a view of one of
+	// them is better than a view of none.  A player standing on top of player
+	// 1 answers the same as player 1 and is skipped, the prune the two-player
+	// camera did.
 	const CVector reach = view*-s_coopDistance;
 	float room = CoopRoomBehind(leadPos, reach);
-	if(partner != nil && separation > kCoopSeparateClip)
-		room = Max(room, CoopRoomBehind(partnerPos, reach));
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(present[i] && (pos[i] - leadPos).Magnitude() > kCoopSeparateClip)
+			room = Max(room, CoopRoomBehind(pos[i], reach));
 	const float clear = Min(1.0f, Max(room, kCoopMinDistance)/Max(s_coopDistance, kCoopMinDistance));
 	if(clear < s_coopClip)
 		s_coopClip = clear;
@@ -1394,7 +1422,7 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		const bool reticle = CCoop::GetReticle(0, reticleX, reticleY, engaged);
 		WiiTraceReport("WII coop: camera players=%d sep=%.1f framing=%d dist=%.1f clear=%.2f yaw=%.0f"
 		               " target=%.0f,%.0f,%.0f reticle=%c%.2f,%.2f frame=%ums\n",
-		               partner != nil ? 2 : 1, separation, framingIndex, s_coopDistance, s_coopClip,
+		               here, separation, framingIndex, s_coopDistance, s_coopClip,
 		               RADTODEG(s_coopYaw), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
 		               reticle ? '+' : '-', reticleX, reticleY,
 		               (unsigned)CTimer::GetTimeStepInMilliseconds());

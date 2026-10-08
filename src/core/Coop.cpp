@@ -46,7 +46,7 @@
 
 bool CCoop::ms_bRunning;
 int8 CCoop::ms_nFraming = 1;
-bool CCoop::ms_bPartnerFocus = false;
+int CCoop::ms_nCameraFocus = -1;
 
 // The co-op options that are not pad settings, set from the co-op page and
 // saved in the INI under "Wii".  Friendly fire is on by default -- the game as
@@ -1572,7 +1572,7 @@ CCoop::Update(void)
 		s_aim[LEAD].active = false;
 		s_aim[LEAD].drawReticle = false;
 		// A focus a partner chose for a drive does not outlive the session.
-		ms_bPartnerFocus = false;
+		ms_nCameraFocus = -1;
 		return;
 	}
 
@@ -1598,16 +1598,22 @@ CCoop::Update(void)
 		Tell(kFramingKeys[ms_nFraming]);
 	}
 
-	// The first partner's camera button hands the shared camera's turn to
-	// their car.  The camera can only follow one nose, and following player
-	// 1's leaves a partner in their own car driving half blind whenever
-	// player 1 turns.  Only a partner has this button free: player 1's camera
-	// button is the framing cycle above.
-	CPad *focusPad = CPad::GetPad(PAD_COOP);
-	if(PairActive() && focusPad->CycleCameraModeUpJustDown() && !TheCamera.m_WideScreenOn){
-		ms_bPartnerFocus = !ms_bPartnerFocus;
-		COOP_LOG("WII coop: camera focus %s\n", ms_bPartnerFocus ? "player 2" : "player 1");
-		Tell(ms_bPartnerFocus ? "WII_CFP" : "WII_CFL");
+	// A partner's camera button hands the shared camera's turn to their own
+	// car: the camera can only follow one nose, and by default it follows the
+	// car carrying the most players, so a partner driving their own car asks
+	// for it with this.  Pressing it again gives the view back to the party.
+	// Only partners have this button free: player 1's camera button is the
+	// framing cycle above.
+	if(PairActive() && !TheCamera.m_WideScreenOn){
+		for(int partner = 0; partner < kNumPartners; partner++){
+			CPad *pad = CPad::GetPad(PAD_COOP + partner);
+			if(!pad->CycleCameraModeUpJustDown())
+				continue;
+			const int player = partner + 1;
+			ms_nCameraFocus = (ms_nCameraFocus == player) ? -1 : player;
+			COOP_LOG("WII coop: camera focus %d\n", ms_nCameraFocus);
+			Tell(ms_nCameraFocus >= 0 ? "WII_CFY" : "WII_CFA");
+		}
 	}
 
 	// A script moving player 1 somewhere else -- into a building, to a safe
@@ -1632,12 +1638,11 @@ CCoop::Update(void)
 		if(padGone[player]){
 			s_joined[partner] = false;
 			s_joinTold[partner] = false;
-			// The camera focus was the first partner's choice for their drive.
-			// Their pad is gone, so it goes with them: a partner who joins
-			// later gets player 1's car, not a camera that prefers someone
-			// else's.
-			if(partner == 0)
-				ms_bPartnerFocus = false;
+			// A camera focus was that partner's choice for their drive.  Their
+			// pad is gone, so it goes with them: a partner who joins later
+			// gets the party's car, not a camera that prefers someone else's.
+			if(ms_nCameraFocus == player)
+				ms_nCameraFocus = -1;
 		}else if(padPresent[player] && !s_joined[partner]){
 			const CControllerState &held = pad->NewState;
 			if(held.Cross || held.Circle || held.Square || held.Triangle ||
