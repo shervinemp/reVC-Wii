@@ -30,6 +30,7 @@
 #include "WiiPointerAim.h"
 #endif
 #include "Coop.h"
+#include "CoopModes.h"
 #include "PlayerPed.h"
 #include "WeaponInfo.h"
 
@@ -336,6 +337,10 @@ DrawCoopMarks(void)
 			engaged ? CRGBA(255, 70, 70, 255) : kCoopColours[i],
 			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
 	}
+
+	// The dance-off's prompts, when a round is on; the font is left as the
+	// rest of the HUD expects it.
+	CCoopModes::DrawHud();
 
 	// DrawRect, under the pips, leaves depth testing on and, for an opaque colour,
 	// vertex alpha off.  Hand the rest of the HUD the same state the single-player

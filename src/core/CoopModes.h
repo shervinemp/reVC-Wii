@@ -49,6 +49,15 @@ class CEntity;
 // laps take the pot.  A wrecked toy is replaced back at the middle with the
 // laps kept, and the driver inside is not drawn, because a normal-sized ped in
 // a toy is a normal-sized ped through its roof.
+//
+// The fifth is the dance-off.  The party on foot in a knot and every one of
+// them ducking together: sixty seconds on a spot, a beat that climbs from 700
+// milliseconds to 420, and a prompt each -- JUMP, DUCK or the 2 button, drawn
+// in the player's own colour at the bottom of the screen.  Hit the prompt
+// before the next beat or the combo drops.  Every hit pays and the best score
+// takes the pot.  The prompts are real actions, so the dancing is the party's
+// own bodies: the game's own dance loops are script data this side of the
+// engine cannot name.
 class CCoopModes
 {
 public:
@@ -67,4 +76,8 @@ public:
 	// Whether a mode is running that wants the camera to hold still rather
 	// than turn with a car's nose: the derby and the toy race.
 	static bool SteadyView(void);
+
+	// The minigames' screen marks, called by the HUD with the other co-op
+	// ones: the dance prompts, when a round is on.
+	static void DrawHud(void);
 };

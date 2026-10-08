@@ -199,6 +199,61 @@ struct RcState
 };
 RcState s_rc;
 
+// --- the dance-off's numbers -------------------------------------------------
+
+const float kDanceGatherRange = 12.0f;	// the knot that arms it
+const float kDanceFloor = 6.0f;		// the stage ring
+const float kDanceLeaveRange = 8.0f;	// further out than this and you are out of it
+const uint32 kDanceRoundMs = 60000;
+const uint32 kDanceGestureWindowMs = 1500;	// everyone ducks together
+const uint32 kDanceRearmMs = 10000;
+const uint32 kDanceLingerMs = 4000;
+const uint32 kDanceBeatSlowMs = 700;	// the tempo climbs...
+const uint32 kDanceBeatFastMs = 420;	// ...to here by the time the round ends
+const int kDanceHitPay = 10;
+const int kDanceWinPot = 200;
+
+enum eDancePrompt
+{
+	DANCE_JUMP,
+	DANCE_DUCK,
+	DANCE_TWO,
+	DANCE_PROMPTS
+};
+
+// The dance-off: the party bobbing on a spot to a beat that keeps climbing.
+// The prompts are real actions -- jump, duck, the 2 button -- so the dancing
+// is the party's own bodies; the game's own dance loops are script data this
+// side of the engine cannot name.
+struct DanceState
+{
+	bool active;
+	bool finished;
+	uint32 startAt;
+	uint32 beatAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	uint32 lastDuck[NUMPLAYERS];
+	CVector centre;
+	int prompt[NUMPLAYERS];
+	bool promptHit[NUMPLAYERS];
+	uint32 hitFlash[NUMPLAYERS];
+	uint32 missFlash[NUMPLAYERS];
+	int score[NUMPLAYERS];
+	int combo[NUMPLAYERS];
+	bool triangleHeld[NUMPLAYERS];
+};
+DanceState s_dance;
+
+// One world mode at a time: every one of these arms from something the party
+// does in the world, and two at once would be two modes fighting over the same
+// players.
+bool
+ModeActive(void)
+{
+	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active;
+}
+
 // Where a player is for these purposes: their car while they are in one, so a
 // crew chasing in cars is measured car to car.
 CVector
@@ -609,6 +664,8 @@ TryStartShift(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
+	if(ModeActive())
+		return;
 	// The law's view of the party: nobody starts a shift with a record.
 	CPlayerPed *lead = FindPlayerPed();
 	if(lead == nil || lead->m_pWanted == nil || lead->m_pWanted->GetWantedLevel() > 0)
@@ -852,6 +909,8 @@ void
 TryStartRun(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(ModeActive())
 		return;
 	if(now < s_run.rearmAt)
 		return;
@@ -1154,6 +1213,8 @@ TryStartDerby(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
+	if(ModeActive())
+		return;
 	if(now < s_derby.rearmAt)
 		return;
 
@@ -1449,6 +1510,8 @@ TryStartRc(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
+	if(ModeActive())
+		return;
 	if(now < s_rc.rearmAt)
 		return;
 
@@ -1627,6 +1690,209 @@ UpdateRc(uint32 now)
 	RegisterRcCoronas();
 }
 
+// --- the dance-off -----------------------------------------------------------
+
+uint32
+DanceBeatInterval(uint32 now)
+{
+	float progress = (float)(now - s_dance.startAt) / (float)kDanceRoundMs;
+	progress = Clamp(progress, 0.0f, 1.0f);
+	return (uint32)(kDanceBeatSlowMs + (kDanceBeatFastMs - kDanceBeatSlowMs)*progress);
+}
+
+// The stage: a ring in the four players' colours, the same colours the
+// prompts come up in.
+void
+RegisterDanceCoronas(void)
+{
+	const CVector offsets[4] = {
+		CVector(kDanceFloor, 0.0f, 0.0f), CVector(0.0f, kDanceFloor, 0.0f),
+		CVector(-kDanceFloor, 0.0f, 0.0f), CVector(0.0f, -kDanceFloor, 0.0f)
+	};
+	for(int i = 0; i < 4; i++){
+		CVector pos = s_dance.centre + offsets[i];
+		pos.z += 1.0f;
+		CCoronas::RegisterCorona((uintptr)&s_dance + i,
+			kCoopColours[i].r, kCoopColours[i].g, kCoopColours[i].b, 255,
+			pos, 3.5f, 150.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	}
+}
+
+void
+EndDance(uint32 now, const char *why)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_dance.prompt[i] = -1;
+		s_dance.promptHit[i] = false;
+	}
+	s_dance.active = false;
+	s_dance.finished = false;
+	s_dance.rearmAt = now + kDanceRearmMs;
+	COOP_LOG("WII coop: dance-off off (%s)\n", why);
+}
+
+void
+FinishDance(uint32 now)
+{
+	int totalHits = 0;
+	int best = -1;
+	int bestScore = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		totalHits += s_dance.score[i];
+		if(s_dance.score[i] > bestScore){
+			bestScore = s_dance.score[i];
+			best = i;
+		}
+	}
+	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceHitPay*totalHits;
+	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
+	if(best >= 0){
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceWinPot;
+		COOP_LOG("WII coop: dance-off to player %d\n", best + 1);
+	}
+	s_dance.finished = true;
+	s_dance.finishAt = now + kDanceLingerMs;
+}
+
+void
+StartDance(uint32 now, const CVector &centre)
+{
+	s_dance.active = true;
+	s_dance.finished = false;
+	s_dance.startAt = now;
+	s_dance.beatAt = now + kDanceBeatSlowMs;
+	s_dance.centre = centre;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_dance.prompt[i] = -1;
+		s_dance.promptHit[i] = false;
+		s_dance.hitFlash[i] = 0;
+		s_dance.missFlash[i] = 0;
+		s_dance.score[i] = 0;
+		s_dance.combo[i] = 0;
+	}
+	COOP_LOG("WII coop: dance-off on\n");
+	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
+		CHud::SetHelpMessage(TheText.Get("WII_CSF"), true);
+}
+
+void
+TryStartDance(uint32 now)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(ModeActive())
+		return;
+	if(now < s_dance.rearmAt)
+		return;
+
+	// The party on foot, in a knot, and every one of them ducking together:
+	// the whole floor gets down, so the whole floor starts it.
+	CVector sum(0.0f, 0.0f, 0.0f);
+	int count = 0;
+	int ducked = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->bInVehicle)
+			return;
+		sum += ped->GetPosition();
+		count++;
+		if(GetPadFromPlayer(ped)->DuckJustDown())
+			s_dance.lastDuck[i] = now;
+		if(now - s_dance.lastDuck[i] <= kDanceGestureWindowMs)
+			ducked++;
+	}
+	if(count < 2 || ducked < count)
+		return;
+	const CVector centre = sum / (float)count;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && (ped->GetPosition() - centre).Magnitude2D() > kDanceGatherRange)
+			return;
+	}
+	StartDance(now, centre);
+}
+
+void
+UpdateDance(uint32 now)
+{
+	if(!s_dance.active){
+		TryStartDance(now);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndDance(now, "session");
+		return;
+	}
+	if(s_dance.finished){
+		if(now >= s_dance.finishAt)
+			EndDance(now, "over");
+		return;
+	}
+	if(now - s_dance.startAt >= kDanceRoundMs){
+		FinishDance(now);
+		return;
+	}
+
+	// On the floor: on foot, near the middle.
+	bool onFloor[NUMPLAYERS];
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		onFloor[i] = ped != nil && !ped->bInVehicle &&
+			(ped->GetPosition() - s_dance.centre).Magnitude2D() <= kDanceLeaveRange;
+	}
+
+	// The beat: whatever was not hit is a miss, then the next prompts appear.
+	if(now >= s_dance.beatAt){
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(s_dance.prompt[i] >= 0){
+				if(!s_dance.promptHit[i]){
+					s_dance.combo[i] = 0;
+					s_dance.missFlash[i] = now;
+				}
+				s_dance.prompt[i] = -1;
+			}
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(onFloor[i]){
+				s_dance.prompt[i] = CGeneral::GetRandomNumberInRange(0, DANCE_PROMPTS);
+				s_dance.promptHit[i] = false;
+			}
+		s_dance.beatAt = now + DanceBeatInterval(now);
+	}
+
+	// The reads.  Jump and duck are the pad's own pulses; the 2 button is a
+	// held state here, so its edge is tracked by hand.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CPad *pad = GetPadFromPlayer(ped);
+		const bool triangle = pad->NewState.Triangle != 0;
+		const bool triangleDown = triangle && !s_dance.triangleHeld[i];
+		s_dance.triangleHeld[i] = triangle;
+
+		if(!onFloor[i] || s_dance.prompt[i] < 0 || s_dance.promptHit[i])
+			continue;
+		bool hit = false;
+		switch(s_dance.prompt[i]){
+		case DANCE_JUMP: hit = pad->JumpJustDown(); break;
+		case DANCE_DUCK: hit = pad->DuckJustDown(); break;
+		default: hit = triangleDown; break;
+		}
+		if(hit){
+			s_dance.promptHit[i] = true;
+			s_dance.score[i]++;
+			s_dance.combo[i]++;
+			s_dance.hitFlash[i] = now;
+		}
+	}
+
+	RegisterDanceCoronas();
+}
+
 } // namespace
 
 void
@@ -1663,6 +1929,10 @@ CCoopModes::Init(void)
 	}
 	memset(&s_rc, 0, sizeof(s_rc));
 	s_rc.winner = -1;
+
+	memset(&s_dance, 0, sizeof(s_dance));
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_dance.prompt[i] = -1;
 }
 
 void
@@ -1674,6 +1944,7 @@ CCoopModes::Update(void)
 	UpdateRun(now);
 	UpdateDerby(now);
 	UpdateRc(now);
+	UpdateDance(now);
 
 	// A resolved case lets go of its suspect on its own clock, shift or no
 	// shift: the wreck and the body linger a moment before the world takes
@@ -1739,4 +2010,50 @@ CCoopModes::SteadyView(void)
 	// car is a twitchy little thing that would whip the view around.  See
 	// CCam::Process_WiiCoop.
 	return s_derby.active || s_rc.active;
+}
+
+void
+CCoopModes::DrawHud(void)
+{
+	if(!s_dance.active || s_dance.finished)
+		return;
+
+	static const char *promptNames[DANCE_PROMPTS] = { "JUMP", "DUCK", "2" };
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	for(int i = 0; i < NUMPLAYERS; i++){
+		const bool missed = now - s_dance.missFlash[i] < 250;
+		if(s_dance.prompt[i] < 0 && !missed)
+			continue;
+		const float cx = SCREEN_WIDTH*(0.5f + (i - 1.5f)*0.15f);
+		const float cy = SCREEN_HEIGHT*0.84f;
+		const float hw = SCREEN_SCALE_X(30.0f);
+		const float hh = SCREEN_SCALE_Y(10.0f);
+
+		// A miss rings the slot red until the next prompt settles in.
+		const CRGBA backdrop = missed ? CRGBA(170, 40, 40, 255) : CRGBA(0, 0, 0, 255);
+		CSprite2d::DrawRect(CRect(cx - hw - 2.0f, cy - hh - 2.0f, cx + hw + 2.0f, cy + hh + 2.0f), backdrop);
+		if(s_dance.prompt[i] < 0)
+			continue;
+
+		CRGBA fill = kCoopColours[i];
+		if(now - s_dance.hitFlash[i] < 250)
+			fill = CRGBA(255, 255, 255, 255);
+		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx + hw, cy + hh), fill);
+
+		wchar text[16];
+		AsciiToUnicode(promptNames[s_dance.prompt[i]], text);
+		CFont::SetPropOff();
+		CFont::SetBackgroundOff();
+		CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(1.0f));
+		CFont::SetJustifyOff();
+		CFont::SetCentreOn();
+		CFont::SetCentreSize(9999.0f);
+		CFont::SetFontStyle(FONT_STANDARD);
+		CFont::SetDropShadowPosition(1);
+		CFont::SetDropColor(CRGBA(0, 0, 0, 255));
+		CFont::SetColor(CRGBA(255, 255, 255, 255));
+		CFont::PrintString(cx, cy - SCREEN_SCALE_Y(4.0f), text);
+		CFont::SetCentreOff();
+	}
 }
