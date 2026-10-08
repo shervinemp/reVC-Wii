@@ -35,6 +35,13 @@ class CEntity;
 // a cop at the wheel, chasing on the same drive-to-coords machinery.  Deliver
 // all three for the cache -- an Uzi into the party's arsenal.  A boat lost,
 // wrecked, or left empty for a moment is a run over.
+//
+// The third is the Bloodring derby.  Two or more players parked in a knot --
+// any open ground will do; the ring is drawn around them -- and a honk starts
+// a countdown.  Last car running takes the round, first to two rounds takes
+// the match.  Weapons are off for the duration, a loaner Bloodring Banger
+// appears for anyone who needs one, and the camera holds still: a derby is all
+// spinning cars, and a view that turns with one of them turns with all.
 class CCoopModes
 {
 public:
@@ -49,4 +56,8 @@ public:
 	// case.  Called from CEventList::RegisterEvent for events a player
 	// caused.
 	static bool OnDuty(CEntity *criminal, CEntity *victim, bool gunfire);
+
+	// Whether a mode is running that wants the camera to hold still rather
+	// than turn with a car's nose: the derby, where every car is spinning.
+	static bool SteadyView(void);
 };

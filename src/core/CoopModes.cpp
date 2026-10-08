@@ -125,6 +125,41 @@ struct RunState
 };
 RunState s_run;
 
+// --- the Bloodring derby's numbers -------------------------------------------
+
+const float kDerbyGatherRange = 12.0f;	// parked this close to arm it
+const float kDerbyRadius = 14.0f;	// the ring itself
+const float kDerbyJoinRange = 24.0f;	// cars this close to the middle at the bell are in
+const uint32 kDerbyCountdownMs = 3000;
+const uint32 kDerbyOutGraceMs = 3000;	// outside the ring this long = out
+const uint32 kDerbyFootGraceMs = 5000;	// out of the car this long = out
+const uint32 kDerbyIntermissionMs = 6000;
+const uint32 kDerbyRoundCapMs = 180000;	// a round that will not end
+const uint32 kDerbyRearmMs = 10000;
+const int kDerbyWinsNeeded = 2;
+
+// The derby: a ring drawn wherever the party parked, the running order, and
+// the cars the mod provided for anyone who needed one.
+struct DerbyState
+{
+	bool active;
+	bool counting;
+	bool finished;
+	uint32 countdownAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	CVector centre;
+	int round;
+	uint32 roundStartAt;
+	int roundWins[NUMPLAYERS];
+	bool running[NUMPLAYERS];
+	uint32 outSince[NUMPLAYERS];
+	uint32 footSince[NUMPLAYERS];
+	int matchWinner;
+	CVehicle *loaner[NUMPLAYERS];
+};
+DerbyState s_derby;
+
 // Where a player is for these purposes: their car while they are in one, so a
 // crew chasing in cars is measured car to car.
 CVector
@@ -913,6 +948,316 @@ UpdateRun(uint32 now)
 	RegisterDropCorona();
 }
 
+// --- the Bloodring derby -----------------------------------------------------
+
+// The derby is ramming only: the fire button reads as off for the duration,
+// the same way the one-operator rule keeps a driver from firing under a
+// gunner.  The button is the one CPad::GetWeapon reads for this pad's control
+// mode, and nothing else -- on the Wii's own layout that is B, while A keeps
+// accelerating.  Cleared after CPad::UpdatePads, before the world processes.
+void
+SuppressFire(CPad *pad)
+{
+	const int mode = CPad::IsAffectedByController ? pad->Mode : 0;
+	switch(mode){
+	case 2: pad->NewState.Cross = false; break;
+	case 3: pad->NewState.RightShoulder1 = false; break;
+	default: pad->NewState.Circle = false; break;
+	}
+}
+
+// A Bloodring Banger beside a player who needs one, parked, locked, ready.
+// Handed back to the world when the derby is over, like the suspect and the
+// Predators.
+void
+SpawnLoaner(int player)
+{
+	if(s_derby.loaner[player] != nil)
+		return;
+	if(!CStreaming::HasModelLoaded(MI_BLOODRA))
+		return;
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil)
+		return;
+
+	CVector pos = ped->GetPosition() + ped->GetRight()*4.0f;
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	pos.z = found ? ground : ped->GetPosition().z;
+
+	CAutomobile *car = new CAutomobile(MI_BLOODRA, MISSION_VEHICLE);
+	if(car == nil)
+		return;
+	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	car->SetPosition(pos);
+	car->SetOrientation(0.0f, 0.0f, 0.0f);
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
+	car->SetStatus(STATUS_ABANDONED);
+	car->bIsLocked = true;
+	car->AutoPilot.m_nCarMission = MISSION_NONE;
+	car->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	car->bEngineOn = true;
+	car->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
+	CWorld::Add(car);
+	car->RegisterReference((CEntity**)&s_derby.loaner[player]);
+	s_derby.loaner[player] = car;
+}
+
+bool
+PlayerInDerbyCar(int player, CVehicle **out)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		return false;
+	CVehicle *veh = ped->m_pMyVehicle;
+	if(!veh->IsCar() || veh->bIsLawEnforcer || veh->pDriver != ped)
+		return false;
+	*out = veh;
+	return true;
+}
+
+void
+StartDerby(uint32 now, const CVector &centre)
+{
+	s_derby.active = true;
+	s_derby.counting = true;
+	s_derby.finished = false;
+	s_derby.countdownAt = now + kDerbyCountdownMs;
+	s_derby.centre = centre;
+	s_derby.round = 0;
+	s_derby.roundStartAt = 0;
+	s_derby.matchWinner = -1;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_derby.roundWins[i] = 0;
+		s_derby.running[i] = false;
+		s_derby.outSince[i] = 0;
+		s_derby.footSince[i] = 0;
+	}
+	CStreaming::RequestModel(MI_BLOODRA, 0);
+	COOP_LOG("WII coop: derby on\n");
+	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
+		CHud::SetHelpMessage(TheText.Get("WII_CSD"), true);
+}
+
+// Whoever has the most rounds takes the match, if anyone has any.
+void
+FinishDerby(uint32 now)
+{
+	int best = -1;
+	int bestWins = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(s_derby.roundWins[i] > bestWins){
+			bestWins = s_derby.roundWins[i];
+			best = i;
+		}
+	if(best >= 0){
+		s_derby.matchWinner = best;
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+		COOP_LOG("WII coop: derby to player %d\n", best + 1);
+	}
+	s_derby.finished = true;
+	s_derby.finishAt = now + 4000;
+}
+
+void
+StartDerbyRound(uint32 now)
+{
+	s_derby.round++;
+	s_derby.counting = false;
+	s_derby.roundStartAt = now;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_derby.running[i] = false;
+		s_derby.outSince[i] = 0;
+		s_derby.footSince[i] = 0;
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+			continue;
+		CVehicle *veh = ped->m_pMyVehicle;
+		if(!veh->IsCar() || veh->bIsLawEnforcer || veh->GetStatus() == STATUS_WRECKED)
+			continue;
+		if((veh->GetPosition() - s_derby.centre).Magnitude2D() > kDerbyJoinRange)
+			continue;
+		s_derby.running[i] = true;
+	}
+
+	int running = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(s_derby.running[i])
+			running++;
+	if(running < 2){
+		// Nobody to race; the match goes to whoever has wins.
+		FinishDerby(now);
+		return;
+	}
+	COOP_LOG("WII coop: derby round %d\n", s_derby.round);
+}
+
+void
+EndDerby(uint32 now, const char *why)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CVehicle *car = s_derby.loaner[i];
+		if(car != nil){
+			CTheScripts::CleanUpThisVehicle(car);
+			car->CleanUpOldReference((CEntity**)&s_derby.loaner[i]);
+			s_derby.loaner[i] = nil;
+		}
+	}
+	s_derby.active = false;
+	s_derby.counting = false;
+	s_derby.finished = false;
+	s_derby.rearmAt = now + kDerbyRearmMs;
+	COOP_LOG("WII coop: derby off (%s)\n", why);
+}
+
+void
+TryStartDerby(uint32 now)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(now < s_derby.rearmAt)
+		return;
+
+	// The party, parked in a knot: two or more of their own cars, all stopped,
+	// all within arm's length of the middle.
+	CVehicle *car[NUMPLAYERS];
+	CVector sum(0.0f, 0.0f, 0.0f);
+	int count = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		car[i] = nil;
+		if(!PlayerInDerbyCar(i, &car[i]))
+			continue;
+		sum += car[i]->GetPosition();
+		count++;
+	}
+	if(count < 2)
+		return;
+	const CVector centre = sum / (float)count;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(car[i] == nil)
+			continue;
+		if(car[i]->GetMoveSpeed().Magnitude() > 0.6f ||
+		   (car[i]->GetPosition() - centre).Magnitude2D() > kDerbyGatherRange)
+			return;
+	}
+
+	// A honk from any of them is the nod.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(car[i] == nil)
+			continue;
+		CPad *pad = GetPadFromVehicleDriver(car[i]);
+		if(pad != nil && pad->GetHorn()){
+			StartDerby(now, centre);
+			return;
+		}
+	}
+}
+
+void
+UpdateDerby(uint32 now)
+{
+	if(!s_derby.active){
+		TryStartDerby(now);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndDerby(now, "session");
+		return;
+	}
+	if(s_derby.finished){
+		if(now >= s_derby.finishAt)
+			EndDerby(now, "over");
+		return;
+	}
+
+	// Ramming only, for everyone, for the whole match.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil)
+			SuppressFire(GetPadFromPlayer(ped));
+	}
+
+	if(s_derby.counting){
+		if(now >= s_derby.countdownAt)
+			StartDerbyRound(now);
+		return;
+	}
+
+	// The round: wrecked, out of the ring for a moment, or out of the car for
+	// a moment, and a player is done.
+	int alive = 0;
+	int survivor = -1;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(!s_derby.running[i])
+			continue;
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil){
+			s_derby.running[i] = false;
+			continue;
+		}
+		CVehicle *veh = ped->bInVehicle ? ped->m_pMyVehicle : nil;
+		if(veh != nil && veh->GetStatus() == STATUS_WRECKED){
+			s_derby.running[i] = false;
+			continue;
+		}
+		const CVector pos = veh != nil ? veh->GetPosition() : ped->GetPosition();
+		if((pos - s_derby.centre).Magnitude2D() > kDerbyRadius){
+			if(s_derby.outSince[i] == 0)
+				s_derby.outSince[i] = now;
+			else if(now - s_derby.outSince[i] >= kDerbyOutGraceMs){
+				s_derby.running[i] = false;
+				continue;
+			}
+		}else{
+			s_derby.outSince[i] = 0;
+		}
+		if(veh == nil){
+			if(s_derby.footSince[i] == 0)
+				s_derby.footSince[i] = now;
+			else if(now - s_derby.footSince[i] >= kDerbyFootGraceMs){
+				s_derby.running[i] = false;
+				continue;
+			}
+		}else{
+			s_derby.footSince[i] = 0;
+		}
+		alive++;
+		survivor = i;
+	}
+
+	if(alive > 1 && now - s_derby.roundStartAt <= kDerbyRoundCapMs)
+		return;
+
+	// The round is over: the survivor takes it, a round that ran out of time
+	// takes nobody.
+	if(alive == 1){
+		s_derby.roundWins[survivor]++;
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 150;
+		COOP_LOG("WII coop: derby round to player %d\n", survivor + 1);
+	}
+
+	int bestWins = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(s_derby.roundWins[i] > bestWins)
+			bestWins = s_derby.roundWins[i];
+	if(bestWins >= kDerbyWinsNeeded){
+		FinishDerby(now);
+		return;
+	}
+
+	// Intermission: a Banger for anyone whose car is gone, then another round.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CVehicle *veh = ped->bInVehicle ? ped->m_pMyVehicle : nil;
+		if(veh == nil || veh->GetStatus() == STATUS_WRECKED)
+			SpawnLoaner(i);
+	}
+	s_derby.counting = true;
+	s_derby.countdownAt = now + kDerbyIntermissionMs;
+}
+
 } // namespace
 
 void
@@ -935,6 +1280,13 @@ CCoopModes::Init(void)
 	memset(&s_run, 0, sizeof(s_run));
 	// A cleared blip has to read as "none": id 0 is a real blip.
 	s_run.blip = -1;
+
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_derby.loaner[i] != nil)
+			s_derby.loaner[i]->CleanUpOldReference((CEntity**)&s_derby.loaner[i]);
+	}
+	memset(&s_derby, 0, sizeof(s_derby));
+	s_derby.matchWinner = -1;
 }
 
 void
@@ -942,8 +1294,9 @@ CCoopModes::Update(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 
-	// The two modes are independent; both ride the same session state.
+	// The modes are independent; all ride the same session state.
 	UpdateRun(now);
+	UpdateDerby(now);
 
 	// A resolved case lets go of its suspect on its own clock, shift or no
 	// shift: the wreck and the body linger a moment before the world takes
@@ -1000,4 +1353,12 @@ CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 	   (criminal->GetPosition() - s_shift.suspectCar->GetPosition()).Magnitude() < kGunfireRange)
 		return true;
 	return false;
+}
+
+bool
+CCoopModes::SteadyView(void)
+{
+	// The derby: a ring of spinning cars, and a camera that turns with one of
+	// them turns with all of them.  See CCam::Process_WiiCoop.
+	return s_derby.active;
 }

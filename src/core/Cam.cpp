@@ -10,6 +10,7 @@
 #include "Ped.h"
 #include "PlayerPed.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #ifdef NINTENDO_WII
 #include "WiiTrace.h"
 #endif
@@ -1267,6 +1268,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		driveVehicle = leadVehicle;
 	else if(partnerVehicle != nil && partnerVehicle->pDriver == partner)
 		driveVehicle = partnerVehicle;
+	// A mode where the cars spin -- the derby -- keeps the view still rather
+	// than turning with a nose; see CCoopModes::SteadyView.
+	if(CCoopModes::SteadyView())
+		driveVehicle = nil;
 	if(driveVehicle != nil){
 		const CVector &move = driveVehicle->GetMoveSpeed();
 		const CVector &ahead = driveVehicle->GetForward();
