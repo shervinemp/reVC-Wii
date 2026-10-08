@@ -278,22 +278,25 @@ script directs.
   when the players are close together, and goes back out as they separate and as
   the car speeds up.
 - Fixed heading on foot — whatever way the view was facing when it took over.
-  It follows a car player 1 is driving, because a camera pitched down from behind
-  sees four times as far ahead as behind and driving toward it is driving blind.
-- Looks at the midpoint of player 1 and the partner furthest from them, so the
-  view stays on the line between the two it can see least far across. Its
-  height follows slowly, so kerbs and steps do not shake the view, but never
-  from more than 6 m behind. The full four-player shape — a centroid and the
-  widest pair, with the yaw following the vehicle carrying the most players —
-  is stage 4; see `COOP-4-PLAN.md`.
+  While a car is being followed — by default the one carrying the most players,
+  so a party travelling together turns as one; any partner's camera button
+  overrides it with their own car while they drive it, and pressing it again
+  hands the view back — it turns with that car's nose, because a camera pitched
+  down from behind sees four times as far ahead as behind and driving toward it
+  is driving blind.
+- Looks at the centroid of everyone in the world, and takes the party's widest
+  pair as its span, so the view sits in the middle of the party and what has to
+  fit is whichever two are furthest apart. With two players both reduce to the
+  old pair framing exactly. Its height follows slowly, so kerbs and steps do
+  not shake the view, but never from more than 6 m behind.
 - Comes in along its own line when a building is in the way, so indoors it ends
   up under the ceiling rather than looking at the roof. The line that is tested
-  runs back from **player 1 and the framed partner**, not from the midpoint:
-  the midpoint is an average and can be inside a staircase or under a floor,
-  and from in there the test finds the surface it started beneath. It takes the
-  roomier of the two answers — it cannot be under one player's ceiling and
-  still show the other down the street. Stage 4 extends the test to every
-  player.
+  runs back from **the players themselves**, not from the centroid: the
+  centroid is an average and can be inside a staircase or under a floor, and
+  from in there the test finds the surface it started beneath. It takes the
+  roomiest of the per-player answers — it cannot be under one player's ceiling
+  and still show the others — and a player standing on top of player 1 is
+  pruned as the same answer.
 - The **cinematic camera** and Classic controls' **look-around** are off while
   co-op runs. Both take the view (and the second also the controls) away from
   the players, and co-op has the button that would give them back.
@@ -436,8 +439,35 @@ nothing.
 - **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
   by their reticle and by a pip with a health bar and an ammo line over their
   head -- one set per player, shown once a partner is in the world. The menu
-  and the per-partner skins are stage 5.
+  and the per-partner skins went to N with stage 5: three skin rows, one each.
 - **The stock zoom does not cycle** while co-op has the camera button.
+
+### Minigames
+
+Six engine-side modes the party starts from the world, behind the co-op page's
+MINIGAMES switch (on by default; with it off none arms, and a running one
+finishes). One runs at a time. They live in `CoopModes.cpp`, and each is a thin
+state machine over the script's own machinery -- spawn recipes, locked mission
+cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
+
+- the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
+  while a case is open the takedown is not a crime),
+- the **smuggling run** (horn in a crewed boat: three coastal drops, stars and
+  Predators for heat, an Uzi for the last drop),
+- the **Bloodring derby** (park a knot of cars and honk: last car running,
+  first to two rounds, weapons off),
+- the **RC race** (jump together on foot: a toy grid, four gates in order,
+  three laps, each driver's next gate in their colour),
+- the **dance-off** (everyone ducks together: prompts on a climbing beat; the
+  dancing is the players' own bodies), and
+- **cops & robbers** (press 2 while gathered: grab the case, deliver or bust,
+  first to three).
+
+The camera holds still for the derby and the toy race (`SteadyView` -- spinning
+and twitchy cars would whip the shared view around), and the wall and leash
+stand aside for cops & robbers (`FreeRoam` -- a pursuit nobody can outrun is
+not a pursuit). The cop shift's takedown exemption reaches the crime reporter
+through `OnDuty`.
 
 ## What the first draft got wrong
 
@@ -471,7 +501,9 @@ Recorded because each was stated as a verified fact.
 
 - **No partner ever takes a boat.** Cars and bikes they can steal and drive
   (see "Riding along, and driving"); a boat is deliberately left alone, so
-  nobody finishes climbing on one and gets made its driver by surprise. A
+  nobody finishes climbing on one and gets made its driver by surprise. A boat
+  a player boards and drives on purpose is theirs -- the smuggling run is built
+  on it -- and it is the automatic seat that never takes one. A
   boat's passenger rides without a drive-by, and so does a bike's pillion:
   their drive-bys are the driver's alone.
 - **Boats and trains**: a partner waits out of the world. They can still be a
@@ -485,10 +517,9 @@ Recorded because each was stated as a verified fact.
 - **No remote speaker for the partners.** The speaker code drives one remote,
   and each partner's would need its own stream. Rumble works for everyone
   (gunfire, explosions, the car or bike they are in, thunder).
-- **The partners' skins are one choice, not one each.** The co-op page's
-  Partner Skin picks from the special-character models and every partner wears
-  it; the default is player 1's model, which means player 1's skin texture too
-  (`RenderPlayerCB` applies slot 0's). Per-partner skin rows are stage 5.
+- **The partners' skins** come from the special-character models, one choice per
+  partner since stage 5; the default is player 1's model, which means player 1's
+  skin texture too (`RenderPlayerCB` applies slot 0's).
 - **Indoors** the camera ends up close under low ceilings. It works; it is not
   pretty.
 - **A camera that tilts up by itself near walls.** The honest fix for tall
@@ -514,8 +545,8 @@ Recorded because each was stated as a verified fact.
   only other notice they get.
 - **Dynamic control ownership** — SA let the players hand "control" back and
   forth, with the camera following whoever had it. Here the camera frames the
-  midpoint and player 1 is the anchor. Framing a player's lock target is not
-  done either.
+  party's centroid and player 1 is the anchor. Framing a player's lock target
+  is not done either.
 - **Co-op missions.** Custom `.scm` missions that opt in remain possible later.
 
 ## Tunables
