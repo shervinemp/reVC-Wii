@@ -2407,8 +2407,40 @@ CCoopModes::DrawHud(void)
 			continue;
 		const float cx = SCREEN_WIDTH*(0.5f + (i - 1.5f)*0.15f);
 		const float cy = SCREEN_HEIGHT*0.84f;
-		const float hw = SCREEN_SCALE_X(30.0f);
 		const float hh = SCREEN_SCALE_Y(10.0f);
+
+		// The player's own controller's button, when the label helper can name
+		// it: jump is X, Y and 1 across the GameCube pad, the Classic and the
+		// remote; duck R, ZL and D-pad down; the nod Y, X and 2.  A player the
+		// helper cannot name keeps the action word.
+		wchar text[16];
+		float hw = SCREEN_SCALE_X(30.0f);
+		if(s_dance.prompt[i] >= 0){
+			const char *label = promptNames[s_dance.prompt[i]];
+#ifdef NINTENDO_WII
+			const WiiPadPrompt button = s_dance.prompt[i] == DANCE_JUMP ? WII_PROMPT_JUMP :
+			                            s_dance.prompt[i] == DANCE_DUCK ? WII_PROMPT_DUCK :
+			                            WII_PROMPT_NOD;
+			const char *named = WiiPadPromptButton(i, button);
+			if(named != nil)
+				label = named;
+#endif
+			AsciiToUnicode(label, text);
+
+			// The chip holds its label: the remote's duck, "D-PAD DOWN", draws
+			// half again the base width, so it grows -- capped before two lanes
+			// could ever touch.  Spaces count: the fixed-width font advances
+			// them like any other character.
+			CFont::SetPropOff();
+			CFont::SetBackgroundOff();
+			CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(1.0f));
+			CFont::SetJustifyOff();
+			CFont::SetCentreOn();
+			CFont::SetCentreSize(9999.0f);
+			CFont::SetFontStyle(FONT_STANDARD);
+			hw = Clamp(CFont::GetStringWidth(text, true)*0.5f + SCREEN_SCALE_X(4.0f),
+			           hw, SCREEN_SCALE_X(45.0f));
+		}
 
 		// A miss rings the slot red until the next prompt settles in.
 		const CRGBA backdrop = missed ? CRGBA(170, 40, 40, 255) : CRGBA(0, 0, 0, 255);
@@ -2421,28 +2453,6 @@ CCoopModes::DrawHud(void)
 			fill = CRGBA(255, 255, 255, 255);
 		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx + hw, cy + hh), fill);
 
-		// The player's own controller's button, when the label helper can name
-		// it: jump is X, Y and 1 across the GameCube pad, the Classic and the
-		// remote; duck R, ZL and D-pad down; the nod Y, X and 2.  A player the
-		// helper cannot name keeps the action word.
-		const char *label = promptNames[s_dance.prompt[i]];
-#ifdef NINTENDO_WII
-		const WiiPadPrompt button = s_dance.prompt[i] == DANCE_JUMP ? WII_PROMPT_JUMP :
-		                            s_dance.prompt[i] == DANCE_DUCK ? WII_PROMPT_DUCK :
-		                            WII_PROMPT_NOD;
-		const char *named = WiiPadPromptButton(i, button);
-		if(named != nil)
-			label = named;
-#endif
-		wchar text[16];
-		AsciiToUnicode(label, text);
-		CFont::SetPropOff();
-		CFont::SetBackgroundOff();
-		CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(1.0f));
-		CFont::SetJustifyOff();
-		CFont::SetCentreOn();
-		CFont::SetCentreSize(9999.0f);
-		CFont::SetFontStyle(FONT_STANDARD);
 		CFont::SetDropShadowPosition(1);
 		CFont::SetDropColor(CRGBA(0, 0, 0, 255));
 		CFont::SetColor(CRGBA(255, 255, 255, 255));
