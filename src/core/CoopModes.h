@@ -26,6 +26,15 @@ class CEntity;
 // after a takedown, and CleanUpThisPed / CleanUpThisVehicle to let an escaped
 // suspect melt back into the traffic.  Nothing is spawned that the engine does
 // not already know how to own.
+//
+// The second one is the smuggling run.  A boat with two or more players and
+// the horn arms it; three drops are planned along the coast on water path
+// nodes, each marked by a radar blip and a corona, and each unloads by holding
+// the boat in the ring at rest.  Every drop pays, raises the party's wanted
+// level by one, and brings heat: a Predator, the game's own police boat, with
+// a cop at the wheel, chasing on the same drive-to-coords machinery.  Deliver
+// all three for the cache -- an Uzi into the party's arsenal.  A boat lost,
+// wrecked, or left empty for a moment is a run over.
 class CCoopModes
 {
 public:

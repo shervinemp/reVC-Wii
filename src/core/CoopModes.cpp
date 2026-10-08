@@ -4,13 +4,17 @@
 
 #include "Automobile.h"
 #include "AutoPilot.h"
+#include "Boat.h"
 #include "CarCtrl.h"
 #include "CivilianPed.h"
 #include "Coop.h"
+#include "CopPed.h"
+#include "Coronas.h"
 #include "General.h"
 #include "Hud.h"
 #include "maths.h"
 #include "ModelIndices.h"
+#include "Pad.h"
 #include "PathFind.h"
 #include "Ped.h"
 #include "PlayerInfo.h"
@@ -24,6 +28,7 @@
 #include "Timer.h"
 #include "Vehicle.h"
 #include "Wanted.h"
+#include "WeaponInfo.h"
 #include "World.h"
 #include "Zones.h"
 #include "config.h"
@@ -59,6 +64,19 @@ const uint32 kCleanupDelayMs = 4000;	// how long a resolved case lingers
 const float kGunfireRange = 60.0f;	// on duty: gunfire this near the case
 const int kCaseCars[] = { MI_SENTINEL, MI_STALLION, MI_VOODOO, MI_SABRE };
 
+// --- the smuggling run's numbers ---------------------------------------------
+
+const uint32 kRearmMs = 8000;		// after a run, before the horn arms again
+const int kDrops = 3;
+const float kLegDistance = 320.0f;	// water between drops
+const float kDropSearch = 300.0f;	// how far a leg may look for water
+const float kDropRadius = 35.0f;	// in the ring...
+const float kDropSpeed = 4.0f;		// ...and this slow to unload
+const uint32 kUnloadMs = 2000;
+const float kPursuerDistance = 130.0f;	// heat spawns this far out
+const uint32 kPursuerRetargetMs = 3000;
+const uint32 kCrewGraceMs = 5000;
+
 // The shift, and the case it may have open.  The suspect is held as
 // registered references, so the engine nils them if anything ever deletes
 // either half; everything below treats nil as "gone".
@@ -86,6 +104,26 @@ struct ShiftState
 	CPed *suspectPed;
 };
 ShiftState s_shift;
+
+// The run: the party's boat, the three drops planned from where it armed, and
+// the two police boats the heat brings.  Same rule as the shift: every entity
+// is a registered reference, and nil means gone.
+struct RunState
+{
+	bool active;
+	uint32 rearmAt;
+	int leg;
+	CVector dropPos[kDrops];
+	CVector drop;
+	int32 blip;
+	uint32 unloadSince;
+	uint32 crewLostAt;
+	uint32 nextRetargetAt;
+	CVehicle *boat;
+	CVehicle *pursuer[2];
+	CPed *pursuerDriver[2];
+};
+RunState s_run;
 
 // Where a player is for these purposes: their car while they are in one, so a
 // crew chasing in cars is measured car to car.
@@ -513,6 +551,368 @@ TryStartShift(uint32 now)
 		CHud::SetHelpMessage(TheText.Get("WII_CSH"), true);
 }
 
+// --- the smuggling run -------------------------------------------------------
+
+// A path node on water.  Boats live on the car network's water-flagged nodes,
+// and asking for one is how every point below stays on navigable water.
+bool
+FindWaterNodeNear(const CVector &point, float radius, CVector &out)
+{
+	const int32 node = ThePaths.FindNodeClosestToCoors(point, PATH_CAR, radius, false, false, false, true);
+	if(node < 0)
+		return false;
+	out = ThePaths.m_pathNodes[node].GetPosition();
+	return true;
+}
+
+// The boat the party is riding in: a player driving, this many players or
+// more aboard.  Only the arming uses this; the run itself holds its own boat.
+CVehicle *
+FindCrewBoat(int minPlayers)
+{
+	CVehicle *best = nil;
+	int bestCount = 0;
+	for(int player = 0; player < NUMPLAYERS; player++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+			continue;
+		CVehicle *veh = ped->m_pMyVehicle;
+		if(veh->GetVehicleAppearance() != VEHICLE_APPEARANCE_BOAT)
+			continue;
+		if(veh->pDriver == nil || !veh->pDriver->IsPlayer())
+			continue;
+		int count = 0;
+		for(int p = 0; p < NUMPLAYERS; p++){
+			CPlayerPed *other = CCoop::GetPlayerPed(p);
+			if(other != nil && other->bInVehicle && other->m_pMyVehicle == veh)
+				count++;
+		}
+		if(count >= minPlayers && count > bestCount){
+			bestCount = count;
+			best = veh;
+		}
+	}
+	return best;
+}
+
+// The drop marker: a radar blip in the game's target red, and a corona over
+// the water so the ring is visible from the boat.  The corona is registered
+// every frame while a drop is live and fades on its own once it stops being.
+void
+ClearDropMarker(void)
+{
+	if(s_run.blip >= 0){
+		CRadar::ClearBlip(s_run.blip);
+		s_run.blip = -1;
+	}
+}
+
+void
+PlaceDropMarker(void)
+{
+	s_run.blip = CRadar::SetCoordBlip(BLIP_COORD, s_run.drop, RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+}
+
+void
+RegisterDropCorona(void)
+{
+	CCoronas::RegisterCorona((uintptr)&s_run,
+		255, 170, 70, 255,
+		s_run.drop, 5.0f, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+		CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+}
+
+// Three drops, each a leg on from the last and turning from the boat's own
+// heading, each on water: the run follows the coast wherever it starts.
+bool
+PlanRoute(CVehicle *boat)
+{
+	CVector prev = boat->GetPosition();
+	CVector dir = boat->GetForward();
+	dir.z = 0.0f;
+	if(dir.Magnitude() < 0.1f)
+		dir = CVector(1.0f, 0.0f, 0.0f);
+	dir.Normalise();
+
+	for(int leg = 0; leg < kDrops; leg++){
+		bool found = false;
+		for(int attempt = 0; attempt < 6 && !found; attempt++){
+			const float turn = DEGTORAD((float)CGeneral::GetRandomNumberInRange(-70, 70));
+			const float c = Cos(turn);
+			const float s = Sin(turn);
+			const CVector ndir(dir.x * c - dir.y * s, dir.x * s + dir.y * c, 0.0f);
+			if(FindWaterNodeNear(prev + ndir * kLegDistance, kDropSearch, s_run.dropPos[leg])){
+				dir = ndir;
+				found = true;
+			}
+		}
+		if(!found)
+			return false;
+		prev = s_run.dropPos[leg];
+	}
+	return true;
+}
+
+// The heat goes the way the suspect does: the world takes the boats back when
+// the run is over, so a Predator drifts off as another boat on the water.
+void
+ReleasePursuers(void)
+{
+	for(int i = 0; i < 2; i++){
+		CPed *cop = s_run.pursuerDriver[i];
+		CVehicle *boat = s_run.pursuer[i];
+		if(cop != nil){
+			CTheScripts::CleanUpThisPed(cop);
+			cop->CleanUpOldReference((CEntity**)&s_run.pursuerDriver[i]);
+			s_run.pursuerDriver[i] = nil;
+		}
+		if(boat != nil){
+			CTheScripts::CleanUpThisVehicle(boat);
+			boat->CleanUpOldReference((CEntity**)&s_run.pursuer[i]);
+			s_run.pursuer[i] = nil;
+		}
+	}
+}
+
+// Chase the smuggling boat: the same drive-to-coords call the scripts use for
+// any vehicle, on a water node beside the boat, re-aimed on a clock.  The
+// path search is handed the vehicle, so a boat's route stays on water.
+void
+DrivePursuer(int index, uint32 now, CVehicle *boat)
+{
+	CVehicle *predator = s_run.pursuer[index];
+	if(predator == nil || boat == nil)
+		return;
+	CVector dest;
+	if(!FindWaterNodeNear(boat->GetPosition(), 150.0f, dest))
+		dest = boat->GetPosition();
+	if(CCarCtrl::JoinCarWithRoadSystemGotoCoors(predator, dest, false))
+		predator->AutoPilot.m_nCarMission = MISSION_GOTOCOORDS_STRAIGHT;
+	else
+		predator->AutoPilot.m_nCarMission = MISSION_GOTOCOORDS;
+	predator->SetStatus(STATUS_PHYSICS);
+	predator->bEngineOn = true;
+	predator->AutoPilot.m_nCruiseSpeed = predator->AutoPilot.m_fMaxTrafficSpeed = 25;
+	predator->AutoPilot.m_nAntiReverseTimer = now;
+}
+
+// One police boat's worth of heat: the Predator is the game's own police
+// boat, a cop drives it, and both halves are requested when the run arms so
+// the first drop finds them in memory.
+void
+SpawnPursuer(uint32 now, CVehicle *boat, int index)
+{
+	if(s_run.pursuer[index] != nil || boat == nil)
+		return;
+	if(!CStreaming::HasModelLoaded(MI_PREDATOR) || !CStreaming::HasModelLoaded(MI_COP))
+		return;
+
+	CVector spawnPos;
+	bool found = false;
+	for(int attempt = 0; attempt < 4 && !found; attempt++){
+		const float angle = DEGTORAD((float)CGeneral::GetRandomNumberInRange(0, 360));
+		const CVector dir(Cos(angle), Sin(angle), 0.0f);
+		found = FindWaterNodeNear(boat->GetPosition() + dir * kPursuerDistance, 200.0f, spawnPos);
+	}
+	if(!found)
+		return;
+
+	CBoat *predator = new CBoat(MI_PREDATOR, MISSION_VEHICLE);
+	if(predator == nil)
+		return;
+	spawnPos.z += predator->GetDistanceFromCentreOfMassToBaseOfModel();
+	predator->SetPosition(spawnPos);
+	CTheScripts::ClearSpaceForMissionEntity(spawnPos, predator);
+	predator->SetStatus(STATUS_ABANDONED);
+	predator->bIsLocked = true;
+	predator->AutoPilot.m_nCarMission = MISSION_NONE;
+	predator->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	predator->AutoPilot.m_nCruiseSpeed = predator->AutoPilot.m_fMaxTrafficSpeed = 25;
+	predator->bEngineOn = true;
+	predator->m_nZoneLevel = CTheZones::GetLevelFromPosition(&spawnPos);
+	CWorld::Add(predator);
+
+	CCopPed *cop = new CCopPed(COP_STREET);
+	if(cop == nil){
+		CWorld::Remove(predator);
+		CWorld::RemoveReferencesToDeletedObject(predator);
+		delete predator;
+		return;
+	}
+	cop->CharCreatedBy = MISSION_CHAR;
+	cop->bRespondsToThreats = false;
+	cop->bAllowMedicsToReviveMe = false;
+	cop->bIsPlayerFriend = false;
+	CVector copPos = predator->GetPosition();
+	copPos.z += 1.0f;
+	cop->SetPosition(copPos);
+	cop->SetOrientation(0.0f, 0.0f, 0.0f);
+	CWorld::Add(cop);
+	cop->m_nZoneLevel = CTheZones::GetLevelFromPosition(&copPos);
+	++CPopulation::ms_nTotalMissionPeds;
+	cop->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, predator);
+	cop->WarpPedIntoCar(predator);
+
+	predator->RegisterReference((CEntity**)&s_run.pursuer[index]);
+	cop->RegisterReference((CEntity**)&s_run.pursuerDriver[index]);
+	s_run.pursuer[index] = predator;
+	s_run.pursuerDriver[index] = cop;
+	DrivePursuer(index, now, boat);
+	COOP_LOG("WII coop: heat on the water\n");
+}
+
+void
+UpdatePursuers(uint32 now, CVehicle *boat)
+{
+	if(now < s_run.nextRetargetAt)
+		return;
+	s_run.nextRetargetAt = now + kPursuerRetargetMs;
+	if(boat == nil)
+		return;
+	for(int i = 0; i < 2; i++)
+		DrivePursuer(i, now, boat);
+}
+
+void
+TryStartRun(uint32 now)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(now < s_run.rearmAt)
+		return;
+	CVehicle *boat = FindCrewBoat(2);
+	if(boat == nil)
+		return;
+	CPad *pad = GetPadFromVehicleDriver(boat);
+	if(pad == nil || !pad->GetHorn())
+		return;
+	if(!PlanRoute(boat))
+		return;
+
+	CStreaming::RequestModel(MI_PREDATOR, 0);
+	CStreaming::RequestModel(MI_COP, 0);
+
+	boat->RegisterReference((CEntity**)&s_run.boat);
+	s_run.boat = boat;
+	s_run.active = true;
+	s_run.leg = 0;
+	s_run.drop = s_run.dropPos[0];
+	s_run.unloadSince = 0;
+	s_run.crewLostAt = 0;
+	s_run.nextRetargetAt = now;
+	PlaceDropMarker();
+	COOP_LOG("WII coop: smuggling run on\n");
+	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
+		CHud::SetHelpMessage(TheText.Get("WII_CSR"), true);
+}
+
+void
+EndRun(uint32 now, const char *why)
+{
+	ClearDropMarker();
+	ReleasePursuers();
+	if(s_run.boat != nil){
+		s_run.boat->CleanUpOldReference((CEntity**)&s_run.boat);
+		s_run.boat = nil;
+	}
+	s_run.active = false;
+	s_run.rearmAt = now + kRearmMs;
+	s_run.unloadSince = 0;
+	s_run.crewLostAt = 0;
+	COOP_LOG("WII coop: smuggling run off (%s)\n", why);
+}
+
+void
+CompleteDrop(uint32 now, CVehicle *boat)
+{
+	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 100;
+	CPlayerPed *lead = FindPlayerPed();
+	if(lead != nil && lead->m_pWanted != nil && lead->m_pWanted->GetWantedLevel() < 3)
+		lead->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel() + 1);
+
+	s_run.leg++;
+	COOP_LOG("WII coop: drop %d of %d\n", s_run.leg, kDrops);
+	if(s_run.leg >= kDrops){
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 300;
+		if(lead != nil){
+			if(lead->DoesPlayerWantNewWeapon(WEAPONTYPE_UZI, true))
+				lead->GiveWeapon(WEAPONTYPE_UZI, 120, true);
+			else
+				lead->GrantAmmo(WEAPONTYPE_UZI, 120);
+		}
+		EndRun(now, "delivered");
+		return;
+	}
+
+	ClearDropMarker();
+	s_run.drop = s_run.dropPos[s_run.leg];
+	s_run.unloadSince = 0;
+	PlaceDropMarker();
+	// The heat steps up with every drop: one police boat, then its partner.
+	SpawnPursuer(now, boat, s_run.leg - 1);
+}
+
+void
+UpdateRun(uint32 now)
+{
+	if(!s_run.active){
+		TryStartRun(now);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndRun(now, "session");
+		return;
+	}
+
+	// The boat is the run: while it exists and somebody is aboard it goes on;
+	// lost, wrecked, or empty for a moment and it is over.
+	CVehicle *boat = s_run.boat;
+	if(boat == nil){
+		EndRun(now, "boat lost");
+		return;
+	}
+	if(boat->GetStatus() == STATUS_WRECKED){
+		EndRun(now, "boat wrecked");
+		return;
+	}
+	int crew = 0;
+	for(int player = 0; player < NUMPLAYERS; player++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped != nil && ped->bInVehicle && ped->m_pMyVehicle == boat)
+			crew++;
+	}
+	if(crew == 0){
+		if(s_run.crewLostAt == 0)
+			s_run.crewLostAt = now;
+		else if(now - s_run.crewLostAt >= kCrewGraceMs)
+			EndRun(now, "crew ashore");
+		// A halt while nobody is aboard does not keep counting towards an
+		// unload.
+		s_run.unloadSince = 0;
+		UpdatePursuers(now, boat);
+		return;
+	}
+	s_run.crewLostAt = 0;
+
+	// Hold the boat in the ring, slow, and it unloads.
+	const float dist = (boat->GetPosition() - s_run.drop).Magnitude2D();
+	const float speed = boat->GetMoveSpeed().Magnitude();
+	if(dist < kDropRadius && speed < kDropSpeed){
+		if(s_run.unloadSince == 0)
+			s_run.unloadSince = now;
+		else if(now - s_run.unloadSince >= kUnloadMs){
+			CompleteDrop(now, boat);
+			return;
+		}
+	}else{
+		s_run.unloadSince = 0;
+	}
+
+	UpdatePursuers(now, boat);
+	RegisterDropCorona();
+}
+
 } // namespace
 
 void
@@ -523,12 +923,27 @@ CCoopModes::Init(void)
 	if(s_shift.suspectPed != nil)
 		s_shift.suspectPed->CleanUpOldReference((CEntity**)&s_shift.suspectPed);
 	memset(&s_shift, 0, sizeof(s_shift));
+
+	if(s_run.boat != nil)
+		s_run.boat->CleanUpOldReference((CEntity**)&s_run.boat);
+	for(int i = 0; i < 2; i++){
+		if(s_run.pursuer[i] != nil)
+			s_run.pursuer[i]->CleanUpOldReference((CEntity**)&s_run.pursuer[i]);
+		if(s_run.pursuerDriver[i] != nil)
+			s_run.pursuerDriver[i]->CleanUpOldReference((CEntity**)&s_run.pursuerDriver[i]);
+	}
+	memset(&s_run, 0, sizeof(s_run));
+	// A cleared blip has to read as "none": id 0 is a real blip.
+	s_run.blip = -1;
 }
 
 void
 CCoopModes::Update(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	// The two modes are independent; both ride the same session state.
+	UpdateRun(now);
 
 	// A resolved case lets go of its suspect on its own clock, shift or no
 	// shift: the wreck and the body linger a moment before the world takes

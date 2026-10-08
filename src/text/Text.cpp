@@ -177,6 +177,7 @@ WiiFallbackText(const char *key)
 		{ "WII_SHW", "SHARED WANTED" },
 		{ "WII_MG", "MINIGAMES" },
 		{ "WII_CSH", "COP SHIFT" },
+		{ "WII_CSR", "SMUGGLING RUN" },
 		{ "WII_P2D", "Player 2 is down - reach them to bring them back." },
 		{ "WII_P3D", "Player 3 is down - reach them to bring them back." },
 		{ "WII_P4D", "Player 4 is down - reach them to bring them back." },
