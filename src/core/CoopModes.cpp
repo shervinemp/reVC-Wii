@@ -1089,7 +1089,6 @@ SpawnLoaner(int player)
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
 	car->SetPosition(pos);
 	car->SetOrientation(0.0f, 0.0f, 0.0f);
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -1351,7 +1350,8 @@ UpdateDerby(uint32 now)
 		if(ped == nil)
 			continue;
 		CVehicle *veh = ped->bInVehicle ? ped->m_pMyVehicle : nil;
-		if(veh == nil || veh->GetStatus() == STATUS_WRECKED)
+		if((veh == nil || veh->GetStatus() == STATUS_WRECKED) &&
+		   (ped->GetPosition() - s_derby.centre).Magnitude2D() <= kDerbyJoinRange + 20.0f)
 			SpawnLoaner(i);
 	}
 	s_derby.counting = true;
@@ -1431,7 +1431,6 @@ SpawnRcCar(int player, const CVector &slot, const CVector &forward)
 	car->GetForward() = forward;
 	car->GetRight() = CVector(forward.y, -forward.x, 0.0f);
 	car->GetUp() = CVector(0.0f, 0.0f, 1.0f);
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -1451,8 +1450,10 @@ RcSlot(int player, CVector &out)
 	out = s_rc.centre + right*((player - 1.5f) * 5.0f);
 }
 
-// A wrecked or lost toy is replaced back at the middle; the laps already
-// driven stay.
+// A wrecked or lost toy is replaced beside the driver, once they are on their
+// feet: the engine does the leaving itself, so there is no half-in, half-out
+// ped to untangle, and the laps already driven stay.  The driver walks into
+// the replacement like any other car.
 void
 RespawnRcCar(int player)
 {
@@ -1465,11 +1466,7 @@ RespawnRcCar(int player)
 		old->CleanUpOldReference((CEntity**)&s_rc.car[player]);
 		s_rc.car[player] = nil;
 	}
-	CVector slot;
-	RcSlot(player, slot);
-	if(!SpawnRcCar(player, slot, s_rc.forward))
-		return;
-	ped->WarpPedIntoCar(s_rc.car[player]);
+	SpawnRcCar(player, ped->GetPosition() + ped->GetRight()*4.0f, s_rc.forward);
 }
 
 void
@@ -1666,7 +1663,9 @@ UpdateRc(uint32 now)
 			continue;
 		}
 		CVehicle *car = ped->bInVehicle ? ped->m_pMyVehicle : nil;
-		if(car == nil || car->GetStatus() == STATUS_WRECKED){
+		if(car != nil && car->GetStatus() == STATUS_WRECKED)
+			continue;	// the driver gets out first; the replacement waits
+		if(car == nil){
 			RespawnRcCar(i);
 			continue;
 		}
