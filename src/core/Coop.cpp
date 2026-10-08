@@ -856,10 +856,11 @@ SpawnPartner(CPlayerPed *lead, int player)
 	static const int kCoopSkinChars[] = { -1,
 		12, 11, 14, 17, 20, 18,
 		13, 15, 16, 19, 10 };
-	if(WiiCoopSkin > 0 && WiiCoopSkin < (int)ARRAY_SIZE(kCoopSkinChars) && kCoopSkinChars[WiiCoopSkin] >= 0){
-		const int charId = kCoopSkinChars[WiiCoopSkin];
+	const int skin = WiiCoopSkin[player - 1];
+	if(skin > 0 && skin < (int)ARRAY_SIZE(kCoopSkinChars) && kCoopSkinChars[skin] >= 0){
+		const int charId = kCoopSkinChars[skin];
 		const int skinModel = MI_SPECIAL01 + charId;
-		CStreaming::RequestSpecialChar(charId, kCoopSkinModels[WiiCoopSkin], STREAMFLAGS_DEPENDENCY);
+		CStreaming::RequestSpecialChar(charId, kCoopSkinModels[skin], STREAMFLAGS_DEPENDENCY);
 		CStreaming::LoadAllRequestedModels(false);
 		if(CStreaming::HasModelLoaded(skinModel)){
 			// The model brings an animation group of its own.  The player's is

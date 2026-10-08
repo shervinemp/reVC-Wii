@@ -1304,7 +1304,7 @@ int8_t WiiDriveByAnyWeapon = 0;
 // The partner's model, as an index into the list on the co-op page.  0 is "same
 // as player 1"; the rest are the special-character models a script will not
 // reuse, which is what makes them safe to put on a player ped.
-int8_t WiiCoopSkin = 0;
+int8_t WiiCoopSkin[3] = { 0, 0, 0 };	// one per partner: players 2, 3 and 4
 
 // Set by HOME, read by main() once the game has unwound.  See WiiPadScan.
 static bool s_returnToMenu;

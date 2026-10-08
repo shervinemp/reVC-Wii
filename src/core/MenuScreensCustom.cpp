@@ -131,7 +131,9 @@
 	#define VIBRATION_TOGGLE MENUACTION_CFO_SELECT, "FEC_VIB", { new CCFOSelect((int8*)&FrontEndMenuManager.m_PrefsUseVibration, "Controller", "Vibration", off_on, 2, false, VibrationAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define POINTER_CAR_TOGGLE MENUACTION_CFO_SELECT, "WII_AIC", { new CCFOSelect((int8*)&WiiAimInCar, "Controller", "AimInCar", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define DRIVEBY_WEAPONS_TOGGLE MENUACTION_CFO_SELECT, "WII_DBW", { new CCFOSelect((int8*)&WiiDriveByAnyWeapon, "Controller", "DriveByWeapons", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
-	#define COOP_SKIN_SELECT MENUACTION_CFO_SELECT, "WII_COS", { new CCFOSelect((int8*)&WiiCoopSkin, "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
+	#define COOP_SKIN2_SELECT MENUACTION_CFO_SELECT, "WII_CS2", { new CCFOSelect((int8*)&WiiCoopSkin[0], "Wii", "CoopSkin", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
+	#define COOP_SKIN3_SELECT MENUACTION_CFO_SELECT, "WII_CS3", { new CCFOSelect((int8*)&WiiCoopSkin[1], "Wii", "CoopSkin3", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
+	#define COOP_SKIN4_SELECT MENUACTION_CFO_SELECT, "WII_CS4", { new CCFOSelect((int8*)&WiiCoopSkin[2], "Wii", "CoopSkin4", coopSkins, COOP_NUM_SKINS, false, CoopSkinAfterChange) }, 0, 0, MENUALIGN_LEFT,
 	#define FRIENDLY_FIRE_TOGGLE MENUACTION_CFO_SELECT, "WII_FF", { new CCFOSelect((int8*)&CoopFriendlyFire, "Wii", "FriendlyFire", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define SHARED_WANTED_TOGGLE MENUACTION_CFO_SELECT, "WII_SHW", { new CCFOSelect((int8*)&CoopSharedWanted, "Wii", "SharedWanted", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
 	#define MINIGAMES_TOGGLE MENUACTION_CFO_SELECT, "WII_MG", { new CCFOSelect((int8*)&CoopMinigames, "Wii", "Minigames", off_on, 2, false) }, 0, 0, MENUALIGN_LEFT,
@@ -142,7 +144,9 @@
 	#define VIBRATION_TOGGLE
 	#define POINTER_CAR_TOGGLE
 	#define DRIVEBY_WEAPONS_TOGGLE
-	#define COOP_SKIN_SELECT
+	#define COOP_SKIN2_SELECT
+	#define COOP_SKIN3_SELECT
+	#define COOP_SKIN4_SELECT
 	#define FRIENDLY_FIRE_TOGGLE
 	#define SHARED_WANTED_TOGGLE
 	#define MINIGAMES_TOGGLE
@@ -1143,7 +1147,9 @@ CMenuScreenCustom aScreens[] = {
 
 	{ "WII_COP", MENUPAGE_ENHANCEMENTS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
 		COUCH_COOP_TOGGLE
-		COOP_SKIN_SELECT
+		COOP_SKIN2_SELECT
+		COOP_SKIN3_SELECT
+		COOP_SKIN4_SELECT
 		FRIENDLY_FIRE_TOGGLE
 		SHARED_WANTED_TOGGLE
 		MINIGAMES_TOGGLE
