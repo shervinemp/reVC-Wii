@@ -1323,6 +1323,34 @@ WiiPadRemoteIsPartners(void)
 	return false;
 }
 
+const char *
+WiiPadPromptButton(int player, WiiPadPrompt prompt)
+{
+	// One row per WiiPadPrompt: jump, duck, the nod, fire, enter.  The face
+	// buttons agree everywhere except jump and the nod, which swap between the
+	// GameCube pad and the Classic, and the remote's own names -- the remote's
+	// jump is 1, because the Nunchuk flick raises the same pulse but 1 is the
+	// one there to press and so the one to print.
+	static const char *const kGameCube[WII_PROMPT_COUNT] = { "X", "R", "Y", "B", "A" };
+	static const char *const kClassic[WII_PROMPT_COUNT] = { "Y", "ZL", "X", "B", "A" };
+	static const char *const kWiimote[WII_PROMPT_COUNT] = { "1", "D-PAD DOWN", "2", "B", "A" };
+
+	if(player < 0 || player >= NUM_PLAYERS || prompt < 0 || prompt >= WII_PROMPT_COUNT)
+		return nullptr;
+
+	const PadDevice &device = s_devices[player];
+	if(device.kind == PadDevice::GAMECUBE)
+		return kGameCube[prompt];
+	if(device.kind != PadDevice::WIIMOTE)
+		return nullptr;
+
+	// A remote with a Classic plugged in answers with the Classic's buttons,
+	// the same way captureClassic takes the controller over.
+	WPADData *data = WPAD_Data(device.channel);
+	u32 expansion = data != nullptr ? probeExpansion(device.channel, *data) : WPAD_EXP_NONE;
+	return expansion == WPAD_EXP_CLASSIC ? kClassic[prompt] : kWiimote[prompt];
+}
+
 // --- the Nunchuk's lean ------------------------------------------------------
 // A Wiimote and Nunchuk have no right stick.  In a helicopter the right stick
 // is the yaw, and in the Rhino it is the turret, so the Nunchuk's own lean

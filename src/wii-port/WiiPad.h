@@ -89,4 +89,22 @@ bool WiiPadReturnToMenuRequested(void);
 // player.  The remote speaker is that remote's, and its sounds are player 1's.
 bool WiiPadRemoteIsPartners(void);
 
+// The physical button a prompt asks for, named as it is printed on the
+// player's own controller: "A" / "B" / "1" / "2" / "Y" / "X" / "ZL" / "R" /
+// "D-PAD DOWN".  The actions are the pad fields the engine reads -- Square
+// jumps, LeftShock ducks on foot, Triangle is the nod -- so one prompt serves
+// every pad: the button named changes (Triangle is 2, X or Y) while the action
+// does not.  Nil when that player has no controller, and the caller falls back
+// to its own wording.
+enum WiiPadPrompt
+{
+	WII_PROMPT_JUMP,	// Square
+	WII_PROMPT_DUCK,	// LeftShock on foot
+	WII_PROMPT_NOD,		// Triangle
+	WII_PROMPT_FIRE,	// Circle
+	WII_PROMPT_ENTER,	// Cross
+	WII_PROMPT_COUNT
+};
+const char *WiiPadPromptButton(int player, WiiPadPrompt prompt);
+
 #endif

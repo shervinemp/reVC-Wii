@@ -33,6 +33,7 @@
 #include "Zones.h"
 #include "config.h"
 #ifdef NINTENDO_WII
+#include "WiiPad.h"
 #include "WiiTrace.h"
 #endif
 
@@ -2420,8 +2421,21 @@ CCoopModes::DrawHud(void)
 			fill = CRGBA(255, 255, 255, 255);
 		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx + hw, cy + hh), fill);
 
+		// The player's own controller's button, when the label helper can name
+		// it: jump is X, Y and 1 across the GameCube pad, the Classic and the
+		// remote; duck R, ZL and D-pad down; the nod Y, X and 2.  A player the
+		// helper cannot name keeps the action word.
+		const char *label = promptNames[s_dance.prompt[i]];
+#ifdef NINTENDO_WII
+		const WiiPadPrompt button = s_dance.prompt[i] == DANCE_JUMP ? WII_PROMPT_JUMP :
+		                            s_dance.prompt[i] == DANCE_DUCK ? WII_PROMPT_DUCK :
+		                            WII_PROMPT_NOD;
+		const char *named = WiiPadPromptButton(i, button);
+		if(named != nil)
+			label = named;
+#endif
 		wchar text[16];
-		AsciiToUnicode(promptNames[s_dance.prompt[i]], text);
+		AsciiToUnicode(label, text);
 		CFont::SetPropOff();
 		CFont::SetBackgroundOff();
 		CFont::SetScale(SCREEN_SCALE_X(0.55f), SCREEN_SCALE_Y(1.0f));
