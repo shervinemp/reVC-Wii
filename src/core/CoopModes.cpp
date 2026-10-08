@@ -160,6 +160,45 @@ struct DerbyState
 };
 DerbyState s_derby;
 
+// --- the RC race's numbers ---------------------------------------------------
+
+const int kRcGates = 4;
+const int kRcLaps = 3;
+const float kRcRadius = 16.0f;		// the gate ring
+const float kRcGateRange = 7.0f;
+const float kRcGatherRange = 12.0f;	// the knot that arms it
+const uint32 kRcGridHoldMs = 2000;	// seated and still this long...
+const uint32 kRcCountdownMs = 3000;	// ...then the lights
+const uint32 kRcJumpWindowMs = 1500;	// two or more jump together to arm it
+const uint32 kRcGridTimeoutMs = 30000;
+const uint32 kRcLingerMs = 4000;
+const uint32 kRcRearmMs = 10000;
+const int kRcPot = 300;
+
+// The toy race: RC Bandits placed in a grid wherever the party jumped, a ring
+// of four gates, three laps.
+struct RcState
+{
+	bool active;
+	bool grid;
+	bool counting;
+	bool finished;
+	uint32 gridAt;
+	uint32 gridReadyAt;
+	uint32 countdownAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	CVector centre;
+	CVector forward;
+	CVector gate[kRcGates];
+	int nextGate[NUMPLAYERS];
+	int lap[NUMPLAYERS];
+	uint32 lastJump[NUMPLAYERS];
+	int winner;
+	CVehicle *car[NUMPLAYERS];
+};
+RcState s_rc;
+
 // Where a player is for these purposes: their car while they are in one, so a
 // crew chasing in cars is measured car to car.
 CVector
@@ -1258,6 +1297,336 @@ UpdateDerby(uint32 now)
 	s_derby.countdownAt = now + kDerbyIntermissionMs;
 }
 
+// --- the RC race -------------------------------------------------------------
+
+bool
+PlayerInRcCar(int player, CVehicle **out)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(s_rc.car[i] == ped->m_pMyVehicle){
+			*out = ped->m_pMyVehicle;
+			return true;
+		}
+	return false;
+}
+
+// A normal-sized ped in a toy car is a normal-sized ped through a toy car's
+// roof; the car is the thing being driven, so the driver is not drawn.  The
+// engine puts them back when they get out.
+void
+SuppressRcBody(CPlayerPed *ped)
+{
+	ped->bRenderPedInCar = false;
+}
+
+void
+ReleaseRcCars(void)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CVehicle *car = s_rc.car[i];
+		if(car != nil){
+			CTheScripts::CleanUpThisVehicle(car);
+			car->CleanUpOldReference((CEntity**)&s_rc.car[i]);
+			s_rc.car[i] = nil;
+		}
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil)
+			ped->bRenderPedInCar = true;
+	}
+}
+
+void
+EndRc(uint32 now, const char *why)
+{
+	ReleaseRcCars();
+	s_rc.active = false;
+	s_rc.grid = false;
+	s_rc.counting = false;
+	s_rc.finished = false;
+	s_rc.rearmAt = now + kRcRearmMs;
+	COOP_LOG("WII coop: rc race off (%s)\n", why);
+}
+
+bool
+SpawnRcCar(int player, const CVector &slot, const CVector &forward)
+{
+	if(s_rc.car[player] != nil)
+		return true;
+	if(!CStreaming::HasModelLoaded(MI_RCBANDIT))
+		return false;
+	CVector pos = slot;
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	if(found)
+		pos.z = ground;
+	CAutomobile *car = new CAutomobile(MI_RCBANDIT, MISSION_VEHICLE);
+	if(car == nil)
+		return false;
+	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	car->SetPosition(pos);
+	car->GetForward() = forward;
+	car->GetRight() = CVector(forward.y, -forward.x, 0.0f);
+	car->GetUp() = CVector(0.0f, 0.0f, 1.0f);
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
+	car->SetStatus(STATUS_ABANDONED);
+	car->bIsLocked = true;
+	car->AutoPilot.m_nCarMission = MISSION_NONE;
+	car->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	car->bEngineOn = true;
+	car->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
+	CWorld::Add(car);
+	car->RegisterReference((CEntity**)&s_rc.car[player]);
+	s_rc.car[player] = car;
+	return true;
+}
+
+void
+RcSlot(int player, CVector &out)
+{
+	const CVector right(s_rc.forward.y, -s_rc.forward.x, 0.0f);
+	out = s_rc.centre + right*((player - 1.5f) * 5.0f);
+}
+
+// A wrecked or lost toy is replaced back at the middle; the laps already
+// driven stay.
+void
+RespawnRcCar(int player)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil)
+		return;
+	CVehicle *old = s_rc.car[player];
+	if(old != nil){
+		CTheScripts::CleanUpThisVehicle(old);
+		old->CleanUpOldReference((CEntity**)&s_rc.car[player]);
+		s_rc.car[player] = nil;
+	}
+	CVector slot;
+	RcSlot(player, slot);
+	if(!SpawnRcCar(player, slot, s_rc.forward))
+		return;
+	ped->WarpPedIntoCar(s_rc.car[player]);
+}
+
+void
+StartRc(uint32 now, const CVector &centre, const CVector &forward)
+{
+	s_rc.active = true;
+	s_rc.grid = true;
+	s_rc.counting = false;
+	s_rc.finished = false;
+	s_rc.gridAt = now;
+	s_rc.gridReadyAt = 0;
+	s_rc.winner = -1;
+	s_rc.centre = centre;
+	s_rc.forward = forward;
+
+	// One gate ahead, then round the ring at right angles.
+	const CVector right(forward.y, -forward.x, 0.0f);
+	const CVector dirs[kRcGates] = { forward, right, forward*-1.0f, right*-1.0f };
+	for(int i = 0; i < kRcGates; i++){
+		CVector gate = centre + dirs[i]*kRcRadius;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(gate.x, gate.y, gate.z + 2.0f, &found);
+		gate.z = (found ? ground : centre.z) + 1.0f;
+		s_rc.gate[i] = gate;
+	}
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_rc.nextGate[i] = -1;
+		s_rc.lap[i] = 0;
+	}
+	CStreaming::RequestModel(MI_RCBANDIT, 0);
+	COOP_LOG("WII coop: rc race armed\n");
+	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
+		CHud::SetHelpMessage(TheText.Get("WII_CSC"), true);
+}
+
+void
+TryStartRc(uint32 now)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(now < s_rc.rearmAt)
+		return;
+
+	// The party on foot, in a knot, and two or more of them jump together:
+	// one person hopping about is not a race.
+	CVector sum(0.0f, 0.0f, 0.0f);
+	CVector forward(0.0f, 0.0f, 0.0f);
+	int count = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->bInVehicle)
+			return;
+		sum += ped->GetPosition();
+		forward += ped->GetForward();
+		count++;
+		if(GetPadFromPlayer(ped)->JumpJustDown())
+			s_rc.lastJump[i] = now;
+	}
+	if(count < 2)
+		return;
+	int jumped = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && now - s_rc.lastJump[i] <= kRcJumpWindowMs)
+			jumped++;
+	}
+	if(jumped < 2)
+		return;
+	const CVector centre = sum / (float)count;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && (ped->GetPosition() - centre).Magnitude2D() > kRcGatherRange)
+			return;
+	}
+	CVector dir = forward;
+	dir.z = 0.0f;
+	if(dir.Magnitude() < 0.1f)
+		dir = CVector(1.0f, 0.0f, 0.0f);
+	dir.Normalise();
+	StartRc(now, centre, dir);
+}
+
+// The gates glow for everyone, and each driver's own next gate glows in their
+// own colour: four gates in a ring only mean a race if you know which is
+// yours.
+void
+RegisterRcCoronas(void)
+{
+	for(int i = 0; i < kRcGates; i++)
+		CCoronas::RegisterCorona((uintptr)&s_rc + i, 120, 200, 255, 255,
+			s_rc.gate[i], 4.0f, 200.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_rc.nextGate[i] < 0)
+			continue;
+		const CRGBA &colour = kCoopColours[i];
+		CCoronas::RegisterCorona((uintptr)&s_rc + kRcGates + i, colour.r, colour.g, colour.b, 255,
+			s_rc.gate[s_rc.nextGate[i]], 2.5f, 150.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	}
+}
+
+void
+UpdateRc(uint32 now)
+{
+	if(!s_rc.active){
+		TryStartRc(now);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndRc(now, "session");
+		return;
+	}
+	if(s_rc.finished){
+		if(now >= s_rc.finishAt)
+			EndRc(now, "over");
+		return;
+	}
+
+	if(s_rc.grid){
+		// The grid fills as the model arrives; the lights come down once two
+		// or more are seated and still.
+		int seated = 0;
+		bool moving = false;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
+				continue;
+			if(s_rc.car[i] == nil){
+				CVector slot;
+				RcSlot(i, slot);
+				SpawnRcCar(i, slot, s_rc.forward);
+			}
+			CVehicle *car;
+			if(PlayerInRcCar(i, &car)){
+				seated++;
+				if(car->GetMoveSpeed().Magnitude() > 0.6f)
+					moving = true;
+				SuppressRcBody(ped);
+			}
+		}
+		if(seated >= 2 && !moving){
+			if(s_rc.gridReadyAt == 0)
+				s_rc.gridReadyAt = now;
+			else if(now - s_rc.gridReadyAt >= kRcGridHoldMs){
+				s_rc.grid = false;
+				s_rc.counting = true;
+				s_rc.countdownAt = now + kRcCountdownMs;
+			}
+		}else{
+			s_rc.gridReadyAt = 0;
+		}
+		if(now - s_rc.gridAt > kRcGridTimeoutMs)
+			EndRc(now, "no grid");
+		return;
+	}
+
+	if(s_rc.counting){
+		if(now < s_rc.countdownAt)
+			return;
+		s_rc.counting = false;
+		int racers = 0;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CVehicle *car;
+			if(PlayerInRcCar(i, &car)){
+				s_rc.nextGate[i] = 0;
+				s_rc.lap[i] = 0;
+				racers++;
+			}else{
+				s_rc.nextGate[i] = -1;
+			}
+		}
+		if(racers < 2){
+			EndRc(now, "no grid");
+			return;
+		}
+		COOP_LOG("WII coop: rc race on\n");
+		return;
+	}
+
+	// The race: gates in order, three laps, first across takes it.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_rc.nextGate[i] < 0)
+			continue;
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil){
+			s_rc.nextGate[i] = -1;
+			continue;
+		}
+		CVehicle *car = ped->bInVehicle ? ped->m_pMyVehicle : nil;
+		if(car == nil || car->GetStatus() == STATUS_WRECKED){
+			RespawnRcCar(i);
+			continue;
+		}
+		SuppressRcBody(ped);
+		if((car->GetPosition() - s_rc.gate[s_rc.nextGate[i]]).Magnitude2D() < kRcGateRange){
+			s_rc.nextGate[i]++;
+			if(s_rc.nextGate[i] >= kRcGates){
+				s_rc.nextGate[i] = 0;
+				s_rc.lap[i]++;
+				if(s_rc.lap[i] >= kRcLaps){
+					s_rc.winner = i;
+					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
+					s_rc.finished = true;
+					s_rc.finishAt = now + kRcLingerMs;
+					COOP_LOG("WII coop: rc race to player %d\n", i + 1);
+					return;
+				}
+			}
+		}
+	}
+	RegisterRcCoronas();
+}
+
 } // namespace
 
 void
@@ -1287,6 +1656,13 @@ CCoopModes::Init(void)
 	}
 	memset(&s_derby, 0, sizeof(s_derby));
 	s_derby.matchWinner = -1;
+
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_rc.car[i] != nil)
+			s_rc.car[i]->CleanUpOldReference((CEntity**)&s_rc.car[i]);
+	}
+	memset(&s_rc, 0, sizeof(s_rc));
+	s_rc.winner = -1;
 }
 
 void
@@ -1297,6 +1673,7 @@ CCoopModes::Update(void)
 	// The modes are independent; all ride the same session state.
 	UpdateRun(now);
 	UpdateDerby(now);
+	UpdateRc(now);
 
 	// A resolved case lets go of its suspect on its own clock, shift or no
 	// shift: the wreck and the body linger a moment before the world takes
@@ -1358,7 +1735,8 @@ CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 bool
 CCoopModes::SteadyView(void)
 {
-	// The derby: a ring of spinning cars, and a camera that turns with one of
-	// them turns with all of them.  See CCam::Process_WiiCoop.
-	return s_derby.active;
+	// The derby, where every car is spinning, and the toy race, where every
+	// car is a twitchy little thing that would whip the view around.  See
+	// CCam::Process_WiiCoop.
+	return s_derby.active || s_rc.active;
 }

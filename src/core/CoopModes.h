@@ -42,6 +42,13 @@ class CEntity;
 // the match.  Weapons are off for the duration, a loaner Bloodring Banger
 // appears for anyone who needs one, and the camera holds still: a derby is all
 // spinning cars, and a view that turns with one of them turns with all.
+//
+// The fourth is the toy race.  The party on foot in a knot and somebody jumps:
+// RC Bandits are placed in a grid on the spot, a ring of four gates glows
+// around them -- each driver's own next gate in their own colour -- and three
+// laps take the pot.  A wrecked toy is replaced back at the middle with the
+// laps kept, and the driver inside is not drawn, because a normal-sized ped in
+// a toy is a normal-sized ped through its roof.
 class CCoopModes
 {
 public:
@@ -58,6 +65,6 @@ public:
 	static bool OnDuty(CEntity *criminal, CEntity *victim, bool gunfire);
 
 	// Whether a mode is running that wants the camera to hold still rather
-	// than turn with a car's nose: the derby, where every car is spinning.
+	// than turn with a car's nose: the derby and the toy race.
 	static bool SteadyView(void);
 };

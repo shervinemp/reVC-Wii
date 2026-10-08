@@ -228,7 +228,7 @@ RwTexture *gpViewFinderTex;
 // identical figures on it, which of them is you.  Player 1 and the first
 // partner are Vice City's own pair; the other two are the next most telling
 // hues against the game's streets.
-static const CRGBA kCoopColours[NUMPLAYERS] = {
+const CRGBA kCoopColours[NUMPLAYERS] = {
 	CRGBA(80, 215, 255, 255), CRGBA(255, 110, 200, 255),
 	CRGBA(140, 240, 120, 255), CRGBA(255, 200, 90, 255)
 };

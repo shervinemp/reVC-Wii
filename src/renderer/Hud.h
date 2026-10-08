@@ -2,6 +2,10 @@
 #define __GTA_HUD_H__
 #include "Sprite2d.h"
 
+// The four players' colours: reticles, pips, and anything else that has to
+// point at one of them.  Indexed by player slot.
+extern const CRGBA kCoopColours[NUMPLAYERS];
+
 #define HELP_MSG_LENGTH 256
 
 #define HUD_TEXT_SCALE_X 0.7f
