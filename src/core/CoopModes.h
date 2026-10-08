@@ -52,15 +52,16 @@ class CEntity;
 //
 // The fifth is the dance-off.  The party on foot in a knot and every one of
 // them ducking together: sixty seconds on a spot, a beat that climbs from 700
-// milliseconds to 420, and a prompt each -- JUMP, DUCK or the 2 button, drawn
-// in the player's own colour at the bottom of the screen.  Hit the prompt
+// milliseconds to 420, and a prompt each -- jump, duck or the nod, each
+// printed as the player's own controller's button, in their colour at the
+// bottom of the screen.  Hit the prompt
 // before the next beat or the combo drops.  Every hit pays and the best score
 // takes the pot.  The prompts are real actions, so the dancing is the party's
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
 //
 // The sixth is cops & robbers.  The party on foot in a knot and a press of the
-// 2 button: a case appears at their feet and a getaway marker a short run
+// nod: a case appears at their feet and a getaway marker a short run
 // away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
 // them -- the case falls where it fell, and anyone can take it.  First to

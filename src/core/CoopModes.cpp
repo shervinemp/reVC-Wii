@@ -223,7 +223,7 @@ enum eDancePrompt
 };
 
 // The dance-off: the party bobbing on a spot to a beat that keeps climbing.
-// The prompts are real actions -- jump, duck, the 2 button -- so the dancing
+// The prompts are real actions -- jump, duck, the nod -- so the dancing
 // is the party's own bodies; the game's own dance loops are script data this
 // side of the engine cannot name.
 struct DanceState
@@ -1284,7 +1284,7 @@ TryStartDerby(uint32 now)
 			return;
 	}
 
-	// A honk from any of them is the nod.
+	// A honk from any of them is the go-ahead.
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(car[i] == nil)
 			continue;
@@ -1906,7 +1906,7 @@ UpdateDance(uint32 now)
 		s_dance.beatAt = now + DanceBeatInterval(now);
 	}
 
-	// The reads.  Jump and duck are the pad's own pulses; the 2 button is a
+	// The reads.  Jump and duck are the pad's own pulses; the nod is a
 	// held state here, so its edge is tracked by hand.
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -2063,7 +2063,7 @@ TryStartCnR(uint32 now, bool pressed)
 	if(!pressed)
 		return;
 
-	// The party on foot in a knot; the 2 button is the nod.
+	// The party on foot in a knot; the nod (Triangle) starts it.
 	CVector sum(0.0f, 0.0f, 0.0f);
 	CVector forward(0.0f, 0.0f, 0.0f);
 	int count = 0;
@@ -2091,7 +2091,7 @@ TryStartCnR(uint32 now, bool pressed)
 void
 UpdateCnR(uint32 now)
 {
-	// The 2 button's holding edge, tracked every frame so a press during a
+	// The nod's holding edge, tracked every frame so a press during a
 	// match is not read as one right after it.
 	bool pressed = false;
 	for(int i = 0; i < NUMPLAYERS; i++){

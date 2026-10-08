@@ -460,7 +460,7 @@ cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
   three laps, each driver's next gate in their colour),
 - the **dance-off** (everyone ducks together: prompts on a climbing beat; the
   dancing is the players' own bodies), and
-- **cops & robbers** (press 2 while gathered: grab the case, deliver or bust,
+- **cops & robbers** (a press of the nod while gathered: grab the case, deliver or bust,
   first to three).
 
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
