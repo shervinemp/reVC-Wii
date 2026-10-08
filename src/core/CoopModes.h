@@ -58,6 +58,14 @@ class CEntity;
 // takes the pot.  The prompts are real actions, so the dancing is the party's
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
+//
+// The sixth is cops & robbers.  The party on foot in a knot and a press of the
+// 2 button: a case appears at their feet and a getaway marker a short run
+// away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
+// drive it to the getaway for a point, or pin the carrier for a moment to bust
+// them -- the case falls where it fell, and anyone can take it.  First to
+// three takes the pot.  The party's wall and leash stand aside for it: a
+// pursuit nobody can outrun is not a pursuit.
 class CCoopModes
 {
 public:
@@ -77,7 +85,12 @@ public:
 	// than turn with a car's nose: the derby and the toy race.
 	static bool SteadyView(void);
 
+	// Whether a mode is running that needs the party able to separate: cops &
+	// robbers, which the session's wall and leash would otherwise strangle.
+	static bool FreeRoam(void);
+
 	// The minigames' screen marks, called by the HUD with the other co-op
-	// ones: the dance prompts, when a round is on.
+	// ones: the dance prompts and the cops & robbers scores, when a round is
+	// on.
 	static void DrawHud(void);
 };

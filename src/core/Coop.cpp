@@ -1165,8 +1165,10 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, bool leadTeleported)
 		return "fell";
 	// A partner at the wheel of their own car gets the longer leash; everybody
 	// else, including a passenger in player 1's car, gets the walking one.
+	// A pursuit mode suspends the distance leash -- falls and kidnaps still
+	// bring a partner back, distance no longer does.
 	const float leash = (partnerVehicle != nil && partnerVehicle->pDriver == partner) ? kLeashDriving : kLeash;
-	if((leadPos - partnerPos).Magnitude() > leash)
+	if(!CCoopModes::FreeRoam() && (leadPos - partnerPos).Magnitude() > leash)
 		return "too far from player 1";
 	return nil;
 }
@@ -1929,6 +1931,10 @@ void
 CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 {
 	if(!ms_bRunning)
+		return;
+	// A pursuit mode stands the wall aside; the parties in it have to be able
+	// to separate.
+	if(CCoopModes::FreeRoam())
 		return;
 	const int index = GetPlayerIndex(ped);
 	if(index < 0)

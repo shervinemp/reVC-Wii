@@ -245,13 +245,56 @@ struct DanceState
 };
 DanceState s_dance;
 
+// --- cops & robbers' numbers -------------------------------------------------
+
+const float kCnRGatherRange = 12.0f;	// the knot that arms it
+const float kCnRGetawayDist = 24.0f;	// the getaway marker from the middle
+const float kCnRGrabRange = 2.5f;	// on foot...
+const float kCnRGrabRangeCar = 4.5f;	// ...and from a car
+const float kCnRDeliverRange = 4.5f;
+const float kCnRBustRange = 5.0f;
+const uint32 kCnRBustHoldMs = 1500;
+const float kCnRArena = 34.0f;		// beyond this the case comes back
+const uint32 kCnROutGraceMs = 3000;
+const int kCnRWinScore = 3;
+const uint32 kCnRCapMs = 300000;
+const uint32 kCnRLingerMs = 4000;
+const uint32 kCnRRearmMs = 12000;
+const int kCnRPot = 400;
+
+// Cops & robbers: the case is a position, not an object.  The briefcase model
+// would need creating, carrying and attaching, and the corona-and-blip the
+// other modes already speak in says where the score is just as well.
+struct CnRState
+{
+	bool active;
+	bool finished;
+	uint32 startAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	CVector centre;
+	CVector getaway;
+	CVector casePos;
+	bool carried;
+	int carrier;
+	int score[NUMPLAYERS];
+	uint32 bustSince;
+	int bustBy;
+	uint32 outSince;
+	int winner;
+	int32 caseBlip;
+	int32 getawayBlip;
+	bool triangleHeld[NUMPLAYERS];
+};
+CnRState s_cnr;
+
 // One world mode at a time: every one of these arms from something the party
 // does in the world, and two at once would be two modes fighting over the same
 // players.
 bool
 ModeActive(void)
 {
-	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active;
+	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active || s_cnr.active;
 }
 
 // Where a player is for these purposes: their car while they are in one, so a
@@ -1892,6 +1935,311 @@ UpdateDance(uint32 now)
 	RegisterDanceCoronas();
 }
 
+// --- cops & robbers ----------------------------------------------------------
+
+void
+ClearCaseMarker(void)
+{
+	if(s_cnr.caseBlip >= 0){
+		CRadar::ClearBlip(s_cnr.caseBlip);
+		s_cnr.caseBlip = -1;
+	}
+	if(s_cnr.carrier >= 0){
+		CPlayerPed *ped = CCoop::GetPlayerPed(s_cnr.carrier);
+		if(ped != nil)
+			CRadar::ClearBlipForEntity(BLIP_CHAR, CPools::GetPedPool()->GetIndex(ped));
+	}
+}
+
+void
+ShowLooseCase(void)
+{
+	s_cnr.caseBlip = CRadar::SetCoordBlip(BLIP_COORD, s_cnr.casePos, RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+}
+
+void
+ShowCarriedCase(void)
+{
+	CPlayerPed *ped = s_cnr.carrier >= 0 ? CCoop::GetPlayerPed(s_cnr.carrier) : nil;
+	if(ped != nil)
+		CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedPool()->GetIndex(ped), RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+}
+
+void
+DropCase(void)
+{
+	ClearCaseMarker();
+	s_cnr.carried = false;
+	s_cnr.carrier = -1;
+	s_cnr.bustSince = 0;
+	s_cnr.bustBy = -1;
+	ShowLooseCase();
+}
+
+void
+RegisterCnRCoronas(void)
+{
+	CCoronas::RegisterCorona((uintptr)&s_cnr, 255, 130, 70, 255,
+		s_cnr.casePos, 3.0f, 200.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+		CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	CCoronas::RegisterCorona((uintptr)&s_cnr + 1, 120, 255, 130, 255,
+		s_cnr.getaway, 4.5f, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+		CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+}
+
+void
+EndCnR(uint32 now, const char *why)
+{
+	ClearCaseMarker();
+	if(s_cnr.getawayBlip >= 0){
+		CRadar::ClearBlip(s_cnr.getawayBlip);
+		s_cnr.getawayBlip = -1;
+	}
+	s_cnr.active = false;
+	s_cnr.finished = false;
+	s_cnr.rearmAt = now + kCnRRearmMs;
+	COOP_LOG("WII coop: cops & robbers off (%s)\n", why);
+}
+
+void
+FinishCnR(uint32 now, int winner)
+{
+	if(winner >= 0){
+		s_cnr.winner = winner;
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kCnRPot;
+		COOP_LOG("WII coop: cops & robbers to player %d\n", winner + 1);
+	}
+	s_cnr.finished = true;
+	s_cnr.finishAt = now + kCnRLingerMs;
+}
+
+void
+StartCnR(uint32 now, const CVector &centre, const CVector &forward)
+{
+	s_cnr.active = true;
+	s_cnr.finished = false;
+	s_cnr.startAt = now;
+	s_cnr.centre = centre;
+	s_cnr.casePos = centre;
+	s_cnr.carried = false;
+	s_cnr.carrier = -1;
+	s_cnr.bustSince = 0;
+	s_cnr.bustBy = -1;
+	s_cnr.outSince = 0;
+	s_cnr.winner = -1;
+	s_cnr.caseBlip = -1;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_cnr.score[i] = 0;
+
+	CVector dir = forward;
+	dir.z = 0.0f;
+	if(dir.Magnitude() < 0.1f)
+		dir = CVector(1.0f, 0.0f, 0.0f);
+	dir.Normalise();
+	s_cnr.getaway = centre + dir*kCnRGetawayDist;
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(s_cnr.getaway.x, s_cnr.getaway.y, s_cnr.getaway.z + 2.0f, &found);
+	s_cnr.getaway.z = (found ? ground : centre.z) + 1.0f;
+
+	s_cnr.getawayBlip = CRadar::SetCoordBlip(BLIP_COORD, s_cnr.getaway, RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
+	ShowLooseCase();
+	COOP_LOG("WII coop: cops & robbers on\n");
+	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
+		CHud::SetHelpMessage(TheText.Get("WII_CSN"), true);
+}
+
+void
+TryStartCnR(uint32 now, bool pressed)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(ModeActive())
+		return;
+	if(now < s_cnr.rearmAt)
+		return;
+	if(!pressed)
+		return;
+
+	// The party on foot in a knot; the 2 button is the nod.
+	CVector sum(0.0f, 0.0f, 0.0f);
+	CVector forward(0.0f, 0.0f, 0.0f);
+	int count = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->bInVehicle)
+			return;
+		sum += ped->GetPosition();
+		forward += ped->GetForward();
+		count++;
+	}
+	if(count < 2)
+		return;
+	const CVector centre = sum / (float)count;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && (ped->GetPosition() - centre).Magnitude2D() > kCnRGatherRange)
+			return;
+	}
+	StartCnR(now, centre, forward);
+}
+
+void
+UpdateCnR(uint32 now)
+{
+	// The 2 button's holding edge, tracked every frame so a press during a
+	// match is not read as one right after it.
+	bool pressed = false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CPad *pad = GetPadFromPlayer(ped);
+		const bool tri = pad->NewState.Triangle != 0;
+		if(tri && !s_cnr.triangleHeld[i])
+			pressed = true;
+		s_cnr.triangleHeld[i] = tri;
+	}
+
+	if(!s_cnr.active){
+		TryStartCnR(now, pressed);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndCnR(now, "session");
+		return;
+	}
+	if(s_cnr.finished){
+		if(now >= s_cnr.finishAt)
+			EndCnR(now, "over");
+		return;
+	}
+	if(now - s_cnr.startAt >= kCnRCapMs){
+		int best = -1;
+		int bestScore = 0;
+		bool tie = false;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_cnr.score[i] > bestScore){
+				best = i;
+				bestScore = s_cnr.score[i];
+				tie = false;
+			}else if(s_cnr.score[i] == bestScore && s_cnr.score[i] > 0)
+				tie = true;
+		}
+		FinishCnR(now, tie ? -1 : best);
+		return;
+	}
+
+	// The case goes where its carrier goes; a carrier who is gone or down
+	// drops it where it was.
+	if(s_cnr.carried){
+		CPlayerPed *carrier = s_cnr.carrier >= 0 ? CCoop::GetPlayerPed(s_cnr.carrier) : nil;
+		if(carrier == nil || carrier->DyingOrDead())
+			DropCase();
+		else
+			s_cnr.casePos = PlayerCoors(s_cnr.carrier);
+	}
+
+	// Loose: the closest player in reach takes it.
+	if(!s_cnr.carried){
+		int best = -1;
+		float bestDist = 0.0f;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil || ped->DyingOrDead())
+				continue;
+			const float reach = (ped->bInVehicle && ped->m_pMyVehicle != nil) ? kCnRGrabRangeCar : kCnRGrabRange;
+			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
+			if(dist < reach && (best < 0 || dist < bestDist)){
+				best = i;
+				bestDist = dist;
+			}
+		}
+		if(best >= 0){
+			ClearCaseMarker();
+			s_cnr.carrier = best;
+			s_cnr.carried = true;
+			s_cnr.casePos = PlayerCoors(best);
+			ShowCarriedCase();
+			s_cnr.bustSince = 0;
+			s_cnr.bustBy = -1;
+			COOP_LOG("WII coop: case to player %d\n", best + 1);
+		}
+	}
+
+	if(s_cnr.carried){
+		// Delivered to the getaway.
+		if((s_cnr.casePos - s_cnr.getaway).Magnitude2D() < kCnRDeliverRange){
+			const int scorer = s_cnr.carrier;
+			s_cnr.score[scorer]++;
+			COOP_LOG("WII coop: case delivered by player %d\n", scorer + 1);
+			ClearCaseMarker();
+			s_cnr.carried = false;
+			s_cnr.carrier = -1;
+			s_cnr.casePos = s_cnr.centre;
+			ShowLooseCase();
+			s_cnr.bustSince = 0;
+			s_cnr.bustBy = -1;
+			if(s_cnr.score[scorer] >= kCnRWinScore)
+				FinishCnR(now, scorer);
+			return;
+		}
+
+		// Busted: a cop holds them for a moment.
+		int pin = -1;
+		float pinDist = kCnRBustRange;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(i == s_cnr.carrier)
+				continue;
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil || ped->DyingOrDead())
+				continue;
+			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
+			if(dist < pinDist){
+				pinDist = dist;
+				pin = i;
+			}
+		}
+		if(pin >= 0){
+			if(pin != s_cnr.bustBy){
+				s_cnr.bustBy = pin;
+				s_cnr.bustSince = now;
+			}else if(now - s_cnr.bustSince >= kCnRBustHoldMs){
+				s_cnr.score[pin]++;
+				COOP_LOG("WII coop: case busted by player %d\n", pin + 1);
+				DropCase();
+				if(s_cnr.score[pin] >= kCnRWinScore)
+					FinishCnR(now, pin);
+				return;
+			}
+		}else{
+			s_cnr.bustSince = 0;
+			s_cnr.bustBy = -1;
+		}
+
+		// Out of the field: the case comes back, no score either way.
+		if((s_cnr.casePos - s_cnr.centre).Magnitude2D() > kCnRArena){
+			if(s_cnr.outSince == 0)
+				s_cnr.outSince = now;
+			else if(now - s_cnr.outSince >= kCnROutGraceMs){
+				ClearCaseMarker();
+				s_cnr.carried = false;
+				s_cnr.carrier = -1;
+				s_cnr.casePos = s_cnr.centre;
+				s_cnr.outSince = 0;
+				ShowLooseCase();
+			}
+		}else{
+			s_cnr.outSince = 0;
+		}
+	}
+
+	RegisterCnRCoronas();
+}
+
 } // namespace
 
 void
@@ -1932,6 +2280,12 @@ CCoopModes::Init(void)
 	memset(&s_dance, 0, sizeof(s_dance));
 	for(int i = 0; i < NUMPLAYERS; i++)
 		s_dance.prompt[i] = -1;
+
+	memset(&s_cnr, 0, sizeof(s_cnr));
+	s_cnr.carrier = -1;
+	s_cnr.winner = -1;
+	s_cnr.caseBlip = -1;
+	s_cnr.getawayBlip = -1;
 }
 
 void
@@ -1944,6 +2298,7 @@ CCoopModes::Update(void)
 	UpdateDerby(now);
 	UpdateRc(now);
 	UpdateDance(now);
+	UpdateCnR(now);
 
 	// A resolved case lets go of its suspect on its own clock, shift or no
 	// shift: the wreck and the body linger a moment before the world takes
@@ -2011,14 +2366,39 @@ CCoopModes::SteadyView(void)
 	return s_derby.active || s_rc.active;
 }
 
+bool
+CCoopModes::FreeRoam(void)
+{
+	// Cops & robbers is a pursuit: the wall that holds the party together has
+	// to stand aside or nobody can outrun anybody.  See CCoop::LimitSeparation
+	// and NeedsRegroup.
+	return s_cnr.active;
+}
+
 void
 CCoopModes::DrawHud(void)
 {
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	// Cops & robbers: each score as a bar, three to win.
+	if(s_cnr.active && !s_cnr.finished){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			const float cx = SCREEN_WIDTH*(0.5f + (i - 1.5f)*0.15f);
+			const float cy = SCREEN_HEIGHT*0.84f;
+			const float hw = SCREEN_SCALE_X(30.0f);
+			const float hh = SCREEN_SCALE_Y(10.0f);
+			CSprite2d::DrawRect(CRect(cx - hw - 2.0f, cy - hh - 2.0f, cx + hw + 2.0f, cy + hh + 2.0f), CRGBA(0, 0, 0, 255));
+			if(s_cnr.score[i] > 0){
+				const float fill = (float)Clamp(s_cnr.score[i], 0, kCnRWinScore)/(float)kCnRWinScore;
+				CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx - hw + 2.0f*hw*fill, cy + hh), kCoopColours[i]);
+			}
+		}
+	}
+
 	if(!s_dance.active || s_dance.finished)
 		return;
 
 	static const char *promptNames[DANCE_PROMPTS] = { "JUMP", "DUCK", "2" };
-	const uint32 now = CTimer::GetTimeInMilliseconds();
 
 	for(int i = 0; i < NUMPLAYERS; i++){
 		const bool missed = now - s_dance.missFlash[i] < 250;
