@@ -863,6 +863,88 @@ static const unsigned int kStallFrameMs = 400;
 // freeze then costs exactly one line.
 static const unsigned int kStallReportGapMs = 5000;
 
+#if CREATE_LOG >= 1 && WII_PERF_LOG
+// The WII_PERF_LOG line, once per this long.
+static const unsigned int kPerfReportMs = 10000;
+
+// Tenths of a millisecond per frame, for printing as "12.3".
+static unsigned int
+tenthsPerFrame(u64 ticks, unsigned int frames)
+{
+	return (unsigned int)(ticks_to_microsecs(ticks) / 100 / frames);
+}
+
+static void
+clearRenderClocks(void)
+{
+	rw::gx::nativeRenderTicks = 0;
+	rw::gx::nativeGpuWaitTicks = 0;
+	rw::gx::nativeFlipWaitTicks = 0;
+	rw::gx::nativeSkinTicks = 0;
+	rw::gx::nativeSkinnedVertices = 0;
+	rw::gx::nativeSkinRepeats = 0;
+	rw::gx::nativeSkinStalls = 0;
+}
+
+// Accumulates one frame and, once per kPerfReportMs, writes the line and starts
+// over.  Render, GPU wait and vsync wait are librw's own clocks
+// (rw::gx::native*Ticks); the update is what is left of the frame without them:
+// the simulation, streaming, audio and input.
+static void
+reportFrameRate(u64 frameStart, u64 frameEnd)
+{
+	static u64 windowStart;
+	static unsigned int frames;
+	static u64 frameTicks;
+	static u64 worstTicks;
+	if(windowStart == 0){
+		windowStart = frameStart;
+		clearRenderClocks();
+	}
+	u64 ticks = frameEnd - frameStart;
+	frames++;
+	frameTicks += ticks;
+	if(ticks > worstTicks)
+		worstTicks = ticks;
+	u64 elapsed = frameEnd - windowStart;
+	if(ticks_to_millisecs(elapsed) < kPerfReportMs)
+		return;
+
+	u64 render = rw::gx::nativeRenderTicks;
+	u64 gpuWait = rw::gx::nativeGpuWaitTicks;
+	u64 flipWait = rw::gx::nativeFlipWaitTicks;
+	u64 accounted = render + gpuWait + flipWait;
+	u64 update = frameTicks > accounted ? frameTicks - accounted : 0;
+	unsigned int fpsTenths = (unsigned int)((u64)frames * 10000000ull /
+		(ticks_to_microsecs(elapsed) + 1));
+	unsigned int average = tenthsPerFrame(frameTicks, frames);
+	unsigned int renderT = tenthsPerFrame(render, frames);
+	unsigned int gpuT = tenthsPerFrame(gpuWait, frames);
+	unsigned int flipT = tenthsPerFrame(flipWait, frames);
+	unsigned int updateT = tenthsPerFrame(update, frames);
+	unsigned int skinT = tenthsPerFrame(rw::gx::nativeSkinTicks, frames);
+	WiiTraceReport("WII perf: %u frames %u.%u fps | frame %u.%ums worst %ums | "
+	               "update %u.%u render %u.%u (skin %u.%u, %u verts) "
+	               "gpu-wait %u.%u vsync-wait %u.%u | skin repeats %u stalls %u | "
+	               "state=%d\n",
+	               frames, fpsTenths / 10, fpsTenths % 10,
+	               average / 10, average % 10,
+	               (unsigned int)ticks_to_millisecs(worstTicks),
+	               updateT / 10, updateT % 10, renderT / 10, renderT % 10,
+	               skinT / 10, skinT % 10,
+	               rw::gx::nativeSkinnedVertices / frames,
+	               gpuT / 10, gpuT % 10, flipT / 10, flipT % 10,
+	               rw::gx::nativeSkinRepeats / frames, rw::gx::nativeSkinStalls,
+	               (int)gGameState);
+
+	windowStart = frameEnd;
+	frames = 0;
+	frameTicks = 0;
+	worstTicks = 0;
+	clearRenderClocks();
+}
+#endif
+
 // Both of the ways a game can start, factored out because a running game has to be
 // able to start another one and that is the case the boot path never exercises.
 //
@@ -1238,6 +1320,9 @@ main(int argc, char **argv)
 			               (unsigned)(CStreaming::ms_memoryUsed / 1024),
 			               CStreaming::ms_numVehiclesLoaded, CStreaming::ms_numPedsLoaded);
 		}
+#if CREATE_LOG >= 1 && WII_PERF_LOG
+		reportFrameRate(frameStart, frameEnd);
+#endif
 	}
 
 	WiiTraceReport("WII game boot: exiting\n");

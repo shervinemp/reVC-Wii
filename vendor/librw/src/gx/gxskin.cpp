@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>
 
 #include "../rwbase.h"
 #include "../rwerror.h"
@@ -29,6 +30,11 @@ namespace gx {
 #define MAX_SKIN_BONES 64
 
 static Matrix skinMatrices[MAX_SKIN_BONES];
+
+uint64 nativeSkinTicks;
+uint32 nativeSkinnedVertices;
+uint32 nativeSkinRepeats;
+uint32 nativeSkinStalls;
 
 static uint32
 alignArraySize(uint32 size)
@@ -245,6 +251,7 @@ allocateSkinVertices(uint32 size)
 		// More repeats in one frame than the ring holds: let the GPU catch up
 		// with everything drawn from it, then reuse it from the start.
 		waitForGpu();
+		nativeSkinStalls++;
 		skinRing.epoch = nativeGpuIdleEpoch();
 		skinRing.used = 0;
 	}
@@ -279,12 +286,18 @@ render(rw::ObjPipeline *pipeline, Atomic *atomic)
 			if(blendsNormals)
 				header->normals = (V3d*)(vertices + arraySize);
 			borrowed = 1;
-		}else
+		}else{
 			waitForGpu();
+			nativeSkinStalls++;
+		}
+		nativeSkinRepeats++;
 	}else
 		header->lastSkinFrame = frame;
 
+	uint64 start = gettime();
 	skinAtomic(atomic, header);
+	nativeSkinTicks += gettime() - start;
+	nativeSkinnedVertices += header->numVertices;
 	renderAtomic(atomic, header);
 
 	if(borrowed){

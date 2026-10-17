@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>
 
 #include "../rwbase.h"
 #include "../rwerror.h"
@@ -77,6 +78,16 @@ bool32 gpuWorkPending;
 // Set by every draw, cleared by a present.  When nothing has been drawn since
 // the last present, that present's draw-done means the GPU is idle.
 bool32 drawnSincePresent;
+
+// Where the CPU's frame time goes, in timebase ticks, for the application's
+// frame report: rendering (the first camera update after a present to the next
+// present), waiting for the GPU, and waiting for the retrace that shows the last
+// frame.  The reader clears them.
+uint64 nativeRenderTicks;
+uint64 nativeGpuWaitTicks;
+uint64 nativeFlipWaitTicks;
+static uint64 renderStartTicks;
+static bool32 renderTimed;
 
 // Presents so far, and how many of them the GPU is known to have executed.
 static uint32 presentSerial;
@@ -160,7 +171,9 @@ waitForPresentedFrame(void)
 {
 	if(!flip.frameInFlight)
 		return;
+	uint64 start = gettime();
 	GX_WaitDrawDone();
+	nativeGpuWaitTicks += gettime() - start;
 	flip.frameInFlight = 0;
 	completedSerial = presentSerial;
 	if(!drawnSincePresent){
@@ -177,7 +190,9 @@ waitForGpu(void)
 {
 	if(!gpuWorkPending)
 		return;
+	uint64 start = gettime();
 	GX_DrawDone();
+	nativeGpuWaitTicks += gettime() - start;
 	gpuWorkPending = 0;
 	gpuIdleEpoch++;
 	flip.frameInFlight = 0;
@@ -217,8 +232,12 @@ static void
 waitForFlip(void)
 {
 	waitForPresentedFrame();
+	if(flip.queued == nil && flip.ready == nil)
+		return;
+	uint64 start = gettime();
 	while(flip.queued != nil || flip.ready != nil)
 		VIDEO_WaitVSync();
+	nativeFlipWaitTicks += gettime() - start;
 }
 
 static void
@@ -468,6 +487,10 @@ beginUpdate(Camera *camera)
 	// done with that frame first.  The game's whole update has run since the
 	// present by now, which is the overlap this wait at the last moment buys.
 	waitForPresentedFrame();
+	if(!renderTimed){
+		renderStartTicks = gettime();
+		renderTimed = 1;
+	}
 	// Only the clear issued before a camera update may reuse the Z clear left
 	// by the preceding display copy.
 	presentation.copyDepthAvailable = 0;
@@ -634,6 +657,10 @@ showRaster(Raster *raster, uint32 flags)
 	nativeTextureWaitCount = 0;
 	reusedCopyDepthClearCount = 0;
 
+	if(renderTimed){
+		nativeRenderTicks += gettime() - renderStartTicks;
+		renderTimed = 0;
+	}
 	// Every frame goes on screen at a retrace, so FLIPWAITVSYNCH needs nothing
 	// of its own: the wait for the previous frame's flip already paces the game
 	// to the television.

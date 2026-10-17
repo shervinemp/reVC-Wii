@@ -197,6 +197,21 @@ void retireNativeMemory(void *allocation);
 // frame pacing interrupt handlers out.  For an exit that skips closing the
 // engine; closing it does this itself.
 void stopFramePacing(void);
+// Timebase ticks the CPU spent rendering (first camera update after a present
+// to the next present), waiting for the GPU, and waiting for the retrace that
+// shows the previous frame.  Accumulated here, read and cleared by the
+// application's frame report.
+extern uint64 nativeRenderTicks;
+extern uint64 nativeGpuWaitTicks;
+extern uint64 nativeFlipWaitTicks;
+// The skin pipeline's share (gxskin.cpp), same convention: ticks spent blending,
+// vertices blended, draws of a geometry already skinned this frame (two peds of
+// one model -- or co-op players sharing one), and how many of those had to wait
+// for the GPU because the repeat ring was full or missing.
+extern uint64 nativeSkinTicks;
+extern uint32 nativeSkinnedVertices;
+extern uint32 nativeSkinRepeats;
+extern uint32 nativeSkinStalls;
 // Presents so far; tells one frame's draws from the next.
 uint32 nativeFrameSerial(void);
 // Changes whenever the GPU is known to have finished everything queued, so
