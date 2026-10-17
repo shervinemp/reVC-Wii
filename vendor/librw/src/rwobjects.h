@@ -516,6 +516,14 @@ struct Geometry
 	Object object;
 	uint32 flags;
 	uint16 lockedSinceInst;
+	// Runtime only, never streamed -- the flags word is written out by
+	// streamWrite, so these are not flag bits.  streamed: read by streamRead
+	// rather than built in code.  dataReleased: a platform has since freed
+	// the platform-independent arrays it no longer reads (gx/gxpipe.cpp), so
+	// they are nil and the geometry cannot be instanced again.  Both live in
+	// what was padding before numTriangles.
+	uint8 streamed;
+	uint8 dataReleased;
 	int32 numTriangles;
 	int32 numVertices;
 	int32 numMorphTargets;
