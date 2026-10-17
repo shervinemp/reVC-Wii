@@ -81,6 +81,21 @@ bool32 drawnSincePresent;
 // Presents so far, and how many of them the GPU is known to have executed.
 static uint32 presentSerial;
 static uint32 completedSerial;
+// Moves every time the GPU is known to be idle, i.e. done with everything
+// queued before that point.
+static uint32 gpuIdleEpoch;
+
+uint32
+nativeFrameSerial(void)
+{
+	return presentSerial;
+}
+
+uint32
+nativeGpuIdleEpoch(void)
+{
+	return gpuIdleEpoch;
+}
 
 // Memory freed while the GPU may still read it, held until it no longer can.
 // The game deletes models and texture dictionaries during its update, which
@@ -151,6 +166,7 @@ waitForPresentedFrame(void)
 	if(!drawnSincePresent){
 		// The present's token was the last thing queued, so the GPU is idle.
 		gpuWorkPending = 0;
+		gpuIdleEpoch++;
 		freeRetired(1);
 	}else
 		freeRetired(0);
@@ -163,6 +179,7 @@ waitForGpu(void)
 		return;
 	GX_DrawDone();
 	gpuWorkPending = 0;
+	gpuIdleEpoch++;
 	flip.frameInFlight = 0;
 	completedSerial = presentSerial;
 	freeRetired(1);
@@ -568,12 +585,6 @@ clearCamera(Camera *camera, RGBA *color, uint32 mode)
 
 static bool32 frameTrace;
 
-// Frames the display has shown.  The renderer outside this file reads it to
-// tell one frame from the next -- see the skin path in gxskin.cpp, where a
-// geometry's blended vertices must not be rewritten while the FIFO still
-// points into them.
-uint32 presentedFrames;
-
 void
 setFrameTrace(bool32 enabled)
 {
@@ -583,6 +594,7 @@ setFrameTrace(bool32 enabled)
 static void
 showRaster(Raster *raster, uint32 flags)
 {
+	static uint32 presentedFrames;
 	if(raster == nil || raster->type != Raster::CAMERA)
 		return;
 	if(frameTrace && (presentedFrames < 8 || (presentedFrames + 1) % 300 == 0))

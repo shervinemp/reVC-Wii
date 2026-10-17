@@ -112,9 +112,8 @@ struct InstanceDataHeader : rw::InstanceDataHeader
 	bool32 hasNormals;
 	bool32 hasTexCoords;
 	bool32 vertexCacheDirty;
-	// The frame the geometry's blended vertices were last skinned in.  Every
-	// clone of a geometry shares them, so a second clone skinned in the same
-	// frame has to wait for the GPU before blending over the first one's.
+	// nativeFrameSerial() when the skin pipeline last blended into this
+	// geometry's own vertex arrays.  Every clone of a geometry shares them.
 	uint32 lastSkinFrame;
 	uint8 *vertexData;
 	V3d *positions;
@@ -124,9 +123,6 @@ struct InstanceDataHeader : rw::InstanceDataHeader
 	uint16 *indices;
 	InstanceData *meshes;
 };
-
-// The displayed frame number, from gxdevice.cpp.
-extern uint32 presentedFrames;
 
 class ObjPipeline : public rw::ObjPipeline
 {
@@ -201,6 +197,11 @@ void retireNativeMemory(void *allocation);
 // frame pacing interrupt handlers out.  For an exit that skips closing the
 // engine; closing it does this itself.
 void stopFramePacing(void);
+// Presents so far; tells one frame's draws from the next.
+uint32 nativeFrameSerial(void);
+// Changes whenever the GPU is known to have finished everything queued, so
+// memory written for draws before the change may be written again.
+uint32 nativeGpuIdleEpoch(void);
 extern bool32 gpuWorkPending;
 extern bool32 drawnSincePresent;
 
