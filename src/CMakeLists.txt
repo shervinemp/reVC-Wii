@@ -134,6 +134,16 @@ find_library(WII_MPG123_LIBRARY NAMES mpg123
             REVC_WII_PLATFORM="wii libogc"
         )
         target_compile_options(${EXECUTABLE} PRIVATE -w -fshort-wchar)
+        # Nothing on this port reads errno after a math call, and saying so lets
+        # GCC treat sqrtf, atan2f and the rest as pure: a repeated call with the
+        # same argument is computed once and a loop-invariant one is hoisted.
+        # Nothing in the Wii build throws or catches either (the OpenAL streamer
+        # that does is not built), so the unwind tables and landing pads that
+        # exceptions cost -- about half a megabyte of MEM1 -- go too.
+        target_compile_options(${EXECUTABLE} PRIVATE
+            -fno-math-errno -fno-asynchronous-unwind-tables
+            $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+        )
         set_target_properties(${EXECUTABLE} PROPERTIES
             C_STANDARD 11 C_EXTENSIONS ON C_STANDARD_REQUIRED ON
             CXX_STANDARD 17 CXX_EXTENSIONS ON CXX_STANDARD_REQUIRED ON
