@@ -66,16 +66,7 @@ static void
 setupNativeImmediate(GxRaster *nativeRaster)
 {
 	bool32 textured = nativeRaster != nil;
-	GX_ClearVtxDesc();
-	GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
-	GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
-	if(textured){
-		GX_SetVtxDesc(GX_VA_TEX0, GX_DIRECT);
-		GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0,
-		                 GX_TEX_ST, GX_F32, 0);
-	}
+	setNativeVertexLayout(0, 0, textured);
 
 	RGBA white = { 255, 255, 255, 255 };
 	setupNativeTev(white, nativeRaster);
@@ -186,7 +177,7 @@ renderNativeIm3D(PrimitiveType primitiveType, const uint16 *indices,
 void
 im3DTransform(void *vertices, int32 numVertices, Matrix *world, uint32 flags)
 {
-	loadNativeWorldMatrix(world);
+	loadNativeWorldMatrix(world, 0);
 	im3DVertices = (Im3DVertex*)vertices;
 	im3DNumVertices = numVertices;
 	im3DTextured = (flags & im3d::VERTEXUV) != 0;

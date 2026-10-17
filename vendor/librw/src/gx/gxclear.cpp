@@ -38,11 +38,7 @@ clearNativeCamera(int32 x, int32 y, int32 width, int32 height,
 	GX_SetFog(GX_FOG_NONE, 0.0f, 0.0f, 0.0f, 0.0f, fogColor);
 
 	loadNativeIm2DMatrices(width, height, nearPlane, farPlane);
-	GX_ClearVtxDesc();
-	GX_SetVtxDesc(GX_VA_POS, GX_DIRECT);
-	GX_SetVtxDesc(GX_VA_CLR0, GX_DIRECT);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+	setNativeVertexLayout(0, 0, 0);
 	RGBA white = { 255, 255, 255, 255 };
 	setupNativeTev(white, nil);
 

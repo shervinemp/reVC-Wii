@@ -62,6 +62,9 @@ destroyNativeRaster(void *object, int32 offset, int32)
 	if(raster->platform == PLATFORM_GX){
 		evictRaster(raster);
 	}
+	// The next raster allocated here would have its texture object at the
+	// same address, and the bound-texture cache compares addresses.
+	invalidateNativeTextureStage();
 	rwFree(nativeRaster->pixels);
 	// A texture bound since its upload may be read by a frame still drawing.
 	if(nativeRaster->nativeUsed)
@@ -143,6 +146,7 @@ updateNativeRasterSampler(GxRaster *nativeRaster)
 {
 	if(!nativeRaster->nativeReady)
 		return;
+	invalidateNativeTextureStage();
 	GX_InitTexObjWrapMode(&nativeRaster->nativeTexture,
 	                     nativeAddress(nativeRaster->addressU),
 	                     nativeAddress(nativeRaster->addressV));
@@ -336,6 +340,7 @@ finishTextureUpload(Raster *raster, int32 level, TextureUpload *upload)
 	              nativeRaster->numLevels > 1);
 	nativeRaster->nativeReady = 1;
 	nativeRaster->nativeUsed = 0;
+	invalidateNativeTextureStage();
 	GX_InvalidateTexAll();
 	updateNativeRasterSampler(nativeRaster);
 	nativeTextureUploadCount++;
