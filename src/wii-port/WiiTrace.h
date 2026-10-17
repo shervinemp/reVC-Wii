@@ -31,6 +31,14 @@
 // makes a freeze on real hardware legible without touching what is on screen.
 #define CREATE_LOG 1
 
+// A frame-rate line in debug.log every ten seconds: how many frames, the average
+// and the worst, and where the average frame went -- the game's update, rendering,
+// waiting on the GPU, waiting on the retrace.  The one way to measure a change to
+// performance on the console itself.  A few timebase reads a frame and one short
+// line per ten seconds, so it costs nothing worth measuring.  Needs CREATE_LOG 1
+// or more; 0 removes it.
+#define WII_PERF_LOG 1
+
 // Opens debug.log inside the given directory, and does nothing if one is already
 // open, so it can be called again later with a better guess.  Does nothing at
 // all unless CREATE_LOG is 1 or more.
