@@ -78,6 +78,8 @@ Geometry::create(int32 numVerts, int32 numTris, uint32 flags)
 
 	geo->matList.init();
 	geo->lockedSinceInst = 0;
+	geo->streamed = 0;
+	geo->dataReleased = 0;
 	geo->meshHeader = nil;
 	geo->instData = nil;
 	geo->refCount = 1;
@@ -191,8 +193,10 @@ Geometry::streamRead(Stream *stream)
 		defaultSurfaceProps = reset;
 	if(ret == nil)
 		goto fail;
-	if(s_plglist.streamRead(stream, geo))
+	if(s_plglist.streamRead(stream, geo)){
+		geo->streamed = 1;
 		return geo;
+	}
 
 fail:
 	geo->destroy();

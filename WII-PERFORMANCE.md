@@ -18,6 +18,7 @@ Each is its own commit, so a regression can be bisected or reverted alone.
 | build: no errno from math calls and no exception tables on the Wii | `-fno-math-errno -fno-exceptions -fno-asynchronous-unwind-tables` | Pure math calls can be shared and hoisted; about 370KB of MEM1 back |
 | wii: a frame-rate line in debug.log every ten seconds | `WII_PERF_LOG` in `WiiTrace.h` | Measurement, see below |
 | gx: skin in paired singles | Skinning blends each vertex's bone matrices, then transforms once, in Broadway's paired-single instructions | About 40 instructions per two-bone vertex instead of about 100 |
+| gx: free a streamed model's own copy of its data once it is instanced | After the first instancing of a model read from a DFF, frees RenderWare's triangles, prelight, UVs and mesh indices, its bind pose unless skinned, and the instance's index copy | Memory, not speed: every streamed model was held twice. About half of a model's bytes go (44KB of ~80KB for a 1000-vertex, 1500-triangle prelit building), which is heap headroom under the same streaming budget |
 
 On `coop-4-perf` (the same commits on top of `coop-4`) the skin commit replaces
 `aa7070e5`, which drained the GPU once per repeat draw of a shared model: up to
@@ -40,6 +41,12 @@ to the frame-rate line.
 - **Paired-single skinning** (Dolphin): matches the scalar blend to within 5e-7
   on 2000 random vertices with one to four bones, including unaligned pairs and
   a normal cancelled to zero.
+- **Freeing a streamed model's data** (Dolphin, real librw code): quads written to a
+  memory stream and read back draw identically before and after the release, lit
+  ones included, and so does a clone; a quad built in code keeps its data; every
+  released geometry was destroyed again, some with their last frame in flight, and
+  none leaked. 37 checks, all pass. Skinned models (which keep their bind pose)
+  were not part of it.
 - **Not checked anywhere:** real frame rates, real game scenes, the frame pacing
   on a real TV, and anything only the console shows.
 
@@ -89,3 +96,4 @@ Compare `fps` and `frame` line for line. On the after build, `gpu-wait` against
 | Peds with stretched or torn vertices | skin in paired singles, then skin peds faster |
 | Physics or AI oddities (NaN, things flying off) | square roots on frsqrte |
 | A crash that names exceptions or `__cxa` | no exception tables |
+| A crash (DSI near address 0) when a model loads, changes LOD or is destroyed, or a model drawn wrong after its first frame | free a streamed model's own copy of its data |
