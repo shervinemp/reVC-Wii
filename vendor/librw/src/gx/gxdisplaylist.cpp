@@ -118,7 +118,7 @@ freeNativeDisplayLists(InstanceDataHeader *header)
 				nativeDisplayListMemory -= mesh->displayListCapacity;
 			else
 				nativeDisplayListMemory = 0;
-			rwFree(mesh->displayListData);
+			retireNativeMemory(mesh->displayListData);
 		}
 		mesh->displayListData = nil;
 		mesh->displayList = nil;

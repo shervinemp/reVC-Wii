@@ -126,11 +126,16 @@ freeInstanceData(Geometry *geometry)
 	InstanceDataHeader *header = (InstanceDataHeader*)geometry->instData;
 	geometry->instData = nil;
 #ifdef RW_GX
+	// The vertex arrays and display lists may still be read by a frame the GPU
+	// is drawing; the header and the mesh table are only ever read by the CPU.
 	freeNativeDisplayLists(header);
-#endif
-	rwFree(header->meshes);
+	retireNativeMemory(header->indices);
+	retireNativeMemory(header->vertexData);
+#else
 	rwFree(header->indices);
 	rwFree(header->vertexData);
+#endif
+	rwFree(header->meshes);
 	rwFree(header);
 }
 

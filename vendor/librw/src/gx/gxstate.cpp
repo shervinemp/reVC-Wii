@@ -201,6 +201,8 @@ prepareNativeDisplayCopy(void)
 void
 prepareNativeDraw(void)
 {
+	gpuWorkPending = 1;
+	drawnSincePresent = 1;
 	if(nativeState.dirty & NATIVE_VIEWPORT){
 		GX_SetViewport(nativeState.viewportX, nativeState.viewportY,
 		               nativeState.viewportWidth, nativeState.viewportHeight,
