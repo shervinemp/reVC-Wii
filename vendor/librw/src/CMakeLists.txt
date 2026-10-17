@@ -158,6 +158,12 @@ if(NINTENDO_WII)
         CXX_EXTENSIONS ON
     )
     target_compile_definitions(librw PRIVATE BIGENDIAN)
+    # Same as the game's (src/CMakeLists.txt): pure math calls, and no unwind
+    # tables for code that never throws.
+    target_compile_options(librw PRIVATE
+        -fno-math-errno -fno-asynchronous-unwind-tables
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+    )
 endif()
 
 if(LIBRW_PLATFORM_GX)
