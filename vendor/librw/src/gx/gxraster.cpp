@@ -20,11 +20,14 @@ uint32 nativeTextureMemory;
 uint32 nativeTextureUploadCount;
 uint32 nativeTextureWaitCount;
 
+// Before a texture is rewritten in place.  Freeing one needs no wait: the
+// allocation is retired instead (retireNativeMemory).
 static void
 waitForTexture(void)
 {
-	GX_DrawDone();
-	nativeTextureWaitCount++;
+	if(gpuWorkPending)
+		nativeTextureWaitCount++;
+	waitForGpu();
 }
 
 static void*
@@ -56,13 +59,15 @@ destroyNativeRaster(void *object, int32 offset, int32)
 {
 	Raster *raster = (Raster*)object;
 	GxRaster *nativeRaster = PLUGINOFFSET(GxRaster, raster, offset);
-	if(nativeRaster->nativeUsed)
-		waitForTexture();
 	if(raster->platform == PLATFORM_GX){
 		evictRaster(raster);
 	}
 	rwFree(nativeRaster->pixels);
-	rwFree(nativeRaster->nativeAllocation);
+	// A texture bound since its upload may be read by a frame still drawing.
+	if(nativeRaster->nativeUsed)
+		retireNativeMemory(nativeRaster->nativeAllocation);
+	else
+		rwFree(nativeRaster->nativeAllocation);
 	assert(nativeRaster->nativeSize <= nativeTextureMemory);
 	nativeTextureMemory -= nativeRaster->nativeSize;
 	nativeRaster->pixels = nil;
@@ -313,11 +318,12 @@ finishTextureUpload(Raster *raster, int32 level, TextureUpload *upload)
 	DCStoreRange(storeWholeChain ? upload->pixels :
 	             upload->pixels + upload->offset, storeSize);
 
-	if(upload->grew && nativeRaster->nativeUsed)
-		waitForTexture();
 	if(upload->grew){
 		nativeTextureMemory += upload->requiredSize - nativeRaster->nativeSize;
-		rwFree(nativeRaster->nativeAllocation);
+		if(nativeRaster->nativeUsed)
+			retireNativeMemory(nativeRaster->nativeAllocation);
+		else
+			rwFree(nativeRaster->nativeAllocation);
 		nativeRaster->nativeAllocation = upload->allocation;
 		nativeRaster->nativePixels = upload->pixels;
 		nativeRaster->nativeSize = upload->requiredSize;

@@ -47,6 +47,183 @@ struct PresentationState
 static PresentationState presentation;
 static uint32 reusedCopyDepthClearCount;
 
+// Frame pacing.  showRaster queues the display copy with a draw-done token
+// behind it and returns at once, so the game simulates the next frame while
+// the GPU is still drawing this one -- it used to wait out the GPU and then a
+// retrace, with the CPU idle for both.  The two interrupt handlers below put a
+// finished frame on the television at the first retrace after the GPU is done
+// with it, without the CPU's help.  A frame buffer moves through
+//
+//   queued -- its display copy is in the FIFO, not yet known to be executed
+//   ready  -- copied; goes on screen at the next retrace
+//   shown  -- what the video interface is scanning out
+//
+// The interrupt handlers own the moves from queued to ready and from ready to
+// shown; the CPU only ever queues.
+struct FlipState
+{
+	void *volatile queued;
+	void *volatile ready;
+	void *volatile shown;
+	// A presented frame whose draw-done the CPU has not waited for.
+	bool32 frameInFlight;
+};
+
+static FlipState flip;
+
+// Set by every draw (prepareNativeDraw) and by a present, cleared by a full
+// wait: whether the GPU may still have work that reads memory.
+bool32 gpuWorkPending;
+// Set by every draw, cleared by a present.  When nothing has been drawn since
+// the last present, that present's draw-done means the GPU is idle.
+bool32 drawnSincePresent;
+
+// Presents so far, and how many of them the GPU is known to have executed.
+static uint32 presentSerial;
+static uint32 completedSerial;
+
+// Memory freed while the GPU may still read it, held until it no longer can.
+// The game deletes models and texture dictionaries during its update, which
+// now runs while the GPU draws the previous frame; freeing at once would let
+// the next allocation overwrite a display list mid-draw, and waiting would
+// throw the overlap away on every frame that streams something out.  An
+// allocation retired after present N was last referenced by commands queued
+// before present N+1, so it is free to go once present N+1 has executed.
+struct RetiredAllocation
+{
+	void *allocation;
+	uint32 serial;
+};
+
+enum { MAX_RETIRED = 2048 };
+static RetiredAllocation retired[MAX_RETIRED];
+static uint32 retiredHead;
+static uint32 retiredCount;
+
+static void
+freeRetired(bool32 everything)
+{
+	while(retiredCount != 0){
+		RetiredAllocation *entry = &retired[retiredHead];
+		if(!everything && entry->serial >= completedSerial)
+			break;
+		rwFree(entry->allocation);
+		entry->allocation = nil;
+		retiredHead = (retiredHead + 1) % MAX_RETIRED;
+		retiredCount--;
+	}
+}
+
+// The PE finish interrupt.  A draw-done token reaching the end of the pipe
+// means everything queued before it, the display copy included, has executed,
+// so the first token to arrive after a present releases that frame -- whether
+// it is the present's own or one a texture wait sent after it.
+static void
+onDrawDone(void)
+{
+	if(flip.queued != nil){
+		flip.ready = flip.queued;
+		flip.queued = nil;
+	}
+}
+
+// The retrace interrupt calls this just before it writes the video registers,
+// so a frame buffer set here is the one the coming field scans out.
+static void
+onPreRetrace(u32)
+{
+	if(flip.ready != nil){
+		VIDEO_SetNextFramebuffer(flip.ready);
+		VIDEO_Flush();
+		flip.shown = flip.ready;
+		flip.ready = nil;
+	}
+}
+
+void
+waitForPresentedFrame(void)
+{
+	if(!flip.frameInFlight)
+		return;
+	GX_WaitDrawDone();
+	flip.frameInFlight = 0;
+	completedSerial = presentSerial;
+	if(!drawnSincePresent){
+		// The present's token was the last thing queued, so the GPU is idle.
+		gpuWorkPending = 0;
+		freeRetired(1);
+	}else
+		freeRetired(0);
+}
+
+void
+waitForGpu(void)
+{
+	if(!gpuWorkPending)
+		return;
+	GX_DrawDone();
+	gpuWorkPending = 0;
+	flip.frameInFlight = 0;
+	completedSerial = presentSerial;
+	freeRetired(1);
+}
+
+void
+retireNativeMemory(void *allocation)
+{
+	if(allocation == nil)
+		return;
+	if(!gpuWorkPending){
+		rwFree(allocation);
+		return;
+	}
+	if(retiredCount == MAX_RETIRED)
+		// A burst bigger than a frame normally retires: a stall is cheaper
+		// than holding still more.  The wait frees everything held.
+		waitForGpu();
+	if(!gpuWorkPending){
+		rwFree(allocation);
+		return;
+	}
+	RetiredAllocation *entry =
+		&retired[(retiredHead + retiredCount) % MAX_RETIRED];
+	entry->allocation = allocation;
+	entry->serial = presentSerial;
+	retiredCount++;
+}
+
+// The present's own half of the handshake: every frame buffer back in the
+// CPU's hands, so the one not on screen can be written.  Waits for the last
+// presented frame's GPU work and then for the retrace that shows it, which is
+// also what keeps the game from running more than a frame ahead of the screen.
+static void
+waitForFlip(void)
+{
+	waitForPresentedFrame();
+	while(flip.queued != nil || flip.ready != nil)
+		VIDEO_WaitVSync();
+}
+
+static void
+startFramePacing(void *shownFrameBuffer)
+{
+	flip.queued = nil;
+	flip.ready = nil;
+	flip.shown = shownFrameBuffer;
+	flip.frameInFlight = 0;
+	GX_SetDrawDoneCallback(onDrawDone);
+	VIDEO_SetPreRetraceCallback(onPreRetrace);
+}
+
+void
+stopFramePacing(void)
+{
+	waitForFlip();
+	waitForGpu();
+	VIDEO_SetPreRetraceCallback(nil);
+	GX_SetDrawDoneCallback(nil);
+}
+
 struct TextureStageState
 {
 	Raster *raster;
@@ -269,6 +446,11 @@ resetRenderState()
 static void
 beginUpdate(Camera *camera)
 {
+	// The frame about to be drawn rewrites memory the last one may still be
+	// reading -- skinned vertices, re-instanced geometry -- so the GPU has to be
+	// done with that frame first.  The game's whole update has run since the
+	// present by now, which is the overlap this wait at the last moment buys.
+	waitForPresentedFrame();
 	// Only the clear issued before a camera update may reuse the Z clear left
 	// by the preceding display copy.
 	presentation.copyDepthAvailable = 0;
@@ -439,19 +621,29 @@ showRaster(Raster *raster, uint32 flags)
 	nativeTextureUploadCount = 0;
 	nativeTextureWaitCount = 0;
 	reusedCopyDepthClearCount = 0;
-	presentation.activeFrameBuffer ^= 1;
+
+	// Every frame goes on screen at a retrace, so FLIPWAITVSYNCH needs nothing
+	// of its own: the wait for the previous frame's flip already paces the game
+	// to the television.
+	(void)flags;
+	waitForFlip();
+	presentation.activeFrameBuffer =
+		flip.shown == presentation.frameBuffers[0] ? 1 : 0;
 	void *frameBuffer = presentation.frameBuffers[presentation.activeFrameBuffer];
 	prepareNativeDisplayCopy();
 	GX_CopyDisp(frameBuffer, GX_TRUE);
-	GX_DrawDone();
 	// The copy uses a deliberately forced Z state.  Keep the cached RenderWare
 	// state authoritative when the next camera or draw begins.
 	invalidateNativeRenderState();
 	presentation.copyDepthAvailable = 1;
-	VIDEO_SetNextFramebuffer(frameBuffer);
-	VIDEO_Flush();
-	if(flags & Raster::FLIPWAITVSYNCH)
-		VIDEO_WaitVSync();
+	// Queued before the token goes in, so the token's interrupt finds it.  No
+	// earlier token can still be outstanding: every other one is waited for.
+	flip.queued = frameBuffer;
+	GX_SetDrawDone();
+	flip.frameInFlight = 1;
+	gpuWorkPending = 1;
+	drawnSincePresent = 0;
+	presentSerial++;
 }
 
 static bool32
@@ -611,9 +803,16 @@ deviceSystem(DeviceReq req, void *argument, int32)
 			presentation.height = parameters->height;
 			presentation.activeFrameBuffer = 0;
 			presentation.copyDepthAvailable = 0;
+			// The application put its first frame buffer on screen before
+			// opening the engine; the first present copies into the second.
+			startFramePacing(VIDEO_GetCurrentFramebuffer() ==
+			                 presentation.frameBuffers[1] ?
+			                 presentation.frameBuffers[1] :
+			                 presentation.frameBuffers[0]);
 			return 1;
 		}
 	case DEVICECLOSE:
+		stopFramePacing();
 		presentation.frameBuffers[0] = nil;
 		presentation.frameBuffers[1] = nil;
 		presentation.copyDepthAvailable = 0;

@@ -1241,6 +1241,10 @@ main(int argc, char **argv)
 	}
 
 	WiiTraceReport("WII game boot: exiting\n");
+	// A present no longer waits for the GPU, so the last frame may still be
+	// drawing, with librw's interrupt handlers waiting to put it on screen.
+	// Nothing closes the engine on the way out, so finish that here.
+	rw::gx::stopFramePacing();
 	WiiTraceCloseLog();
 	// HOME asked for the Wii menu rather than the loader (see WiiPadScan).  Made
 	// here, with the frame finished and the log on the card.  If the IOS refuses

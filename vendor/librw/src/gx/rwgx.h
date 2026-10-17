@@ -181,6 +181,28 @@ void prepareNativeDraw(void);
 void prepareNativeDisplayCopy(void);
 void invalidateNativeRenderState(void);
 
+// The CPU and GPU overlap across frames: a present queues its display copy and
+// returns, and the game's next update runs while the GPU draws (gxdevice.cpp).
+// Memory the GPU reads -- texture images, vertex arrays, display lists -- must
+// therefore not be rewritten or freed without one of these.
+//
+//   waitForGpu()            everything queued so far has executed.  Before
+//                           rewriting such memory in place.
+//   waitForPresentedFrame() the last presented frame has executed.  Called at
+//                           the start of a camera update, before the new frame
+//                           re-skins vertices the last one drew from.
+//   retireNativeMemory()    rwFree, deferred until the GPU can no longer be
+//                           reading the allocation.  Never stalls.
+void waitForGpu(void);
+void waitForPresentedFrame(void);
+void retireNativeMemory(void *allocation);
+// Puts the last presented frame on screen, lets the GPU finish and takes the
+// frame pacing interrupt handlers out.  For an exit that skips closing the
+// engine; closing it does this itself.
+void stopFramePacing(void);
+extern bool32 gpuWorkPending;
+extern bool32 drawnSincePresent;
+
 // Per-frame submission counters, reported by showRaster and reset there.
 extern uint32 renderedAtomicCount;
 extern uint32 renderedGsAlphaPassCount;
