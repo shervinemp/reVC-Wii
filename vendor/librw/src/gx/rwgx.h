@@ -153,7 +153,8 @@ void skinAtomic(Atomic *atomic, InstanceDataHeader *header);
 void setVertexAlpha(bool32 enable);
 void setNativeCameraMatrices(const float32 *view, const float32 *projection,
 	bool32 perspective, float32 nearPlane, float32 farPlane);
-void loadNativeWorldMatrix(const Matrix *world);
+// normals: also load the normal matrix, which only directional lighting reads.
+void loadNativeWorldMatrix(const Matrix *world, bool32 normals);
 void transformNativeWorldPointToView(const V3d &source, V3d *destination);
 void transformNativeWorldVectorToView(const V3d &source, V3d *destination);
 void loadNativeIm2DMatrices(int32 width, int32 height, float32 nearPlane,
@@ -255,6 +256,12 @@ struct GxRaster
 void updateNativeRasterSampler(GxRaster *nativeRaster);
 void initNativeTevState(void);
 void setupNativeTev(const RGBA &materialColor, GxRaster *nativeRaster);
+// The vertex descriptor, sent only when it changes.  Indexed for instanced
+// geometry, direct for immediate mode and clears.
+void setNativeVertexLayout(bool32 indexed, bool32 normals, bool32 texCoords);
+// Texture map 0 is loaded only when a different texture object is bound, so a
+// texture object changed in place has to make the next bind reload it.
+void invalidateNativeTextureStage(void);
 
 uint32 gxTextureLevelSize(int32 width, int32 height, uint32 format);
 uint32 gxTextureSize(int32 width, int32 height, uint32 format,

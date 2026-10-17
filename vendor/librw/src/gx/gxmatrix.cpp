@@ -17,6 +17,15 @@ static Mtx44 cameraProjection;
 static uint8 cameraProjectionType;
 static bool32 cameraProjectionActive;
 
+// The screen-space matrices last loaded by loadNativeIm2DMatrices.  Every Im2D
+// draw asks for them -- the HUD and the text are hundreds of draws a frame --
+// and they only change with the viewport, so a repeat loads nothing.
+static bool32 im2DMatricesActive;
+static int32 im2DWidth;
+static int32 im2DHeight;
+static float32 im2DNearPlane;
+static float32 im2DFarPlane;
+
 static void
 convertMatrix(Mtx destination, const float32 *source)
 {
@@ -72,6 +81,7 @@ setNativeCameraMatrices(const float32 *view, const float32 *projection,
 		cameraProjection[2][3] = -farPlane*inverseDepth;
 	}
 	cameraProjectionType = perspective ? GX_PERSPECTIVE : GX_ORTHOGRAPHIC;
+	im2DMatricesActive = 0;
 	GX_LoadProjectionMtx(cameraProjection, cameraProjectionType);
 	GX_LoadPosMtxImm(cameraView, GX_PNMTX0);
 	Mtx normalMatrix;
@@ -84,9 +94,10 @@ setNativeCameraMatrices(const float32 *view, const float32 *projection,
 }
 
 void
-loadNativeWorldMatrix(const Matrix *world)
+loadNativeWorldMatrix(const Matrix *world, bool32 normals)
 {
 	activateCameraProjection();
+	im2DMatricesActive = 0;
 	Mtx modelView;
 	if(world == nil)
 		guMtxCopy(cameraView, modelView);
@@ -97,6 +108,10 @@ loadNativeWorldMatrix(const Matrix *world)
 	}
 
 	GX_LoadPosMtxImm(modelView, GX_PNMTX0);
+	// Only directional lighting reads the normal matrix, so a draw without it
+	// leaves whatever is loaded alone.
+	if(!normals)
+		return;
 	// GX lighting consumes normals after the normal matrix.  RenderWare can
 	// legally use scaled object matrices, so use inverse-transpose rather than
 	// assuming the model-view 3x3 is orthonormal.
@@ -105,7 +120,6 @@ loadNativeWorldMatrix(const Matrix *world)
 		GX_LoadNrmMtxImm(normalMatrix, GX_PNMTX0);
 	else
 		GX_LoadNrmMtxImm(modelView, GX_PNMTX0);
-	GX_SetCurrentMtx(GX_PNMTX0);
 }
 
 void
@@ -134,6 +148,9 @@ void
 loadNativeIm2DMatrices(int32 width, int32 height, float32 nearPlane,
 	float32 farPlane)
 {
+	if(im2DMatricesActive && im2DWidth == width && im2DHeight == height &&
+	   im2DNearPlane == nearPlane && im2DFarPlane == farPlane)
+		return;
 	Mtx identity;
 	Mtx44 projection;
 	guMtxIdentity(identity);
@@ -158,8 +175,12 @@ loadNativeIm2DMatrices(int32 width, int32 height, float32 nearPlane,
 	}
 	GX_LoadProjectionMtx(projection, GX_ORTHOGRAPHIC);
 	GX_LoadPosMtxImm(identity, GX_PNMTX0);
-	GX_SetCurrentMtx(GX_PNMTX0);
 	cameraProjectionActive = 0;
+	im2DMatricesActive = 1;
+	im2DWidth = width;
+	im2DHeight = height;
+	im2DNearPlane = nearPlane;
+	im2DFarPlane = farPlane;
 }
 
 }

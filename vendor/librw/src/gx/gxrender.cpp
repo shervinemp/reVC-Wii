@@ -20,6 +20,60 @@ namespace gx {
 uint32 renderedAtomicCount;
 uint32 renderedGsAlphaPassCount;
 
+// What the GX pipeline was last programmed with, so a mesh that needs the same
+// setup as the one before it -- most of the world, which is prelit, textured
+// and white -- programs nothing but its texture.  Every GX call here costs a
+// function call and a register write into the FIFO, and the full setup is a
+// dozen and more of them per mesh, thousands of meshes a frame.
+//
+// Everything in this file that touches the vertex format, the colour channels,
+// the TEV, texture map 0 or the lights goes through this cache, and the GX
+// state no other file sets.  gxraster.cpp drops the texture entry when it
+// changes a texture object in place.
+struct NativePipelineCache
+{
+	// Vertex descriptor: VERTEX_LAYOUT_* below.
+	uint32 vertexLayout;
+
+	// Colour channels: 1 for unlit, 2 for lit, 0 when unknown.
+	uint32 numChannels;
+	bool32 lightMaskValid;
+	uint8 lightMask;
+	bool32 ambientValid;
+	GXColor ambient;
+
+	// TEV programme: TEV_* bits, ~0 when unknown.
+	uint32 tevKey;
+	bool32 konstValid;
+	GXColor konst;
+	const GXTexObj *texObj;
+
+	// What each hardware light slot holds.
+	bool32 lightValid[8];
+	GXLightObj lights[8];
+};
+
+static NativePipelineCache pipelineCache;
+
+enum
+{
+	VERTEX_LAYOUT_UNKNOWN = 0,
+	VERTEX_LAYOUT_INDEXED = 1 << 0,
+	VERTEX_LAYOUT_NORMALS = 1 << 1,
+	VERTEX_LAYOUT_TEXCOORDS = 1 << 2,
+	// Distinguishes the direct (immediate mode) layout without texture
+	// coordinates from "unknown".
+	VERTEX_LAYOUT_SET = 1 << 3
+};
+
+enum
+{
+	TEV_TEXTURED = 1 << 0,
+	TEV_MATERIAL = 1 << 1,
+	TEV_LIGHTING = 1 << 2,
+	TEV_UNKNOWN = ~0u
+};
+
 static bool32
 isOpaqueWhite(const RGBA &color)
 {
@@ -37,27 +91,72 @@ colorToByte(float32 value)
 	return (uint8)(value*255.0f + 0.5f);
 }
 
+static bool32
+sameColor(const GXColor &a, const GXColor &b)
+{
+	return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+void
+invalidateNativeTextureStage(void)
+{
+	pipelineCache.texObj = nil;
+}
+
+static void
+resetPipelineCache(void)
+{
+	memset(&pipelineCache, 0, sizeof(pipelineCache));
+	pipelineCache.vertexLayout = VERTEX_LAYOUT_UNKNOWN;
+	pipelineCache.tevKey = TEV_UNKNOWN;
+}
+
+// One attribute format per attribute, for every path: indexed and direct
+// streams differ only in the descriptor, so the format table never changes
+// after this and the descriptor is all a layout switch has to send.
+static void
+setupVertexFormats(void)
+{
+	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
+	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_NRM, GX_NRM_XYZ, GX_F32, 0);
+	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0, GX_TEX_ST, GX_F32, 0);
+}
+
+void
+setNativeVertexLayout(bool32 indexed, bool32 normals, bool32 texCoords)
+{
+	uint32 layout = VERTEX_LAYOUT_SET;
+	if(indexed)
+		layout |= VERTEX_LAYOUT_INDEXED;
+	if(normals)
+		layout |= VERTEX_LAYOUT_NORMALS;
+	if(texCoords)
+		layout |= VERTEX_LAYOUT_TEXCOORDS;
+	if(pipelineCache.vertexLayout == layout)
+		return;
+	pipelineCache.vertexLayout = layout;
+
+	uint8 type = indexed ? GX_INDEX16 : GX_DIRECT;
+	GX_ClearVtxDesc();
+	GX_SetVtxDesc(GX_VA_POS, type);
+	if(normals)
+		GX_SetVtxDesc(GX_VA_NRM, type);
+	GX_SetVtxDesc(GX_VA_CLR0, type);
+	if(texCoords)
+		GX_SetVtxDesc(GX_VA_TEX0, type);
+}
+
 static void
 setupNativeVertexArrays(InstanceDataHeader *header)
 {
-	GX_ClearVtxDesc();
-	GX_SetVtxDesc(GX_VA_POS, GX_INDEX16);
-	GX_SetVtxDesc(GX_VA_CLR0, GX_INDEX16);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-	GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_CLR0, GX_CLR_RGBA, GX_RGBA8, 0);
+	setNativeVertexLayout(1, header->hasNormals, header->hasTexCoords);
 	GX_SetArray(GX_VA_POS, header->positions, sizeof(V3d));
 	GX_SetArray(GX_VA_CLR0, header->colors, sizeof(RGBA));
-	if(header->hasNormals){
-		GX_SetVtxDesc(GX_VA_NRM, GX_INDEX16);
-		GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_NRM, GX_NRM_XYZ, GX_F32, 0);
+	if(header->hasNormals)
 		GX_SetArray(GX_VA_NRM, header->normals, sizeof(V3d));
-	}
-	if(header->hasTexCoords){
-		GX_SetVtxDesc(GX_VA_TEX0, GX_INDEX16);
-		GX_SetVtxAttrFmt(GX_VTXFMT0, GX_VA_TEX0,
-		                 GX_TEX_ST, GX_F32, 0);
+	if(header->hasTexCoords)
 		GX_SetArray(GX_VA_TEX0, header->texCoords, sizeof(TexCoords));
-	}
 	if(header->vertexCacheDirty){
 		GX_InvVtxCache();
 		header->vertexCacheDirty = 0;
@@ -81,6 +180,20 @@ initNativeTevState(void)
 		GX_SetTevDirect(stage);
 		GX_SetTevSwapMode(stage, GX_TEV_SWAP0, GX_TEV_SWAP0);
 	}
+
+	// Channel 0 is the same in every path: vertex colour straight through.
+	// Channel 1's material colour is the white the lighting multiplies.
+	GX_SetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX,
+	               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
+	GXColor white = { 255, 255, 255, 255 };
+	GX_SetChanMatColor(GX_COLOR1A1, white);
+	// Lighting only changes RGB in librw. Keep the second channel's alpha out
+	// of the equation entirely; TEV preserves channel 0 alpha in the add stage.
+	GX_SetChanCtrl(GX_ALPHA1, GX_DISABLE, GX_SRC_REG, GX_SRC_REG,
+	               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
+	GX_SetCurrentMtx(GX_PNMTX0);
+	setupVertexFormats();
+	resetPipelineCache();
 }
 
 static void
@@ -125,15 +238,11 @@ setupTevPrevTextureModulate(uint8 stage)
 	                 GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
 }
 
+// The material colour itself goes into KCOLOR0 separately, so that a change of
+// colour alone does not reprogram the stage.
 static void
-setupTevMaterialModulate(uint8 stage, const RGBA &materialColor,
-	bool32 hasPrevious)
+setupTevMaterialModulate(uint8 stage, bool32 hasPrevious)
 {
-	GXColor konst = {
-		materialColor.red, materialColor.green,
-		materialColor.blue, materialColor.alpha
-	};
-	GX_SetTevKColor(GX_KCOLOR0, konst);
 	GX_SetTevKColorSel(stage, GX_TEV_KCSEL_K0);
 	GX_SetTevKAlphaSel(stage, GX_TEV_KASEL_K0_A);
 	GX_SetTevOrder(stage, GX_TEXCOORDNULL, GX_TEXMAP_DISABLE,
@@ -150,36 +259,32 @@ setupTevMaterialModulate(uint8 stage, const RGBA &materialColor,
 	                 GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
 }
 
-// Build the RenderWare colour equation in TEV stages:
-//   clamp(prelight + ambient + diffuse) * material * texture
-// Alpha deliberately does not receive lighting; it is prelight alpha multiplied
-// by material/texture alpha, just like the programmable librw backends.
+// Programs the TEV stages for one combination of texture, material colour and
+// lighting.  Only called when that combination changes.
 static void
-setupNativeTevPipeline(const RGBA &materialColor, GxRaster *nativeRaster,
-	bool32 addLighting)
+programTev(uint32 key)
 {
-	bool32 textured = nativeRaster != nil && nativeRaster->nativeReady;
-	bool32 materialModulate = !isOpaqueWhite(materialColor);
+	bool32 textured = (key & TEV_TEXTURED) != 0;
+	bool32 materialModulate = (key & TEV_MATERIAL) != 0;
 	uint8 stage = GX_TEVSTAGE0;
 
 	if(textured){
 		GX_SetNumTexGens(1);
 		GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4,
 		                  GX_TG_TEX0, GX_IDENTITY);
-		GX_LoadTexObj(&nativeRaster->nativeTexture, GX_TEXMAP0);
 	}else
 		GX_SetNumTexGens(0);
 
-	if(!addLighting){
+	if((key & TEV_LIGHTING) == 0){
 		// Prelight is already clamped vertex data. Therefore, for the unlit
 		// path, texture*RASC is algebraically identical to copying RASC into
 		// CPREV first and multiplying it on the following stage.
 		if(textured){
 			setupTevRasterTextureModulate(stage++);
 			if(materialModulate)
-				setupTevMaterialModulate(stage++, materialColor, 1);
+				setupTevMaterialModulate(stage++, 1);
 		}else if(materialModulate)
-			setupTevMaterialModulate(stage++, materialColor, 0);
+			setupTevMaterialModulate(stage++, 0);
 		else
 			setupTevCopyRaster(stage++, GX_COLOR0A0);
 
@@ -206,79 +311,162 @@ setupNativeTevPipeline(const RGBA &materialColor, GxRaster *nativeRaster,
 	if(textured)
 		setupTevPrevTextureModulate(stage++);
 	if(materialModulate)
-		setupTevMaterialModulate(stage++, materialColor, 1);
+		setupTevMaterialModulate(stage++, 1);
 
 	GX_SetNumTevStages(stage);
+}
+
+// Build the RenderWare colour equation in TEV stages:
+//   clamp(prelight + ambient + diffuse) * material * texture
+// Alpha deliberately does not receive lighting; it is prelight alpha multiplied
+// by material/texture alpha, just like the programmable librw backends.
+static void
+setupNativeTevPipeline(const RGBA &materialColor, GxRaster *nativeRaster,
+	bool32 addLighting)
+{
+	bool32 textured = nativeRaster != nil && nativeRaster->nativeReady;
+	bool32 materialModulate = !isOpaqueWhite(materialColor);
+	uint32 key = 0;
+	if(textured)
+		key |= TEV_TEXTURED;
+	if(materialModulate)
+		key |= TEV_MATERIAL;
+	if(addLighting)
+		key |= TEV_LIGHTING;
+
+	if(pipelineCache.tevKey != key){
+		programTev(key);
+		pipelineCache.tevKey = key;
+	}
+	if(materialModulate){
+		GXColor konst = {
+			materialColor.red, materialColor.green,
+			materialColor.blue, materialColor.alpha
+		};
+		if(!pipelineCache.konstValid ||
+		   !sameColor(pipelineCache.konst, konst)){
+			GX_SetTevKColor(GX_KCOLOR0, konst);
+			pipelineCache.konst = konst;
+			pipelineCache.konstValid = 1;
+		}
+	}
+	if(textured && pipelineCache.texObj != &nativeRaster->nativeTexture){
+		GX_LoadTexObj(&nativeRaster->nativeTexture, GX_TEXMAP0);
+		pipelineCache.texObj = &nativeRaster->nativeTexture;
+	}
+}
+
+static void
+setupUnlitChannels(void)
+{
+	if(pipelineCache.numChannels == 1)
+		return;
+	GX_SetNumChans(1);
+	pipelineCache.numChannels = 1;
 }
 
 // Immediate mode is unlit unless its caller explicitly configures a lit path.
 void
 setupNativeTev(const RGBA &materialColor, GxRaster *nativeRaster)
 {
-	GX_SetNumChans(1);
-	GX_SetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX,
-	               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
+	setupUnlitChannels();
 	setupNativeTevPipeline(materialColor, nativeRaster, 0);
 }
 
-static void
-getAtomicLights(Atomic *atomic, uint32 geometryFlags, WorldLights *lightData,
-	Light **directionals, Light **locals)
+// An atomic's directional lights in view space, worked out once per atomic
+// rather than once per mesh: they depend on the camera and the lights, not on
+// anything a mesh carries.
+struct NativeLights
 {
-	memset(lightData, 0, sizeof(*lightData));
-	lightData->directionals = directionals;
-	lightData->locals = locals;
+	int32 count;
+	V3d direction[8];
+	RGBAf color[8];
+	RGBAf ambient;
+	// The diffuse factor the light slots were last loaded with for this atomic.
+	// Its meshes nearly always share one, and then the second mesh on need not
+	// even build the light objects to compare them.
+	bool32 loaded;
+	float32 loadedDiffuse;
+	uint8 loadedMask;
+};
+
+static void
+getAtomicLights(Atomic *atomic, uint32 geometryFlags, bool32 hasNormals,
+	NativeLights *lights)
+{
+	lights->count = 0;
+	lights->loaded = 0;
+	lights->ambient.red = 0.0f;
+	lights->ambient.green = 0.0f;
+	lights->ambient.blue = 0.0f;
+	lights->ambient.alpha = 0.0f;
 	if((geometryFlags & Geometry::LIGHT) == 0 || engine->currentWorld == nil)
 		return;
 
+	Light *directionals[8];
+	Light *locals[8];
+	WorldLights lightData;
+	memset(&lightData, 0, sizeof(lightData));
+	lightData.directionals = directionals;
+	lightData.locals = locals;
 	// enumerateLights treats these fields as capacities on input.
-	lightData->numDirectionals = 8;
-	lightData->numLocals = 8;
-	((World*)engine->currentWorld)->enumerateLights(atomic, lightData);
-}
+	lightData.numDirectionals = 8;
+	lightData.numLocals = 8;
+	((World*)engine->currentWorld)->enumerateLights(atomic, &lightData);
+	lights->ambient = lightData.ambient;
+	if(!hasNormals)
+		return;
 
-static uint8
-loadDirectionalLights(const WorldLights *lightData,
-	const SurfaceProperties &surfaceProps, bool32 hasNormals)
-{
-	if(!hasNormals || surfaceProps.diffuse <= 0.0f)
-		return GX_LIGHTNULL;
-
-	static const uint8 lightIds[8] = {
-		GX_LIGHT0, GX_LIGHT1, GX_LIGHT2, GX_LIGHT3,
-		GX_LIGHT4, GX_LIGHT5, GX_LIGHT6, GX_LIGHT7
-	};
-	uint8 lightMask = GX_LIGHTNULL;
-	int32 count = lightData->numDirectionals;
+	int32 count = lightData.numDirectionals;
 	if(count > 8)
 		count = 8;
-
 	for(int32 i = 0; i < count; i++){
-		Light *light = lightData->directionals[i];
+		Light *light = lightData.directionals[i];
 		if(light == nil || light->getFrame() == nil)
 			continue;
 
-		V3d direction = light->getFrame()->getLTM()->at;
 		V3d viewDirection;
-		transformNativeWorldVectorToView(direction, &viewDirection);
+		transformNativeWorldVectorToView(light->getFrame()->getLTM()->at,
+		                                 &viewDirection);
 		float32 len2 = viewDirection.x*viewDirection.x +
 		               viewDirection.y*viewDirection.y +
 		               viewDirection.z*viewDirection.z;
 		if(len2 <= 1.0e-12f)
 			continue;
 		float32 invLen = 1.0f/sqrtf(len2);
-		viewDirection.x *= invLen;
-		viewDirection.y *= invLen;
-		viewDirection.z *= invLen;
+		V3d *direction = &lights->direction[lights->count];
+		direction->x = viewDirection.x*invLen;
+		direction->y = viewDirection.y*invLen;
+		direction->z = viewDirection.z*invLen;
+		lights->color[lights->count] = light->color;
+		lights->count++;
+	}
+}
 
+static const uint8 nativeLightIds[8] = {
+	GX_LIGHT0, GX_LIGHT1, GX_LIGHT2, GX_LIGHT3,
+	GX_LIGHT4, GX_LIGHT5, GX_LIGHT6, GX_LIGHT7
+};
+
+static uint8
+loadDirectionalLights(NativeLights *lights,
+	const SurfaceProperties &surfaceProps)
+{
+	if(surfaceProps.diffuse <= 0.0f)
+		return GX_LIGHTNULL;
+	if(lights->loaded && lights->loadedDiffuse == surfaceProps.diffuse)
+		return lights->loadedMask;
+
+	uint8 lightMask = GX_LIGHTNULL;
+	for(int32 i = 0; i < lights->count; i++){
 		GXLightObj lightObject;
 		memset(&lightObject, 0, sizeof(lightObject));
 		GX_InitLightAttn(&lightObject, 1.0f, 0.0f, 0.0f,
 		                 1.0f, 0.0f, 0.0f);
 		GXColor color = {
-			colorToByte(light->color.red*surfaceProps.diffuse),
-			colorToByte(light->color.green*surfaceProps.diffuse),
-			colorToByte(light->color.blue*surfaceProps.diffuse),
+			colorToByte(lights->color[i].red*surfaceProps.diffuse),
+			colorToByte(lights->color[i].green*surfaceProps.diffuse),
+			colorToByte(lights->color[i].blue*surfaceProps.diffuse),
 			255
 		};
 		GX_InitLightColor(&lightObject, color);
@@ -286,46 +474,60 @@ loadDirectionalLights(const WorldLights *lightData,
 		// GX diffuse lighting is local/positional.  A very remote point in the
 		// opposite direction reproduces RenderWare's parallel directional light.
 		const float32 directionalDistance = 10000000.0f;
+		const V3d &direction = lights->direction[i];
 		GX_InitLightPos(&lightObject,
-		                -viewDirection.x*directionalDistance,
-		                -viewDirection.y*directionalDistance,
-		                -viewDirection.z*directionalDistance);
-		GX_LoadLightObj(&lightObject, lightIds[i]);
-		lightMask |= lightIds[i];
+		                -direction.x*directionalDistance,
+		                -direction.y*directionalDistance,
+		                -direction.z*directionalDistance);
+		// A light object is sixteen words through the FIFO.  Peds and cars
+		// light every mesh with the same two or three, so load only a change.
+		if(!pipelineCache.lightValid[i] ||
+		   memcmp(&pipelineCache.lights[i], &lightObject,
+		          sizeof(lightObject)) != 0){
+			GX_LoadLightObj(&lightObject, nativeLightIds[i]);
+			pipelineCache.lights[i] = lightObject;
+			pipelineCache.lightValid[i] = 1;
+		}
+		lightMask |= nativeLightIds[i];
 	}
+	lights->loaded = 1;
+	lights->loadedDiffuse = surfaceProps.diffuse;
+	lights->loadedMask = lightMask;
 	return lightMask;
 }
 
 static void
-setupNativeLighting(const WorldLights *lightData,
-	const SurfaceProperties &surfaceProps, bool32 hasNormals)
+setupNativeLighting(NativeLights *lights,
+	const SurfaceProperties &surfaceProps)
 {
 	// Channel 0 carries PRELIT unchanged.  Channel 1 is reserved for the
 	// RenderWare ambient + diffuse contribution and is added by TEV.
-	GX_SetNumChans(2);
-	GX_SetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX,
-	               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
-
-	GXColor white = { 255, 255, 255, 255 };
 	GXColor ambient = {
-		colorToByte(lightData->ambient.red*surfaceProps.ambient),
-		colorToByte(lightData->ambient.green*surfaceProps.ambient),
-		colorToByte(lightData->ambient.blue*surfaceProps.ambient),
+		colorToByte(lights->ambient.red*surfaceProps.ambient),
+		colorToByte(lights->ambient.green*surfaceProps.ambient),
+		colorToByte(lights->ambient.blue*surfaceProps.ambient),
 		255
 	};
-	GX_SetChanMatColor(GX_COLOR1A1, white);
-	GX_SetChanAmbColor(GX_COLOR1A1, ambient);
+	uint8 lightMask = loadDirectionalLights(lights, surfaceProps);
 
-	uint8 lightMask = loadDirectionalLights(lightData, surfaceProps,
-	                                        hasNormals);
-	GX_SetChanCtrl(GX_COLOR1, GX_ENABLE, GX_SRC_REG, GX_SRC_REG,
-	               lightMask,
-	               lightMask ? GX_DF_CLAMP : GX_DF_NONE,
-	               GX_AF_NONE);
-	// Lighting only changes RGB in librw. Keep the second channel's alpha out
-	// of the equation entirely; TEV preserves channel 0 alpha in the add stage.
-	GX_SetChanCtrl(GX_ALPHA1, GX_DISABLE, GX_SRC_REG, GX_SRC_REG,
-	               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
+	if(pipelineCache.numChannels != 2){
+		GX_SetNumChans(2);
+		pipelineCache.numChannels = 2;
+	}
+	if(!pipelineCache.ambientValid ||
+	   !sameColor(pipelineCache.ambient, ambient)){
+		GX_SetChanAmbColor(GX_COLOR1A1, ambient);
+		pipelineCache.ambient = ambient;
+		pipelineCache.ambientValid = 1;
+	}
+	if(!pipelineCache.lightMaskValid || pipelineCache.lightMask != lightMask){
+		GX_SetChanCtrl(GX_COLOR1, GX_ENABLE, GX_SRC_REG, GX_SRC_REG,
+		               lightMask,
+		               lightMask ? GX_DF_CLAMP : GX_DF_NONE,
+		               GX_AF_NONE);
+		pipelineCache.lightMask = lightMask;
+		pipelineCache.lightMaskValid = 1;
+	}
 }
 
 static void
@@ -401,13 +603,9 @@ drawNativeMesh(InstanceDataHeader *header, const InstanceData *mesh,
 
 static void
 renderAtomicNative(Atomic *atomic, InstanceDataHeader *header,
-	uint32 geometryFlags)
+	uint32 geometryFlags, NativeLights *lights)
 {
 	static const RGBA white = { 255, 255, 255, 255 };
-	Light *directionals[8];
-	Light *locals[8];
-	WorldLights lightData;
-	getAtomicLights(atomic, geometryFlags, &lightData, directionals, locals);
 	bool32 lightingEnabled = (geometryFlags & Geometry::LIGHT) != 0;
 
 	setupNativeVertexArrays(header);
@@ -425,13 +623,9 @@ renderAtomicNative(Atomic *atomic, InstanceDataHeader *header,
 		GxRaster *nativeRaster = raster ? GETGXRASTEREXT(raster) : nil;
 
 		if(lightingEnabled)
-			setupNativeLighting(&lightData, mesh->material->surfaceProps,
-			                    header->hasNormals);
-		else{
-			GX_SetNumChans(1);
-			GX_SetChanCtrl(GX_COLOR0A0, GX_DISABLE, GX_SRC_REG, GX_SRC_VTX,
-			               GX_LIGHTNULL, GX_DF_NONE, GX_AF_NONE);
-		}
+			setupNativeLighting(lights, mesh->material->surfaceProps);
+		else
+			setupUnlitChannels();
 		setupNativeTevPipeline(materialColor, nativeRaster, lightingEnabled);
 
 		bool32 hasAlpha = mesh->vertexAlpha ||
@@ -439,6 +633,7 @@ renderAtomicNative(Atomic *atomic, InstanceDataHeader *header,
 		                  (nativeRaster && nativeRaster->hasAlpha);
 		drawNativeMesh(header, mesh, hasAlpha);
 	}
+	(void)atomic;
 }
 
 void
@@ -448,8 +643,14 @@ renderAtomic(Atomic *atomic, InstanceDataHeader *header)
 		return;
 	renderedAtomicCount++;
 
-	loadNativeWorldMatrix(atomic->getFrame()->getLTM());
-	renderAtomicNative(atomic, header, atomic->geometry->flags);
+	uint32 geometryFlags = atomic->geometry->flags;
+	NativeLights lights;
+	getAtomicLights(atomic, geometryFlags, header->hasNormals, &lights);
+	// The normal matrix is an inverse-transpose, and only directional lights
+	// read it: ambient light and prelit colour take no normal.  The world is
+	// lit by ambient alone, so most atomics skip it.
+	loadNativeWorldMatrix(atomic->getFrame()->getLTM(), lights.count > 0);
+	renderAtomicNative(atomic, header, geometryFlags, &lights);
 }
 
 }
