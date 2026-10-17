@@ -81,6 +81,21 @@ bool32 drawnSincePresent;
 // Presents so far, and how many of them the GPU is known to have executed.
 static uint32 presentSerial;
 static uint32 completedSerial;
+// Moves every time the GPU is known to be idle, i.e. done with everything
+// queued before that point.
+static uint32 gpuIdleEpoch;
+
+uint32
+nativeFrameSerial(void)
+{
+	return presentSerial;
+}
+
+uint32
+nativeGpuIdleEpoch(void)
+{
+	return gpuIdleEpoch;
+}
 
 // Memory freed while the GPU may still read it, held until it no longer can.
 // The game deletes models and texture dictionaries during its update, which
@@ -151,6 +166,7 @@ waitForPresentedFrame(void)
 	if(!drawnSincePresent){
 		// The present's token was the last thing queued, so the GPU is idle.
 		gpuWorkPending = 0;
+		gpuIdleEpoch++;
 		freeRetired(1);
 	}else
 		freeRetired(0);
@@ -163,6 +179,7 @@ waitForGpu(void)
 		return;
 	GX_DrawDone();
 	gpuWorkPending = 0;
+	gpuIdleEpoch++;
 	flip.frameInFlight = 0;
 	completedSerial = presentSerial;
 	freeRetired(1);

@@ -79,6 +79,7 @@ allocateHeader(uint32 numMeshes, uint32 numVertices, uint32 numIndices,
 		return nil;
 	memset(header, 0, sizeof(*header));
 	header->platform = PLATFORM_GX;
+	header->lastSkinFrame = ~0u;
 	header->numMeshes = numMeshes;
 	header->numVertices = numVertices;
 	header->numIndices = numIndices;

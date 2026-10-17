@@ -112,6 +112,9 @@ struct InstanceDataHeader : rw::InstanceDataHeader
 	bool32 hasNormals;
 	bool32 hasTexCoords;
 	bool32 vertexCacheDirty;
+	// nativeFrameSerial() when the skin pipeline last blended into this
+	// geometry's own vertex arrays.  Every clone of a geometry shares them.
+	uint32 lastSkinFrame;
 	uint8 *vertexData;
 	V3d *positions;
 	V3d *normals;
@@ -194,6 +197,11 @@ void retireNativeMemory(void *allocation);
 // frame pacing interrupt handlers out.  For an exit that skips closing the
 // engine; closing it does this itself.
 void stopFramePacing(void);
+// Presents so far; tells one frame's draws from the next.
+uint32 nativeFrameSerial(void);
+// Changes whenever the GPU is known to have finished everything queued, so
+// memory written for draws before the change may be written again.
+uint32 nativeGpuIdleEpoch(void);
 extern bool32 gpuWorkPending;
 extern bool32 drawnSincePresent;
 
