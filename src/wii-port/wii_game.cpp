@@ -43,6 +43,7 @@
 #include "WiiPad.h"
 #include "WiiSpeaker.h"
 #include "WiiTrace.h"
+#include "Coop.h"
 #include "WiiStdout.h"
 // Per-build stamp: refreshed on every link so the banner never lies about the
 // revision that is actually running (wii_build_stamp.h lives in the build dir).
@@ -897,11 +898,23 @@ reportFrameRate(u64 frameStart, u64 frameEnd)
 	static unsigned int frames;
 	static u64 frameTicks;
 	static u64 worstTicks;
+	// Players in the world, fewest and most over the window, so a co-op line
+	// says how many peds it was measured with.
+	static int fewestPlayers = NUMPLAYERS;
+	static int mostPlayers;
 	if(windowStart == 0){
 		windowStart = frameStart;
 		clearRenderClocks();
 	}
 	u64 ticks = frameEnd - frameStart;
+	int players = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(CCoop::GetPlayerPed(i) != nil)
+			players++;
+	if(players < fewestPlayers)
+		fewestPlayers = players;
+	if(players > mostPlayers)
+		mostPlayers = players;
 	frames++;
 	frameTicks += ticks;
 	if(ticks > worstTicks)
@@ -926,7 +939,7 @@ reportFrameRate(u64 frameStart, u64 frameEnd)
 	WiiTraceReport("WII perf: %u frames %u.%u fps | frame %u.%ums worst %ums | "
 	               "update %u.%u render %u.%u (skin %u.%u, %u verts) "
 	               "gpu-wait %u.%u vsync-wait %u.%u | skin repeats %u stalls %u | "
-	               "state=%d\n",
+	               "players %d-%d state=%d\n",
 	               frames, fpsTenths / 10, fpsTenths % 10,
 	               average / 10, average % 10,
 	               (unsigned int)ticks_to_millisecs(worstTicks),
@@ -935,12 +948,14 @@ reportFrameRate(u64 frameStart, u64 frameEnd)
 	               rw::gx::nativeSkinnedVertices / frames,
 	               gpuT / 10, gpuT % 10, flipT / 10, flipT % 10,
 	               rw::gx::nativeSkinRepeats / frames, rw::gx::nativeSkinStalls,
-	               (int)gGameState);
+	               fewestPlayers, mostPlayers, (int)gGameState);
 
 	windowStart = frameEnd;
 	frames = 0;
 	frameTicks = 0;
 	worstTicks = 0;
+	fewestPlayers = NUMPLAYERS;
+	mostPlayers = 0;
 	clearRenderClocks();
 }
 #endif
