@@ -16,6 +16,7 @@
 #include "../rwplugins.h"
 
 #include "rwgx.h"
+#include "gxskinps.h"
 
 namespace rw {
 namespace gx {
@@ -84,21 +85,10 @@ buildSkinMatrices(Atomic *atomic, Skin *skin)
 	return numBones;
 }
 
-// 1/sqrt(x) for a normal's squared length: frsqrte and two Newton-Raphson
-// steps in single precision, about 20 bits -- far beyond what an 8-bit lit
-// colour can show, and a fraction of the sqrt and divide it replaces, which
-// was most of the cost of a skinned vertex.  x must be positive and finite.
-static inline float32
-normalRecipLength(float32 x)
-{
-	float32 estimate;
-	__asm__("frsqrte %0,%1" : "=f" (estimate) : "f" (x));
-	float32 half = 0.5f*x;
-	estimate = estimate*(1.5f - half*estimate*estimate);
-	estimate = estimate*(1.5f - half*estimate*estimate);
-	return estimate;
-}
+static PairedBone pairedBones[MAX_SKIN_BONES] __attribute__((aligned(32)));
 
+// The kernels in gxskinps.h do the arithmetic, a vertex at a time in paired
+// singles; this picks each vertex's bones.
 static void
 blendVertices(InstanceDataHeader *header, Geometry *geometry, Skin *skin,
 	int32 numBones)
@@ -112,14 +102,12 @@ blendVertices(InstanceDataHeader *header, Geometry *geometry, Skin *skin,
 	V3d *normals = header->normals;
 	uint32 numVertices = header->numVertices;
 
+	for(int32 i = 0; i < numBones; i++)
+		makePairedBone(&pairedBones[i], &skinMatrices[i]);
+
 	for(uint32 i = 0; i < numVertices; i++){
-		const V3d source = bindPose[i];
-		V3d normal = { 0.0f, 0.0f, 0.0f };
-		if(blendNormals)
-			normal = bindNormals[i];
-		V3d blended = { 0.0f, 0.0f, 0.0f };
-		V3d blendedNormal = { 0.0f, 0.0f, 0.0f };
-		float32 blendedWeight = 0.0f;
+		PairedSkinVertex vertex;
+		uint32 count = 0;
 		const float32 *vertexWeights = &weights[i*4];
 		const uint8 *vertexBones = &indices[i*4];
 		for(int32 j = 0; j < 4; j++){
@@ -129,48 +117,21 @@ blendVertices(InstanceDataHeader *header, Geometry *geometry, Skin *skin,
 			int32 bone = vertexBones[j];
 			if(bone >= numBones)
 				continue;
-			const Matrix &matrix = skinMatrices[bone];
-			blended.x += weight*(matrix.right.x*source.x +
-			                     matrix.up.x*source.y +
-			                     matrix.at.x*source.z + matrix.pos.x);
-			blended.y += weight*(matrix.right.y*source.x +
-			                     matrix.up.y*source.y +
-			                     matrix.at.y*source.z + matrix.pos.y);
-			blended.z += weight*(matrix.right.z*source.x +
-			                     matrix.up.z*source.y +
-			                     matrix.at.z*source.z + matrix.pos.z);
-
-			if(blendNormals){
-				blendedNormal.x += weight*(matrix.right.x*normal.x +
-				                         matrix.up.x*normal.y +
-				                         matrix.at.x*normal.z);
-				blendedNormal.y += weight*(matrix.right.y*normal.x +
-				                         matrix.up.y*normal.y +
-				                         matrix.at.y*normal.z);
-				blendedNormal.z += weight*(matrix.right.z*normal.x +
-				                         matrix.up.z*normal.y +
-				                         matrix.at.z*normal.z);
-			}
-			blendedWeight += weight;
+			vertex.bone[count] = &pairedBones[bone];
+			vertex.weight[count] = weight;
+			count++;
 		}
 		// An unweighted vertex keeps its bind pose rather than collapsing onto
 		// the atomic's origin.
-		positions[i] = blendedWeight > 0.0f ? blended : source;
-
-		if(blendNormals){
-			if(blendedWeight > 0.0f){
-				float32 lengthSquared = blendedNormal.x*blendedNormal.x +
-				                        blendedNormal.y*blendedNormal.y +
-				                        blendedNormal.z*blendedNormal.z;
-				if(lengthSquared > 1.0e-12f && lengthSquared < 1.0e12f){
-					float32 inverseLength = normalRecipLength(lengthSquared);
-					normal.x = blendedNormal.x*inverseLength;
-					normal.y = blendedNormal.y*inverseLength;
-					normal.z = blendedNormal.z*inverseLength;
-				}
-			}
-			normals[i] = normal;
-		}
+		if(count == 0){
+			positions[i] = bindPose[i];
+			if(blendNormals)
+				normals[i] = bindNormals[i];
+		}else if(blendNormals)
+			skinVertexPaired(&vertex, count, &bindPose[i], &positions[i],
+			                 &bindNormals[i], &normals[i]);
+		else
+			skinPositionPaired(&vertex, count, &bindPose[i], &positions[i]);
 	}
 	DCStoreRange(positions, alignArraySize(numVertices*sizeof(V3d)));
 	if(blendNormals)
