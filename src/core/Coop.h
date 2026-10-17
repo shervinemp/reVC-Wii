@@ -132,6 +132,11 @@ public:
 	static int ms_nCameraFocus;
 	enum { NUM_FRAMINGS = 4 };
 
+	// For unattended test runs (WiiAutotest): the first this many partners join
+	// as soon as their controllers are present, without a button press.  0, the
+	// default, is the ordinary game.
+	static int ms_nAutoJoinPartners;
+
 private:
 	static bool ms_bRunning;
 };

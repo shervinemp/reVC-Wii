@@ -47,6 +47,7 @@
 bool CCoop::ms_bRunning;
 int8 CCoop::ms_nFraming = 1;
 int CCoop::ms_nCameraFocus = -1;
+int CCoop::ms_nAutoJoinPartners;
 
 // The co-op options that are not pad settings, set from the co-op page and
 // saved in the INI under "Wii".  Friendly fire is on by default -- the game as
@@ -1648,7 +1649,8 @@ CCoop::Update(void)
 			const CControllerState &held = pad->NewState;
 			if(held.Cross || held.Circle || held.Square || held.Triangle ||
 			   held.LeftShoulder1 || held.LeftShoulder2 || held.RightShoulder1 || held.RightShoulder2 ||
-			   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight)
+			   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight ||
+			   partner < ms_nAutoJoinPartners)
 				s_joined[partner] = true;
 			else if(!s_joinTold[partner] && CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0){
 				s_joinTold[partner] = true;

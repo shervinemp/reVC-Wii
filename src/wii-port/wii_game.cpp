@@ -44,6 +44,8 @@
 #include "WiiSpeaker.h"
 #include "WiiTrace.h"
 #include "Coop.h"
+#include "Camera.h"
+#include "Script.h"
 #include "WiiStdout.h"
 // Per-build stamp: refreshed on every link so the banner never lies about the
 // revision that is actually running (wii_build_stamp.h lives in the build dir).
@@ -960,6 +962,42 @@ reportFrameRate(u64 frameStart, u64 frameEnd)
 }
 #endif
 
+// Unattended runs, for measuring on Dolphin -- or on the console -- with nobody
+// playing.  Off unless the user-files folder holds autotest.txt, whose first line
+// is "<players> <seconds>", e.g. "4 90".  The game then skips the frontend and the
+// wait for a controller, starts the free-roam script (data/freeroam_miami.scm),
+// joins that many players as soon as their controllers are there (on Dolphin:
+// emulated Wii Remotes with Nunchuks), plays that many seconds of nothing and
+// quits, leaving the WII perf lines in debug.log.
+static int s_autotestPlayers;
+static unsigned int s_autotestSeconds;
+
+static bool
+readAutotest(void)
+{
+	char path[192];
+	std::snprintf(path, sizeof(path), "%s/autotest.txt", s_userFilesDirectory);
+	FILE *file = std::fopen(path, "r");
+	if(file == nullptr)
+		return false;
+	int players = 0;
+	unsigned int seconds = 0;
+	int fields = std::fscanf(file, "%d %u", &players, &seconds);
+	std::fclose(file);
+	if(fields != 2 || players < 1 || seconds == 0){
+		WiiTraceReport("WII autotest: %s does not read as \"<players> <seconds>\", "
+		               "ignored\n", path);
+		return false;
+	}
+	if(players > NUMPLAYERS)
+		players = NUMPLAYERS;
+	s_autotestPlayers = players;
+	s_autotestSeconds = seconds;
+	WiiTraceReport("WII autotest: %d player(s), %u s of free roam, then quit\n",
+	               players, seconds);
+	return true;
+}
+
 // Both of the ways a game can start, factored out because a running game has to be
 // able to start another one and that is the case the boot path never exercises.
 //
@@ -1178,15 +1216,26 @@ main(int argc, char **argv)
 	// straight into the frontend, which loads the game data only once a game
 	// is actually started.
 	FrontEndMenuManager.m_bGameNotLoaded = true;
-	FrontEndMenuManager.m_bStartUpFrontEndRequested = true;
-	gGameState = GS_FRONTEND;
-	WiiTraceReport("WII game boot: entering frontend\n");
+	if(readAutotest()){
+		// Straight into the free-roam script with the co-op camera on for more
+		// than one player; the partners join in CCoop::Update as soon as their
+		// controllers are there.
+		CTheScripts::ScriptToLoad = 1;
+		CCamera::bWiiCoopCamera = s_autotestPlayers > 1;
+		CCoop::ms_nAutoJoinPartners = s_autotestPlayers - 1;
+		FrontEndMenuManager.m_bStartUpFrontEndRequested = false;
+		gGameState = GS_INIT_PLAYING_GAME;
+	}else{
+		FrontEndMenuManager.m_bStartUpFrontEndRequested = true;
+		gGameState = GS_FRONTEND;
+		WiiTraceReport("WII game boot: entering frontend\n");
 
-	// Nothing to play with, no game.  This blocks on a notice and returns as soon as
-	// a usable controller is there.  It also returns on RsGlobal.quit (power, reset,
-	// HOME), and then the loop below does not run and the exit underneath it does --
-	// so that way out closes the log like every other one.
-	waitForController();
+		// Nothing to play with, no game.  This blocks on a notice and returns as
+		// soon as a usable controller is there.  It also returns on RsGlobal.quit
+		// (power, reset, HOME), and then the loop below does not run and the exit
+		// underneath it does -- so that way out closes the log like every other one.
+		waitForController();
+	}
 
 	u64 lastStallReport = 0;
 
@@ -1251,6 +1300,20 @@ main(int argc, char **argv)
 
 		default:
 			break;
+		}
+
+		// An unattended run ends itself once it has played its time, through the
+		// same quit as HOME, so the log is closed and the card synced.
+		if(s_autotestPlayers > 0 && gGameState == GS_PLAYING_GAME){
+			static u64 playingSince;
+			if(playingSince == 0)
+				playingSince = frameStart;
+			else if(ticks_to_millisecs(frameStart - playingSince) >=
+			        (u64)s_autotestSeconds * 1000){
+				WiiTraceReport("WII autotest: %u s played, quitting\n",
+				               s_autotestSeconds);
+				RsGlobal.quit = TRUE;
+			}
 		}
 
 		// Commits the log to the card, at most once a second.  This was only
