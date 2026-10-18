@@ -48,6 +48,7 @@
 #endif
 
 #ifdef NINTENDO_WII
+#include "Coop.h"
 #include "WiiPad.h"
 #endif
 
@@ -154,13 +155,20 @@ FrontEndPad(void)
 	// left on while its owner plays on a GameCube pad is connected, and with
 	// co-op off it is nobody's -- the exact idle-controller case the join
 	// button exists to ignore -- so it must not be able to nudge the menu.
+	//
+	// That is why only a joined pad counts, here and in the menu: a partner's
+	// pad is theirs once somebody has pressed a join button on it (see
+	// CCoop::IsJoined), and until then Plus on a remote on the table, or a
+	// thumb on a stick, was opening the pause menu for everyone.  Pad 0 is
+	// player 1's and is always theirs, joined or not, so with one player nothing
+	// here differs from the switch being off.
 #ifdef NINTENDO_WII
 	if(CCamera::bWiiCoopCamera){
 		if(!FrontEndMenuManager.m_bMenuActive){
 			s_menuPad = 0;
 			if(!CPad::GetPad(0)->GetStartJustDown()){
 				for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
-					if(CPad::GetPad(coop)->GetStartJustDown()){
+					if(CCoop::IsJoined(1 + coop - PAD_COOP) && CPad::GetPad(coop)->GetStartJustDown()){
 						s_menuPad = coop;
 						break;
 					}
@@ -170,7 +178,7 @@ FrontEndPad(void)
 			s_menuPad = 0;
 		}else{
 			for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
-				if(PadJustPressed(CPad::GetPad(coop))){
+				if(CCoop::IsJoined(1 + coop - PAD_COOP) && PadJustPressed(CPad::GetPad(coop))){
 					s_menuPad = coop;
 					break;
 				}

@@ -68,6 +68,18 @@ public:
 	// a ped only while that partner's controller is there and they have
 	// joined, and are nil otherwise.
 	static CPlayerPed *GetPlayerPed(int player);
+	// Whether this player is one of the party: player 1 always is, a partner
+	// once somebody has pressed a button on their controller.  Not about being in
+	// the world right now -- a joined partner is still joined through a mission,
+	// while they are down, or while they wait for a seat.  The pause menu asks
+	// this, so a controller nobody has joined with cannot open it.
+	static bool IsJoined(int player);
+	// Whether a joined partner's controller has stopped answering: it has not
+	// been seen for about a second and a half.  The partner is still in the world
+	// for a few more seconds after that and then leaves, so this is the window in
+	// which the HUD can show the controller as lost.  False for player 1, who has
+	// no such grace, and for anyone who has not joined.
+	static bool IsControllerSilent(int player);
 	// 0..3 for a co-op player, -1 for anything else.
 	static int GetPlayerIndex(const CEntity *entity);
 	// Whether damage from one player to another is switched off.  With friendly
@@ -120,6 +132,15 @@ public:
 	// Where to draw a player's reticle, as fractions of the screen.  False when
 	// that player has none.  engaged is true while it is on a target.
 	static bool GetReticle(int player, float &x, float &y, bool &engaged);
+	// For the HUD's marks: whether a partner is down right now -- dead, arrested,
+	// or at their last point of health in a car -- and not yet back or out of the
+	// party.  bleedLeft is how much of the ten-second bleed-out remains, 1 just
+	// after they fell and 0 as they are taken back to player 1; reviveProgress is
+	// how far another player standing by has got through the hold that brings them
+	// back, 0 to 1, and 0 when nobody is.  False, and the two untouched, for anyone
+	// who is not down, and always for player 1: his going down ends the session's
+	// run rather than starting a countdown.  Read-only.
+	static bool GetDownedState(int player, float &bleedLeft, float &reviveProgress);
 
 	// --- camera --------------------------------------------------------------
 	// Which of the shared camera's framings is in use; see Cam.cpp.  Cycled by
@@ -139,7 +160,10 @@ public:
 	// included -- and is dropped if the box stays busy too long to be news.  The
 	// key must outlive the call (a string literal); its words are in Text.cpp's
 	// fallback table.  Do not test the box for being empty first: CHud leaves the
-	// last line in it after it fades, so it never reads as empty again.
+	// last line in it after it fades, so it never reads as empty again.  Shown for
+	// the help box's ordinary time, three seconds and a bit for its length, so a
+	// line is a few seconds of the box; only the camera notices (keys starting
+	// "WII_CF") are quick.  Keep the words short, and the key to seven characters.
 	static void Notify(const char *key);
 
 	// For unattended test runs (WiiAutotest): the first this many partners join

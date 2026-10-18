@@ -117,4 +117,21 @@ enum WiiPadPrompt
 };
 const char *WiiPadPromptButton(int player, WiiPadPrompt prompt);
 
+// The kind of controller a player is holding, named the way WiiPadQueryPrimary
+// names player 1's: WII_PAD_NONE when they have none, and a Wii Remote reads as
+// a Classic Controller or a Nunchuk when one is plugged in.  For wording that
+// has to name a button, where the buttons differ by controller.
+WiiConnectedPad WiiPadQueryPlayer(int player);
+
+// Whether the Wii Remote a player is holding reports its batteries as low.  The
+// remote sets the flag in its status report, which it sends when it connects and
+// when something is plugged into it, so this can lag a battery that is running
+// out.  False for a GameCube pad and for anybody without a controller.
+bool WiiPadBatteryLow(int player);
+
+// A short buzz in a player's hands, for the moment their controller joins the
+// game.  Independent of whether their character is in the world yet, which the
+// ordinary rumble of a partner's controller waits for.
+void WiiPadJoinPulse(int player);
+
 #endif

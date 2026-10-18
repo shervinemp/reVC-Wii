@@ -31,6 +31,7 @@
 #include "World.h"
 #include "Zones.h"
 #ifdef NINTENDO_WII
+#include "WiiPad.h"
 #include "WiiTrace.h"
 #endif
 
@@ -244,6 +245,17 @@ bool s_padEver[kNumPartners];
 // they have been told that is what it takes.
 bool s_joined[kNumPartners];
 bool s_joinTold[kNumPartners];
+// And when they were last told, so a controller that is pressed without joining
+// -- +, - or the stick, none of which is the join button -- is told again, but
+// not every time a thumb brushes it.  Also whether the batteries of a joined
+// remote have been called low yet, once per connection.
+const uint32 kJoinHintMs = 20000;
+uint32 s_joinHintAt[kNumPartners];
+bool s_batteryTold[kNumPartners];
+// A controller that has not been seen this long counts as lost, for the HUD.
+// Longer than the pad layer's own grace for a dropped report (twenty scans, a
+// third of a second), so a Nunchuk jogged in its socket does not flash a "?".
+const uint32 kSilentMs = 1500;
 // When each partner may next be put into the world.
 uint32 s_spawnTime[NUMPLAYERS];
 // When the regroup line was last written.  It is a signal, not a tick: a car
@@ -264,8 +276,12 @@ bool s_reviveValid[NUMPLAYERS];
 // Where player 1 was last frame, to notice a teleport.
 CVector s_leadPos;
 bool s_leadPosValid;
-// Whether the players have been told about the wall yet.
+// Whether the players have been told about the wall yet, and when they last
+// were.  They are told again if someone is still leaning on it kTetherRetellMs
+// later: the first line goes by while everyone is looking at the other player.
+const uint32 kTetherRetellMs = 30000;
 bool s_tetherTold;
+uint32 s_tetherAt;
 // Player 1 held at the wall by a partner on foot, one row per partner: since
 // when they have been pushing against it, the last time they were, and where
 // the partner stood when it began.  LimitSeparation writes them -- it is the
@@ -285,6 +301,33 @@ uint32 s_skinWaitLast[NUMPLAYERS];
 // Whether a partner's next arrival is news.  Coming back from the dead or
 // from the far end of the street is not; a controller being picked up is.
 bool s_announceJoin[NUMPLAYERS];
+// And whether it is a return that is owed a line: brought back after being
+// replaced beside player 1, or after the bleed-out or the arrest that nobody
+// reached them from.  Coming back after a mission or a cutscene is not.
+bool s_announceReturn[NUMPLAYERS];
+// A partner who cannot be put anywhere yet -- player 1 is in a boat or an
+// aircraft, or in a moving car with no seat -- is simply not in the world, which
+// from the sofa is a partner who has vanished.  Since when they have been
+// waiting, the last time they were tried for (the same trick as the skin wait,
+// so a wait that was dropped half-way does not count towards the next), and
+// whether they have been told.  The line waits for a moment of real waiting
+// first, because the car doors opening and closing is not.
+const uint32 kWaitNoticeMs = 2000;
+uint32 s_waitSince[NUMPLAYERS];
+uint32 s_waitLast[NUMPLAYERS];
+bool s_waitTold[NUMPLAYERS];
+// What the first partner to arrive is told about how the party works.  Once
+// per run of the console, not once per game: a player who loads a save has
+// read it.
+bool s_introTold;
+// The party is held for a mission, and whether the help box has had its line
+// about it yet.  The line is told at the first moment the screen can show it,
+// not when the mission starts, because the mission's own cutscene is usually on
+// screen then and takes the help box away with it.
+const uint32 kMissionRetellMs = 20000;
+bool s_missionHeld;
+bool s_missionTold;
+uint32 s_missionTellAt;
 
 // --- what the help box is told ------------------------------------------------
 // A line in the help box, for the few things that happen with nothing on screen
@@ -299,13 +342,27 @@ bool s_announceJoin[NUMPLAYERS];
 // the last of these.  A handful of keys, pointing at strings that live for the
 // whole run, so nothing is allocated.  A notice already waiting is not queued
 // twice, and one that comes when the queue is full pushes out the oldest, which
-// is the stalest news.  News that has waited kNoticeStaleMs for the box -- one
+// is the stalest news.  News that has waited its stale limit for the box -- one
 // of the game's own hints that stays up, say -- is dropped rather than shown
 // late: "paused for the mission" is no use once the mission is over.
-const int kMaxNotices = 6;
-const uint32 kNoticeStaleMs = 10000;
+//
+// A line is shown for the help box's ordinary time, three seconds and a twentieth
+// of one per character, so that it can be read; the camera notices alone are
+// quick (see ShowNextNotice).  That makes the queue slow -- five or six seconds
+// a line with the fades -- which is why the numbers are what they are.  Three
+// lines can be waiting at once, a partner's arrival and the two that explain the
+// party, and the third should still be news when its turn comes: the stale limit
+// is long enough for two lines ahead of it, and the queue deep enough that a burst
+// of arrivals does not push the explanations out.  The lines that are only true
+// for a moment get a shorter limit of their own, and the explanations a longer
+// one, since they are as true in half a minute as now.
+const int kMaxNotices = 8;
+const uint32 kNoticeStaleMs = 15000;
+const uint32 kNoticeStaleShortMs = 8000;
+const uint32 kNoticeStaleLongMs = 60000;
 const char *s_notice[kMaxNotices];
 uint32 s_noticeAt[kMaxNotices];
+uint32 s_noticeStale[kMaxNotices];
 int s_noticeCount;
 
 // Whether the help box can take a new line without wiping one.  Nothing on
@@ -336,18 +393,20 @@ DropOldestNotice(void)
 	for(int i = 1; i < s_noticeCount; i++){
 		s_notice[i-1] = s_notice[i];
 		s_noticeAt[i-1] = s_noticeAt[i];
+		s_noticeStale[i-1] = s_noticeStale[i];
 	}
 	s_noticeCount--;
 }
 
 void
-Tell(const char *key)
+Tell(const char *key, uint32 staleMs = kNoticeStaleMs)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	for(int i = 0; i < s_noticeCount; i++){
 		if(SameNotice(s_notice[i], key)){
 			s_notice[i] = key;
 			s_noticeAt[i] = now;
+			s_noticeStale[i] = staleMs;
 			return;
 		}
 	}
@@ -355,6 +414,7 @@ Tell(const char *key)
 		DropOldestNotice();
 	s_notice[s_noticeCount] = key;
 	s_noticeAt[s_noticeCount] = now;
+	s_noticeStale[s_noticeCount] = staleMs;
 	s_noticeCount++;
 }
 
@@ -362,12 +422,34 @@ void
 ShowNextNotice(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
-	while(s_noticeCount > 0 && now - s_noticeAt[0] > kNoticeStaleMs)
+	while(s_noticeCount > 0 && now - s_noticeAt[0] > s_noticeStale[0])
 		DropOldestNotice();
 	if(s_noticeCount == 0 || !HelpBoxFree())
 		return;
-	CHud::SetHelpMessage(TheText.Get(s_notice[0]), true);
+	// Only the camera's lines are quick, a second and a half on the screen: they
+	// answer a button press the player is looking at the screen for, and pressing
+	// it again replaces them.  Everything else is news the party has to be able to
+	// read, in the time the game gives its own hints.
+	CHud::SetHelpMessage(TheText.Get(s_notice[0]), strncmp(s_notice[0], "WII_CF", 6) == 0);
 	DropOldestNotice();
+}
+
+// The few things that happen to one player with nothing on screen to show for
+// them -- brought back to the group, held for a seat -- say so at most once per
+// kSituationMs for that player, so a car that is hauled back every few seconds
+// does not turn the help box into a ticker.  Returns whether it was told.
+const uint32 kSituationMs = 10000;
+uint32 s_situationAt[NUMPLAYERS];
+
+bool
+TellAbout(int player, const char *key)
+{
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	if(s_situationAt[player] != 0 && now - s_situationAt[player] < kSituationMs)
+		return false;
+	s_situationAt[player] = now;
+	Tell(key);
+	return true;
 }
 
 // One help line per partner, so a line about player 3 says player 3.  The
@@ -378,6 +460,12 @@ const char *const kJoinedKeys[kNumPartners] = { "WII_P2I", "WII_P3I", "WII_P4I" 
 const char *const kLeftKeys[kNumPartners] = { "WII_P2O", "WII_P3O", "WII_P4O" };
 const char *const kDownKeys[kNumPartners] = { "WII_P2D", "WII_P3D", "WII_P4D" };
 const char *const kBackKeys[kNumPartners] = { "WII_P2R", "WII_P3R", "WII_P4R" };
+// Brought back to the party, waiting for a seat, waiting out a boat or aircraft
+// ride, and a remote whose batteries are low.
+const char *const kGroupKeys[kNumPartners] = { "WII_P2G", "WII_P3G", "WII_P4G" };
+const char *const kSeatKeys[kNumPartners] = { "WII_P2S", "WII_P3S", "WII_P4S" };
+const char *const kRideKeys[kNumPartners] = { "WII_P2B", "WII_P3B", "WII_P4B" };
+const char *const kBatteryKeys[kNumPartners] = { "WII_P2L", "WII_P3L", "WII_P4L" };
 
 // What a partner who is only being moved, not replaced, keeps.  No ammo: the
 // weapons are, and the ammo is the shared pool.
@@ -949,14 +1037,93 @@ SomeoneCanRevive(CPlayerPed *partner)
 	return false;
 }
 
-// Whether any partner is in the world right now.
+// Whether any partner has joined, in the world or not: a party that a mission
+// is holding has nobody in the world, and is still a party.
 bool
-AnyPartner(void)
+AnyJoined(void)
 {
-	for(int i = 1; i < NUMPLAYERS; i++)
-		if(CWorld::Players[i].m_pPed != nil)
+	for(int partner = 0; partner < kNumPartners; partner++)
+		if(s_joined[partner])
 			return true;
 	return false;
+}
+
+// Whether somebody did something to a controller this frame, join button or not:
+// any button going down, or a stick pushed out of the middle.  For telling a
+// player who is pressing things on a controller that is doing nothing for them
+// what it would take.
+bool
+PadTouched(const CControllerState &now, const CControllerState &was)
+{
+	if((now.Start && !was.Start) || (now.Select && !was.Select) ||
+	   (now.Cross && !was.Cross) || (now.Circle && !was.Circle) ||
+	   (now.Square && !was.Square) || (now.Triangle && !was.Triangle) ||
+	   (now.LeftShoulder1 && !was.LeftShoulder1) || (now.LeftShoulder2 && !was.LeftShoulder2) ||
+	   (now.RightShoulder1 && !was.RightShoulder1) || (now.RightShoulder2 && !was.RightShoulder2) ||
+	   (now.LeftShock && !was.LeftShock) || (now.RightShock && !was.RightShock) ||
+	   (now.DPadUp && !was.DPadUp) || (now.DPadDown && !was.DPadDown) ||
+	   (now.DPadLeft && !was.DPadLeft) || (now.DPadRight && !was.DPadRight))
+		return true;
+	// Half way out is a push; a stick resting off centre is not.
+	const int16 kPush = 64;
+	return (Abs(now.LeftStickX) > kPush && Abs(was.LeftStickX) <= kPush) ||
+	       (Abs(now.LeftStickY) > kPush && Abs(was.LeftStickY) <= kPush) ||
+	       (Abs(now.RightStickX) > kPush && Abs(was.RightStickX) <= kPush) ||
+	       (Abs(now.RightStickY) > kPush && Abs(was.RightStickY) <= kPush);
+}
+
+// A partner who has to wait to be put into the world because of where player 1
+// is: not yet, rather than not at all.  Called every time an attempt is turned
+// away for that, and says why once the wait has lasted a moment.  A boat or an
+// aircraft is a wait of its own kind from a car with no room in it, and each has
+// its own line.
+void
+NoteWaiting(int player, CVehicle *vehicle)
+{
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	if(s_waitSince[player] == 0 || now - s_waitLast[player] > 3*kRetryMs){
+		s_waitSince[player] = now;
+		s_waitTold[player] = false;
+	}
+	s_waitLast[player] = now;
+	if(s_waitTold[player] || now - s_waitSince[player] < kWaitNoticeMs)
+		return;
+	const bool ride = vehicle->IsBoat() || vehicle->IsHeli() || vehicle->IsPlane() ||
+		vehicle->IsRealHeli() || vehicle->IsRealPlane();
+	s_waitTold[player] = TellAbout(player, ride ? kRideKeys[player - 1] : kSeatKeys[player - 1]);
+}
+
+// What the first partner to arrive is told, after the line that they have joined:
+// that the ammo and the money are the whole party's, and which button is theirs
+// for the camera and what leaving takes.  The controls differ by controller, so
+// there is a line for each kind.  They are as true in a minute as now, so they
+// wait for the help box as long as they have to.  The camera button is the one a
+// partner has to themselves (player 1's picks the framing); verified against
+// captureWiimote, captureClassic and captureGameCube in WiiPad.cpp.  Leaving is
+// the controller going away, which is all CCoop::Update takes for it: the remote
+// switched off, its Nunchuk pulled out, the pad unplugged.
+void
+TeachParty(int player)
+{
+	Tell("WII_SHA", kNoticeStaleLongMs);
+#ifdef NINTENDO_WII
+	const char *tip = nil;
+	switch(WiiPadQueryPlayer(player)){
+	case WII_PAD_GAMECUBE:
+		tip = "WII_TPG";
+		break;
+	case WII_PAD_CLASSIC:
+		tip = "WII_TPC";
+		break;
+	case WII_PAD_WIIMOTE_NUNCHUK:
+		tip = "WII_TPW";
+		break;
+	default:
+		break;
+	}
+	if(tip != nil)
+		Tell(tip, kNoticeStaleLongMs);
+#endif
 }
 
 bool
@@ -1054,9 +1221,13 @@ SpawnPartner(CPlayerPed *lead, int player)
 				pos = ride->GetPosition();
 			}else{
 				// No seat.  Beside it if it is standing still, and otherwise not
-				// yet: they join when player 1 stops or gets out.
-				if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle))
+				// yet: they join when player 1 stops or gets out.  Which, to the
+				// person holding the controller, is a character who has vanished,
+				// so they are told.
+				if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle)){
+					NoteWaiting(player, vehicle);
 					return false;
+				}
 				if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 3.0f, pos))
 					return false;
 			}
@@ -1170,9 +1341,20 @@ SpawnPartner(CPlayerPed *lead, int player)
 	s_aim[player].facing = false;
 	s_aim[player].assistHandle = -1;
 	COOP_LOG("WII coop: player %d in%s\n", player + 1, ride != nil ? " (riding along)" : "");
+	s_waitSince[player] = 0;
+	s_waitTold[player] = false;
 	if(s_announceJoin[player]){
 		s_announceJoin[player] = false;
+		s_announceReturn[player] = false;
 		Tell(kJoinedKeys[player - 1]);
+		// The first arrival of the run also learns how the party works, once.
+		if(!s_introTold){
+			s_introTold = true;
+			TeachParty(player);
+		}
+	}else if(s_announceReturn[player]){
+		s_announceReturn[player] = false;
+		TellAbout(player, kGroupKeys[player - 1]);
 	}
 	return true;
 }
@@ -1665,6 +1847,11 @@ CCoop::Init(void)
 	s_regroupLogTime = 0;
 	s_leadPosValid = false;
 	s_tetherTold = false;
+	s_tetherAt = 0;
+	s_missionHeld = false;
+	s_missionTold = false;
+	s_missionTellAt = 0;
+	// (s_introTold is not reset: the controls are taught once per run.)
 	// A partner's choice of camera does not outlive the game it was made in: the
 	// partner it names may be a different player, or nobody, in the next.
 	ms_nCameraFocus = -1;
@@ -1680,6 +1867,11 @@ CCoop::Init(void)
 		s_wallLast[i] = 0;
 		s_skinWaitSince[i] = 0;
 		s_announceJoin[i] = true;
+		s_announceReturn[i] = false;
+		s_situationAt[i] = 0;
+		s_waitSince[i] = 0;
+		s_waitLast[i] = 0;
+		s_waitTold[i] = false;
 		s_carry[i].valid = false;
 		s_wantSlot[i] = -1;
 		s_wanted[i] = 0;
@@ -1699,6 +1891,8 @@ CCoop::Init(void)
 		s_padEver[partner] = false;
 		s_joined[partner] = false;
 		s_joinTold[partner] = false;
+		s_joinHintAt[partner] = 0;
+		s_batteryTold[partner] = false;
 		s_padSince[partner] = 0;
 		s_padLast[partner] = 0;
 	}
@@ -1717,6 +1911,29 @@ CCoop::GetPlayerPed(int player)
 	if(player < 0 || player >= NUMPLAYERS)
 		return nil;
 	return CWorld::Players[player].m_pPed;
+}
+
+bool
+CCoop::IsJoined(int player)
+{
+	if(player == LEAD)
+		return true;
+	return player > LEAD && player < NUMPLAYERS && s_joined[player - 1];
+}
+
+bool
+CCoop::IsControllerSilent(int player)
+{
+	if(player <= LEAD || player >= NUMPLAYERS)
+		return false;
+	const int partner = player - 1;
+	// The same signal the six-second removal in Update runs on: the pad layer
+	// reporting the controller as gone (its remote disconnected, its Nunchuk
+	// pulled out, the pad unplugged), not anything about buttons or sticks, so a
+	// player standing still with a working controller is never silent.  Just
+	// earlier: that waits kDropAfterMs, this kSilentMs.
+	return s_joined[partner] && s_padEver[partner] && !s_padHere[partner] &&
+		CTimer::GetTimeInMilliseconds() - s_padLast[partner] > kSilentMs;
 }
 
 bool
@@ -1812,15 +2029,51 @@ CCoop::Update(void)
 		for(int player = 1; player < NUMPLAYERS; player++)
 			s_spawnTime[player] = now;
 		s_leadPosValid = false;
-		// Someone who was playing a moment ago is owed a word about where
-		// they went.  Only for a mission: a cutscene explains itself, and the
-		// menu toggle was their own doing.  It waits behind a hint of the
-		// mission's own, which the scripts have already put up this frame and
-		// which says something more useful than this.
-		if(!allowed && AnyPartner() && CTheScripts::IsPlayerOnAMission())
-			Tell("WII_CCM");
 	}
+
+	// Someone who was playing a moment ago is owed a word about where they went.
+	// Only for a mission: a cutscene explains itself, and the menu toggle was their
+	// own doing.  Held from the first frame of the mission, whether or not the
+	// session was running just before, but told only when the screen can show it:
+	// the mission's own cutscene is usually on at the start and takes the help box
+	// with it, so a line told on the first frame is a line nobody reads.  It waits
+	// behind a hint of the mission's own, which the scripts have put up by then and
+	// which says something more useful than this -- and is told again, not more
+	// than once in kMissionRetellMs, whenever a partner's controller is touched,
+	// since otherwise a partner's controller is dead for the whole mission with the
+	// only explanation long gone.  When the party is back it says so.
+	const bool onMission = blocker != nil && strcmp(blocker, "mission") == 0;
+	if(onMission){
+		if(!s_missionHeld && AnyJoined()){
+			s_missionHeld = true;
+			s_missionTold = false;
+		}
+		if(s_missionHeld && !TheCamera.m_WideScreenOn && !CCutsceneMgr::IsRunning() &&
+		   !CCutsceneMgr::IsCutsceneProcessing()){
+			bool touched = false;
+			for(int partner = 0; partner < kNumPartners; partner++){
+				CPad *pad = CPad::GetPad(PAD_COOP + partner);
+				if(s_padHere[partner] && PadTouched(pad->NewState, pad->OldState))
+					touched = true;
+			}
+			if(!s_missionTold || (touched && now - s_missionTellAt >= kMissionRetellMs)){
+				s_missionTold = true;
+				s_missionTellAt = now;
+				Tell("WII_CCM");
+			}
+		}
+	}else if(allowed){
+		if(s_missionHeld && AnyJoined())
+			Tell("WII_CPB");
+		s_missionHeld = false;
+	}else if(strcmp(blocker, "switched off") == 0)
+		s_missionHeld = false;
+
 	if(!ms_bRunning){
+		// Nobody comes back from a mission, a cutscene or a death owing a line about
+		// being brought back to the party.
+		for(int player = 1; player < NUMPLAYERS; player++)
+			s_announceReturn[player] = false;
 		// A partner never outlives the session.  That is what "off during
 		// missions" comes to in practice: by the time a mission's first scene
 		// starts there is one player ped in the world, as its script assumes.
@@ -1875,7 +2128,13 @@ CCoop::Update(void)
 			const int player = partner + 1;
 			ms_nCameraFocus = (ms_nCameraFocus == player) ? -1 : player;
 			COOP_LOG("WII coop: camera focus %d\n", ms_nCameraFocus);
-			Tell(ms_nCameraFocus >= 0 ? "WII_CFY" : "WII_CFA");
+			// The camera only follows a car its owner is driving (Cam.cpp), so
+			// "following your car" is only true behind the wheel.  On foot, or in
+			// somebody else's seat, the choice is kept for when they next drive.
+			CPlayerPed *ped = CWorld::Players[player].m_pPed;
+			const bool driving = ped != nil && ped->bInVehicle && ped->m_pMyVehicle != nil &&
+				ped->m_pMyVehicle->pDriver == ped;
+			Tell(ms_nCameraFocus < 0 ? "WII_CFA" : driving ? "WII_CFY" : "WII_CFD");
 		}
 	}
 
@@ -1901,23 +2160,52 @@ CCoop::Update(void)
 		if(padGone[player]){
 			s_joined[partner] = false;
 			s_joinTold[partner] = false;
+			s_batteryTold[partner] = false;
+			s_announceReturn[player] = false;
 			// A camera focus was that partner's choice for their drive.  Their
 			// pad is gone, so it goes with them: a partner who joins later
 			// gets the party's car, not a camera that prefers someone else's.
 			if(ms_nCameraFocus == player)
 				ms_nCameraFocus = -1;
 		}else if(padPresent[player] && !s_joined[partner]){
+			// Any of these joins; they are A, B, 1, 2, Z, C and the D-pad on a
+			// remote and Nunchuk, the face buttons, shoulders and D-pad on a Classic
+			// Controller, and the same on a GameCube pad.  The prompt names A, the
+			// one that is the same button on all three (Cross in every capture
+			// function in WiiPad.cpp).  + and - are Start and Select, and the sticks
+			// are the sticks, and none of them joins.
 			const CControllerState &held = pad->NewState;
 			if(held.Cross || held.Circle || held.Square || held.Triangle ||
 			   held.LeftShoulder1 || held.LeftShoulder2 || held.RightShoulder1 || held.RightShoulder2 ||
 			   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight ||
-			   partner < ms_nAutoJoinPartners)
+			   partner < ms_nAutoJoinPartners){
 				s_joined[partner] = true;
-			else if(!s_joinTold[partner]){
-				s_joinTold[partner] = true;
-				Tell(kJoinKeys[partner]);
+#ifdef NINTENDO_WII
+				WiiPadJoinPulse(player);
+#endif
+			}else{
+				// Told when the controller is first noticed, and again whenever
+				// it is pressed without joining, which is somebody trying to:
+				// the first line goes by before the controller is in anyone's
+				// hands, and a +, - or stick press otherwise gets no answer.
+				const bool again = s_joinTold[partner] && now - s_joinHintAt[partner] >= kJoinHintMs &&
+					PadTouched(held, pad->OldState);
+				if(!s_joinTold[partner] || again){
+					s_joinTold[partner] = true;
+					s_joinHintAt[partner] = now;
+					Tell(kJoinKeys[partner]);
+				}
 			}
 		}
+#ifdef NINTENDO_WII
+		// A remote that is running out of batteries drops out in the middle of a
+		// fight with no warning, and then "has left" with no cause.  Once per
+		// connection; the flag is the remote's own, set when it reports its status.
+		if(s_joined[partner] && !s_batteryTold[partner] && WiiPadBatteryLow(player)){
+			s_batteryTold[partner] = true;
+			Tell(kBatteryKeys[partner]);
+		}
+#endif
 	}
 
 	for(int player = 1; player < NUMPLAYERS; player++){
@@ -1947,8 +2235,9 @@ CCoop::Update(void)
 			const bool busted = partner->m_nPedState == PED_ARRESTED;
 			if(s_downTime[player] == 0){
 				s_downTime[player] = now;
+				// True for as long as it takes them to bleed out, and no longer.
 				if(!busted)
-					Tell(kDownKeys[player - 1]);
+					Tell(kDownKeys[player - 1], kNoticeStaleShortMs);
 			}else if(!busted && SomeoneCanRevive(partner)){
 				if(s_reviveTime[player] == 0)
 					s_reviveTime[player] = now;
@@ -1987,6 +2276,9 @@ CCoop::Update(void)
 				if(now - s_downTime[player] > kDownedBleedMs){
 					RemovePartner(player, busted ? "busted" : "wasted", false);
 					s_spawnTime[player] = now;
+					// Back beside player 1 in a moment, with nothing on screen to say
+					// where from: the arrival is told when it happens.
+					s_announceReturn[player] = true;
 				}
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, player, leadTeleported)) != nil){
@@ -2101,6 +2393,7 @@ CCoop::Update(void)
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's boat brought back (%s)\n", player + 1, regroup);
 				}
+				TellAbout(player, kGroupKeys[player - 1]);
 			}else if(airborne){
 				driven->SetPosition(airPos);
 				if(leadVehicle != nil)
@@ -2111,6 +2404,7 @@ CCoop::Update(void)
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's aircraft brought back (%s)\n", player + 1, regroup);
 				}
+				TellAbout(player, kGroupKeys[player - 1]);
 			}else if(node >= 0){
 				CVector pos = ThePaths.m_pathNodes[node].GetPosition();
 				if(beside)
@@ -2134,6 +2428,7 @@ CCoop::Update(void)
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's car brought back (%s)\n", player + 1, regroup);
 				}
+				TellAbout(player, kGroupKeys[player - 1]);
 			}else if(driven != nil && driven->IsBoat()){
 				// Nowhere to put it: left alone rather than deleted.  The world
 				// around it is thin, but a boat respawned on foot is worse.
@@ -2148,6 +2443,9 @@ CCoop::Update(void)
 				// and carries over the health and the weapon the old one had.
 				RemovePartner(player, regroup, true);
 				s_spawnTime[player] = now;
+				// Told when they arrive, which may be a moment off: there is a
+				// seat or a skin to wait for.
+				s_announceReturn[player] = true;
 			}
 		}else{
 			s_downTime[player] = 0;
@@ -2255,9 +2553,17 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 		moved.x -= apart.x*outward*(1.0f - allowed);
 		moved.y -= apart.y*outward*(1.0f - allowed);
 
-		if(allowed < 0.2f && !s_tetherTold){
-			s_tetherTold = true;
-			Tell("WII_TTH");
+		// Told once the slowdown is plain, not only when it has all but stopped
+		// them, and again every kTetherRetellMs for as long as somebody keeps
+		// leaning on it: a line told once, mid-game, goes by while everyone is
+		// watching the other player, and nothing else says why they are slowing.
+		if(allowed < 0.7f){
+			const uint32 now = CTimer::GetTimeInMilliseconds();
+			if(!s_tetherTold || now - s_tetherAt >= kTetherRetellMs){
+				s_tetherTold = true;
+				s_tetherAt = now;
+				Tell("WII_TTH");
+			}
 		}
 
 		// Player 1 held at the edge by this partner.  Noted here, where the wall
@@ -2390,5 +2696,20 @@ CCoop::GetReticle(int player, float &x, float &y, bool &engaged)
 	x = s_aim[player].reticleX;
 	y = s_aim[player].reticleY;
 	engaged = s_aim[player].engaged;
+	return true;
+}
+
+bool
+CCoop::GetDownedState(int player, float &bleedLeft, float &reviveProgress)
+{
+	// s_downTime is set when the partner is first seen down and cleared by the
+	// revive, by the removal and by an Update pass that finds them well; the
+	// ped test covers a ped the engine deleted since the last one.
+	if(player <= LEAD || player >= NUMPLAYERS || CWorld::Players[player].m_pPed == nil || s_downTime[player] == 0)
+		return false;
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	bleedLeft = Clamp(1.0f - (float)(now - s_downTime[player])/(float)kDownedBleedMs, 0.0f, 1.0f);
+	reviveProgress = s_reviveTime[player] == 0 ? 0.0f :
+		Clamp((float)(now - s_reviveTime[player])/(float)kReviveHoldMs, 0.0f, 1.0f);
 	return true;
 }

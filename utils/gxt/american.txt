@@ -14353,19 +14353,19 @@ POINTER BOX
 COUCH CO-OP
 
 [WII_P2J]
-Player 2: press any button to join.
+Player 2: press A to join.
 
 [WII_P2I]
 Player 2 has joined.
 
 [WII_P2O]
-Player 2 has left.
+Player 2's controller was lost. Reconnect it and press A to rejoin.
 
 [WII_CCM]
 Co-op is paused until the mission is over.
 
 [WII_TTH]
-You cannot get any further apart on foot.
+You slow down, then stop, if you get too far from the others on foot.
 
 [WII_CF0]
 Shared camera: low.
@@ -14378,6 +14378,63 @@ Shared camera: high.
 
 [WII_CF3]
 Shared camera: overhead.
+
+[WII_CFD]
+Shared camera: will follow your car when you drive.
+
+[WII_CPB]
+Co-op is back.
+
+[WII_NNK]
+A Wii Remote needs a Nunchuk or a Classic Controller to play.
+
+[WII_SHA]
+Ammo and money are shared by the whole party.
+
+[WII_TPW]
+Tip: press MINUS for the camera that follows your car. Hold POWER to leave.
+
+[WII_TPC]
+Tip: press MINUS for the camera that follows your car. Turn the remote off to leave.
+
+[WII_TPG]
+Tip: press Z and R together for the camera that follows your car. Unplug to leave.
+
+[WII_P2G]
+Player 2 was brought back to the group.
+
+[WII_P3G]
+Player 3 was brought back to the group.
+
+[WII_P4G]
+Player 4 was brought back to the group.
+
+[WII_P2S]
+Player 2 joins as soon as there is a seat or the car stops.
+
+[WII_P3S]
+Player 3 joins as soon as there is a seat or the car stops.
+
+[WII_P4S]
+Player 4 joins as soon as there is a seat or the car stops.
+
+[WII_P2B]
+Player 2 rejoins once the boat or aircraft ride is over.
+
+[WII_P3B]
+Player 3 rejoins once the boat or aircraft ride is over.
+
+[WII_P4B]
+Player 4 rejoins once the boat or aircraft ride is over.
+
+[WII_P2L]
+Player 2's remote is running low on batteries.
+
+[WII_P3L]
+Player 3's remote is running low on batteries.
+
+[WII_P4L]
+Player 4's remote is running low on batteries.
 
 [WII_SML]
 SMALL

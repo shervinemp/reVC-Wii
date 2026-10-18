@@ -214,6 +214,16 @@ int s_gameCubeAbsent[4];
 // Set from the Wii Remote power button's callback, which runs outside the game's
 // thread, for WiiPadScan to act on.  See WiiPadPowerButtonQuits.
 volatile bool s_remoteOff[WPAD_MAX_WIIMOTES];
+// Per Wii Remote channel: how many scans it has been connected with nothing
+// plugged into it, and whether whoever is pressing buttons on it has been told
+// it needs something.  See noteBareRemote.
+constexpr int kBareSettleScans = 60;
+int s_bareScans[WPAD_MAX_WIIMOTES];
+bool s_bareTold[WPAD_MAX_WIIMOTES];
+// Per player: how much of the short buzz that says a controller has joined is
+// left, in seconds.  See WiiPadJoinPulse.
+constexpr float kJoinBuzzSeconds = 0.2f;
+float s_joinBuzz[NUM_PLAYERS];
 
 // Which player a pad slot belongs to: pad 0 is player 1, and the co-op slots
 // follow in order -- PAD_COOP is the first partner, PAD_COOP2 the second.
@@ -627,9 +637,16 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 
 	// L is the brake (RightShoulder1), Z the horn (LeftShoulder1), R the radio --
 	// and, on foot, crouch, which reads the same field (CPad::DuckJustDown).
+	//
+	// Not while Z and R are held together, which is the camera button below: the
+	// chord would otherwise honk, change the station and crouch every time it was
+	// pressed.  Only while the view is shared, as for the camera button itself.  The
+	// first of the two to go down is still a horn or a crouch for the frame or two
+	// before the other arrives; that cannot be told from a press of its own.
+	const bool cameraChord = CCoop::PairActive() && (buttons & PAD_TRIGGER_Z) && (buttons & PAD_TRIGGER_R);
 	setButton(state.RightShoulder1, buttons & PAD_TRIGGER_L);
-	setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_Z);
-	setButton(state.LeftShock, buttons & PAD_TRIGGER_R);
+	setButton(state.LeftShoulder1, (buttons & PAD_TRIGGER_Z) && !cameraChord);
+	setButton(state.LeftShock, (buttons & PAD_TRIGGER_R) && !cameraChord);
 
 	// The camera button, which is couch co-op's: the shared camera's framing and a
 	// partner's claim on it both read Select (CycleCameraModeUpJustDown), and every
@@ -641,7 +658,7 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	// two players share the camera: for a lone player there has never been a camera
 	// button on this pad, and a chord that is also horn and radio must not start
 	// changing their view.
-	setButton(state.Select, CCoop::PairActive() && (buttons & PAD_TRIGGER_Z) && (buttons & PAD_TRIGGER_R));
+	setButton(state.Select, cameraChord);
 
 	const bool dpadLeft = (buttons & PAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & PAD_BUTTON_RIGHT) != 0;
@@ -1156,6 +1173,33 @@ givePartnerDevice(PadDevice::Kind kind, int channel)
 	}
 }
 
+// A Wii Remote with nothing plugged into it never becomes a player, and it said
+// nothing about why: someone picks one up, presses A and nothing happens.  So the
+// first time a button goes down on one -- once it has been connected for a second,
+// since a Nunchuk is reported a few frames after its remote and a press in that
+// gap is not a bare remote's -- the co-op layer puts a line on the screen.  Once
+// per connection; it is told again if the remote goes away and comes back, or a
+// Nunchuk is plugged in and pulled out.  Only with co-op switched on and a game
+// running: out of it nobody is waiting to join.
+void
+noteBareRemote(int channel)
+{
+	if(s_bareScans[channel] < kBareSettleScans)
+		s_bareScans[channel]++;
+	if(s_bareTold[channel] || s_bareScans[channel] < kBareSettleScans)
+		return;
+	if(!CCamera::bWiiCoopCamera || FrontEndMenuManager.m_bGameNotLoaded || FrontEndMenuManager.m_bMenuActive)
+		return;
+	// HOME is the console's, not a press at the game.
+	const u32 pressed = WPAD_ButtonsDown(channel) & (WPAD_BUTTON_A | WPAD_BUTTON_B |
+		WPAD_BUTTON_1 | WPAD_BUTTON_2 | WPAD_BUTTON_PLUS | WPAD_BUTTON_MINUS |
+		WPAD_BUTTON_UP | WPAD_BUTTON_DOWN | WPAD_BUTTON_LEFT | WPAD_BUTTON_RIGHT);
+	if(pressed == 0)
+		return;
+	s_bareTold[channel] = true;
+	CCoop::Notify("WII_NNK");
+}
+
 void
 resolveDevices(void)
 {
@@ -1207,10 +1251,23 @@ resolveDevices(void)
 		if(lead.kind == PadDevice::WIIMOTE && channel == lead.channel)
 			continue;
 		u32 expansion = WPAD_EXP_NONE;
-		if(wiimoteReady(channel, expansion) &&
-		   (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC) &&
-		   !partnerHas(PadDevice::WIIMOTE, channel))
-			givePartnerDevice(PadDevice::WIIMOTE, channel);
+		const bool ready = wiimoteReady(channel, expansion);
+		if(ready && (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)){
+			s_bareScans[channel] = 0;
+			s_bareTold[channel] = false;
+			if(!partnerHas(PadDevice::WIIMOTE, channel))
+				givePartnerDevice(PadDevice::WIIMOTE, channel);
+		}else if(ready)
+			noteBareRemote(channel);
+		else{
+			s_bareScans[channel] = 0;
+			s_bareTold[channel] = false;
+		}
+	}
+	// Player 1's own remote is nobody's to be told about.
+	if(lead.kind == PadDevice::WIIMOTE){
+		s_bareScans[lead.channel] = 0;
+		s_bareTold[lead.channel] = false;
 	}
 }
 
@@ -1452,6 +1509,44 @@ WiiPadPromptButton(int player, WiiPadPrompt prompt)
 	WPADData *data = WPAD_Data(device.channel);
 	u32 expansion = data != nullptr ? probeExpansion(device.channel, *data) : WPAD_EXP_NONE;
 	return expansion == WPAD_EXP_CLASSIC ? kClassic[prompt] : kWiimote[prompt];
+}
+
+WiiConnectedPad
+WiiPadQueryPlayer(int player)
+{
+	if(player < 0 || player >= NUM_PLAYERS)
+		return WII_PAD_NONE;
+	const PadDevice &device = s_devices[player];
+	if(device.kind == PadDevice::GAMECUBE)
+		return WII_PAD_GAMECUBE;
+	if(device.kind != PadDevice::WIIMOTE)
+		return WII_PAD_NONE;
+	WPADData *data = WPAD_Data(device.channel);
+	if(data == nullptr)
+		return WII_PAD_NONE;
+	const u32 expansion = probeExpansion(device.channel, *data);
+	if(expansion == WPAD_EXP_CLASSIC)
+		return WII_PAD_CLASSIC;
+	return expansion == WPAD_EXP_NUNCHUK ? WII_PAD_WIIMOTE_NUNCHUK : WII_PAD_WIIMOTE;
+}
+
+bool
+WiiPadBatteryLow(int player)
+{
+	if(player < 0 || player >= NUM_PLAYERS)
+		return false;
+	const PadDevice &device = s_devices[player];
+	// A GameCube pad has no battery, and a WaveBird's is not reported.
+	if(device.kind != PadDevice::WIIMOTE || device.channel < 0 || device.channel >= WPAD_MAX_WIIMOTES)
+		return false;
+	return WPAD_IsBatteryCritical(device.channel);
+}
+
+void
+WiiPadJoinPulse(int player)
+{
+	if(player >= 0 && player < NUM_PLAYERS)
+		s_joinBuzz[player] = kJoinBuzzSeconds;
 }
 
 // --- the Nunchuk's lean ------------------------------------------------------
@@ -1969,6 +2064,15 @@ WiiPadUpdateRumble(void)
 		// motor left running when its player went.
 		if(player != PLAYER_ONE && CCoop::GetPlayerPed(player) == nullptr)
 			running = 0;
+
+		// The short buzz that says this controller has joined.  After the test
+		// above on purpose: it is for a player whose character is not in the world
+		// yet, and it is timed by the wall clock the pointer uses, since the game
+		// clock may be stopped behind the pause menu.
+		if(s_joinBuzz[player] > 0.0f){
+			s_joinBuzz[player] -= s_pointerDt;
+			running = 1;
+		}
 
 		driveMotor(s_devices[player], running != 0);
 	}
