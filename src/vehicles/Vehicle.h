@@ -383,7 +383,9 @@ public:
 	void FireFixedMachineGuns(void);
 	void ActivateBomb(void);
 	void ActivateBombWhenEntered(void);
-	void KillPedsInVehicle(void);
+	// culprit is whoever set the wreck off, when the caller knows: couch co-op
+	// spares the players inside if it was another player and friendly fire is off.
+	void KillPedsInVehicle(CEntity *culprit = nil);
 
 	void SetComponentAtomicAlpha(RpAtomic *atomic, int32 alpha);
 	void UpdateClumpAlpha(void);

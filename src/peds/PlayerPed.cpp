@@ -1865,10 +1865,17 @@ CPlayerPed::ProcessControl(void)
 		return;
 	}
 	if (m_nPedState == PED_DRIVING && m_objective != OBJECTIVE_LEAVE_CAR) {
+		// Couch co-op: a player still sitting in a wrecked car was spared the
+		// blast (CVehicle::KillPedsInVehicle -- friendly fire off).  A wreck's
+		// exit button is dead, so they are asked to climb out for as long as they
+		// are in it.  Nobody else is ever here: a blast kills everyone in the car.
+		if (CCoop::PairActive() && m_pMyVehicle != nil && m_pMyVehicle->GetStatus() == STATUS_WRECKED)
+			SetObjective(OBJECTIVE_LEAVE_CAR, m_pMyVehicle);
 		if (!CReplay::IsPlayingBack() || m_pMyVehicle) {
 			// The driver's door is the driver's to pull shut.  A passenger is in
-			// PED_DRIVING too, and with partner peds there can be one.
-			if (m_pMyVehicle->IsCar() && m_pMyVehicle->pDriver == this &&
+			// PED_DRIVING too, and with a partner in the world there can be one;
+			// with nobody else to ride along it is always the stock test.
+			if (m_pMyVehicle->IsCar() && (m_pMyVehicle->pDriver == this || !CCoop::PairActive()) &&
 				((CAutomobile*)m_pMyVehicle)->Damage.GetDoorStatus(DOOR_FRONT_LEFT) == DOOR_STATUS_SWINGING) {
 				CAnimBlendAssociation *rollDoorAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_CAR_CLOSE_DOOR_ROLLING_LHS);
 

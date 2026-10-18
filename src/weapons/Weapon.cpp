@@ -854,7 +854,8 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 			nearCar->RegisterReference(&shooterPed->m_pDamageEntity);
 		}
 		damageEntityRegistered = 2;
-		if (FindPlayerPed()->GetWeapon() == this && nearCar->VehicleCreatedBy != MISSION_VEHICLE)
+		// The swinger's weapon, whichever player that is.
+		if (IsAnyPlayerPed(shooterPed) && shooterPed->GetWeapon() == this && nearCar->VehicleCreatedBy != MISSION_VEHICLE)
 		{
 			if (nearCar->AutoPilot.m_nDrivingStyle != DRIVINGSTYLE_PLOUGH_THROUGH
 				&& (CGeneral::GetRandomTrueFalse() || nearCar->AutoPilot.m_nCarMission != MISSION_CRUISE))
@@ -869,7 +870,7 @@ CWeapon::FireMelee(CEntity *shooter, CVector &fireSource)
 					}
 					else
 					{
-						driver->SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, FindPlayerPed());
+						driver->SetObjective(OBJECTIVE_KILL_CHAR_ON_FOOT, shooterPed);
 						driver->m_objectiveTimer = CTimer::GetTimeInMilliseconds() + 10000;
 						driver->m_prevObjective = OBJECTIVE_KILL_CHAR_ON_FOOT;
 					}
@@ -2359,14 +2360,16 @@ CWeapon::FireAreaEffect(CEntity *shooter, CVector *fireSource)
 	CShotInfo::AddShot(shooter, m_eWeaponType, *fireSource, target);
 	CWeapon::GenerateFlameThrowerParticles(*fireSource, dir);
 		
-	if ( shooter == (CEntity *)FindPlayerPed() )
+	if ( IsAnyPlayerPed(shooter) )
 	{
-		for ( int32 i = 0; i < FindPlayerPed()->m_numNearPeds; i++ )
+		// The flamer's own bystanders, whichever player that is.
+		CPed *flamer = (CPed *)shooter;
+		for ( int32 i = 0; i < flamer->m_numNearPeds; i++ )
 		{
-			if ( FindPlayerPed()->m_nearPeds[i]->CharCreatedBy == RANDOM_CHAR )
+			if ( flamer->m_nearPeds[i]->CharCreatedBy == RANDOM_CHAR )
 			{
-				if ( FindPlayerPed()->m_nearPeds[i]->IsPedInControl() && FindPlayerPed()->m_nearPeds[i]->m_nPedState != PED_FLEE_ENTITY )
-					FindPlayerPed()->m_nearPeds[i]->SetFlee(shooter, 10000);
+				if ( flamer->m_nearPeds[i]->IsPedInControl() && flamer->m_nearPeds[i]->m_nPedState != PED_FLEE_ENTITY )
+					flamer->m_nearPeds[i]->SetFlee(shooter, 10000);
 			}
 		}
 	}
@@ -3246,7 +3249,10 @@ FireOneInstantHitRound(CEntity *shooter, CVector *source, CVector *target, int32
 				asoc->blendAmount = 0.0f;
 				asoc->blendDelta  = 8.0f;
 
-				victimPed->InflictDamage(shooter, WEAPONTYPE_UZI, damage, (ePedPieceTypes)point.pieceB, localDir);
+				// The stock game credits these rounds to nobody, and that is what a
+				// single player gets.  With a partner in the world they are the
+				// gun's owner's: friendly fire has to be able to see whose they are.
+				victimPed->InflictDamage(CCoop::PairActive() ? shooter : nil, WEAPONTYPE_UZI, damage, (ePedPieceTypes)point.pieceB, localDir);
 
 				pos.z += 0.8f;
 

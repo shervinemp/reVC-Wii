@@ -376,14 +376,16 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 			// pickup arms the party, and both the guns and the rounds live on
 			// player 1 -- CCoop mirrors the weapons to the partners and shares
 			// one pool of ammo.  The money, the packages and the property are
-			// one player's too.  So those, when a partner is the one who walked
-			// over them, are credited to player 1; health, armour, adrenaline
-			// and a bribe stay with whoever collected them.  The touch test
+			// one player's too, and so is the wanted level the police read: a
+			// bribe lowers player 1's.  So those, when a partner is the one who
+			// walked over them, are credited to player 1; health, armour and
+			// adrenaline stay with whoever collected them.  The touch test
 			// above was still the collector's: it is their body on the pickup.
 			if (playerId > 0 && ((weaponType < WEAPONTYPE_TOTALWEAPONS && weaponType != WEAPONTYPE_UNARMED) ||
 			                     m_eType == PICKUP_MONEY || m_eType == PICKUP_COLLECTABLE1 ||
 			                     m_eType == PICKUP_ASSET_REVENUE || m_eType == PICKUP_PROPERTY_LOCKED ||
-			                     m_eType == PICKUP_PROPERTY_FORSALE)) {
+			                     m_eType == PICKUP_PROPERTY_FORSALE ||
+			                     m_pObject->GetModelIndex() == MI_PICKUP_BRIBE)) {
 				player = FindPlayerPed();
 				playerId = CWorld::PlayerInFocus;
 			}
@@ -447,15 +449,23 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 			switch (m_eType)
 			{
 			case PICKUP_IN_SHOP:
-				if (CWorld::Players[playerId].m_nMoney < CostOfWeapon[weaponType])
+				// The wallet is player 1's, whoever is at the shelf: a partner's own
+				// money is always nothing.  (What is bought still goes to the
+				// partner -- the armour, the health -- unless it is a weapon, which
+				// went to player 1 above.)
+				if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney < CostOfWeapon[weaponType])
 					CGarages::TriggerMessage("PU_MONY", -1, 6000, -1);
 				else {
-					CWorld::Players[playerId].m_nMoney -= CostOfWeapon[weaponType];
+					CWorld::Players[CWorld::PlayerInFocus].m_nMoney -= CostOfWeapon[weaponType];
 					if (!CPickups::GivePlayerGoodiesWithPickUpMI(m_pObject->GetModelIndex(), playerId)) {
 						if (!player->DoesPlayerWantNewWeapon(weaponType, false))
 							break; 
 						player->GiveWeapon(weaponType, AmmoForWeapon[weaponType]);
-						player->m_nSelectedWepSlot = player->GetWeaponSlot(weaponType);
+						// Only the body that bought it has its hand forced: player 1,
+						// when a partner's purchase was credited to them, is not
+						// switched to a gun they did not pick up.
+						if (player == collector)
+							player->m_nSelectedWepSlot = player->GetWeaponSlot(weaponType);
 						DMAudio.PlayFrontEndSound(SOUND_PICKUP_WEAPON_BOUGHT, m_pObject->GetModelIndex() - MI_GRENADE);
 					}
 					result = true;
@@ -470,7 +480,8 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 					if (weaponType != WEAPONTYPE_UNARMED) {
 						player->GiveWeapon(weaponType, m_nQuantity != 0 ? m_nQuantity : (m_bWasAmmoCollected ? 0 : AmmoForWeapon_OnStreet[weaponType]), true);
 
-						if (player->m_nSelectedWepSlot == player->GetWeaponSlot(WEAPONTYPE_UNARMED)) 
+						// (Not player 1's hand, if a partner is the one who picked it up.)
+						if (player == collector && player->m_nSelectedWepSlot == player->GetWeaponSlot(WEAPONTYPE_UNARMED))
 							player->m_nSelectedWepSlot = player->GetWeaponSlot(weaponType);
 
 						DMAudio.PlayFrontEndSound(SOUND_PICKUP_WEAPON, m_pObject->GetModelIndex() - MI_GRENADE);
@@ -506,7 +517,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 
 					if (weaponType != WEAPONTYPE_UNARMED) {
 						player->GiveWeapon(weaponType, m_nQuantity != 0 ? m_nQuantity : (m_bWasAmmoCollected ? 0 : AmmoForWeapon[weaponType]), true);
-						if (player->m_nSelectedWepSlot == player->GetWeaponSlot(WEAPONTYPE_UNARMED))
+						if (player == collector && player->m_nSelectedWepSlot == player->GetWeaponSlot(WEAPONTYPE_UNARMED))
 							player->m_nSelectedWepSlot = player->GetWeaponSlot(weaponType);
 					}
 					if (MI_PICKUP_SAVEGAME != m_pObject->GetModelIndex())

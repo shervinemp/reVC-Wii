@@ -282,6 +282,10 @@ CDarkel::RegisterKillNotByPlayer(CPed* victim, eWeaponType weapontype)
 	if (CReplay::IsPlayingBack())
 		return;
 #endif
+	// Nor is couch co-op's partner a kill for anyone else (see
+	// RegisterKillByPlayer): they are back a few seconds later.
+	if (IsAnyPlayerPed(victim) && victim != FindPlayerPed())
+		return;
 	CStats::PeopleKilledByOthers++;
 }
 

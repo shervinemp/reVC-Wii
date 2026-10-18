@@ -114,6 +114,17 @@ CFire::ProcessFire(void)
 		FindPlayerPed()->DoStuffToGoOnFire();
 		gFireManager.StartFire(FindPlayerPed(), m_pSource, 0.8f, 1);
 	}
+	// Couch co-op: a partner on foot catches fire the same way.  Their slots are
+	// empty unless somebody is playing them, so with one player this is three
+	// nil tests.  (DoStuffToGoOnFire only leaves the scope, which is camera
+	// state a partner does not have.)
+	for (int i = 1; i < NUMPLAYERS; i++) {
+		CPlayerPed *partner = CWorld::Players[i].m_pPed;
+		if (partner != nil && !partner->bInVehicle &&
+			!partner->m_pFire && !partner->bFireProof &&
+			(partner->GetPosition() - m_vecPos).MagnitudeSqr() < 2.0f)
+			gFireManager.StartFire(partner, m_pSource, 0.8f, 1);
+	}
 	if (CTimer::GetTimeInMilliseconds() > m_nNextTimeToAddFlames) {
 		m_nNextTimeToAddFlames = CTimer::GetTimeInMilliseconds() + (m_fWaterExtinguishCountdown < 0.3f ? 400 : (m_fWaterExtinguishCountdown < 0.7f ? 200 : 80));
 		firePos = m_vecPos;

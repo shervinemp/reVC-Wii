@@ -63,7 +63,9 @@ public:
 	static bool GetEvent(eEventType type, int32 *event);
 	static void ClearEvent(int32 event);
 	static bool FindClosestEvent(eEventType type, CVector posn, int32 *event);
-	static void ReportCrimeForEvent(eEventType type, intptr, bool);
+	// criminal is who did it, when that is not player 1: the crime is then
+	// judged where they are rather than where player 1 is.
+	static void ReportCrimeForEvent(eEventType type, intptr, bool, CPed *criminal = nil);
 };
 
 extern CEvent gaEvent[NUMEVENTS];

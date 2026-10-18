@@ -36,6 +36,7 @@
 #include "Weather.h"
 #include "Coronas.h"
 #include "SaveBuf.h"
+#include "Coop.h"
 
 bool CVehicle::bWheelsOnlyCheat;
 bool CVehicle::bAllDodosCheat;
@@ -1199,10 +1200,14 @@ CVehicle::InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage
 		return;
 	if(GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f)
 		damage *= 0.5f;
-	if (GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && !IsAnyPlayerAttack(damagedBy))
+	// The stock test first, then any other player's attack.  Kept that way
+	// because "damagedBy == FindPlayerVehicle()" is also true of damage with no
+	// source while player 1 is on foot, and IsAnyPlayerAttack(nil) is not.
+	if (GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer &&
+		(damagedBy != FindPlayerPed() && damagedBy != FindPlayerVehicle()) && !IsAnyPlayerAttack(damagedBy))
 		return;
 
-	if(damage > 10.0f && IsAnyPlayerAttack(damagedBy) && GetStatus() != STATUS_WRECKED){
+	if(damage > 10.0f && (damagedBy == FindPlayerPed() || damagedBy == FindPlayerVehicle() || IsAnyPlayerAttack(damagedBy)) && GetStatus() != STATUS_WRECKED){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 2;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 1.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumberInRange(5, 25);
@@ -2415,11 +2420,32 @@ CVehicle::DoSunGlare(void)
 	}
 }
 
+// Couch co-op: with friendly fire off, a player who blows up a car does not
+// kill the other players in it.  The explosion damage itself never reaches them
+// (a ped in a vehicle is skipped by CWorld::TriggerExplosion), so this is the
+// one place a blast kills a player and CPed::InflictDamage is not asked.
+//
+// A wrecked car's exit button is dead (CPlayerInfo::Process for player 1, the
+// partners' own check in CCoop), and nothing else would get a living player
+// out of one, so the occupant is told to climb out; CPlayerPed::ProcessControl
+// keeps asking for as long as they are still in there.  With one player this
+// is never true: friendly fire needs a culprit who is a player other than the
+// victim.
+static bool
+SparedByFriendlyFire(CVehicle *vehicle, CPed *occupant, CEntity *culprit)
+{
+	if(!CCoop::FriendlyFireBlocked(culprit, occupant))
+		return false;
+	if(occupant->GetPedState() == PED_DRIVING)
+		occupant->SetObjective(OBJECTIVE_LEAVE_CAR, vehicle);
+	return true;
+}
+
 void
-CVehicle::KillPedsInVehicle(void)
+CVehicle::KillPedsInVehicle(CEntity *culprit)
 {
 	int i;
-	if(pDriver){
+	if(pDriver && !SparedByFriendlyFire(this, pDriver, culprit)){
 		CDarkel::RegisterKillByPlayer(pDriver, WEAPONTYPE_EXPLOSION);
 		if(pDriver->GetPedState() == PED_DRIVING){
 			pDriver->SetDead();
@@ -2429,7 +2455,7 @@ CVehicle::KillPedsInVehicle(void)
 			pDriver->SetDie();
 	}
 	for(i = 0; i < m_nNumMaxPassengers; i++){
-		if(pPassengers[i]){
+		if(pPassengers[i] && !SparedByFriendlyFire(this, pPassengers[i], culprit)){
 			CDarkel::RegisterKillByPlayer(pPassengers[i], WEAPONTYPE_EXPLOSION);
 			if(pPassengers[i]->GetPedState() == PED_DRIVING){
 				pPassengers[i]->SetDead();

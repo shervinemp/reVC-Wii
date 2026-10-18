@@ -7096,9 +7096,9 @@ CPed::SetDie(AnimationId animId, float delta, float speed)
 {
 	if (m_attractor)
 		GetPedAttractorManager()->DeRegisterPed(this, m_attractor);
-	CPlayerPed *player = FindPlayerPed();
-	if (player == this) {
-		if (!player->m_bCanBeDamaged)
+	// Any player's: an arrested partner is cuffed against dying too.
+	if (IsAnyPlayerPed(this)) {
+		if (!((CPlayerPed*)this)->m_bCanBeDamaged)
 			return;
 	}
 

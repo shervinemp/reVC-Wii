@@ -632,8 +632,10 @@ void CCarAI::TellOccupantsToFleeCar(CVehicle* pVehicle)
 			// co-op's partner rides as a passenger, and gets out of the burning
 			// car -- they cannot open the door of a moving one themselves --
 			// but where they run to afterwards is up to them.  Player 1 in a
-			// passenger seat (a taxi ride) is left to the stock order.
-			if (pVehicle->pPassengers[i]->IsPlayer() && pVehicle->pPassengers[i] != FindPlayerPed())
+			// passenger seat of somebody else's car (a taxi ride) is left to the
+			// stock order; in a car a partner is driving they get out like the rest.
+			if (pVehicle->pPassengers[i]->IsPlayer() &&
+				(pVehicle->pPassengers[i] != FindPlayerPed() || (pVehicle->pDriver != nil && pVehicle->pDriver->IsPlayer())))
 				pVehicle->pPassengers[i]->SetObjective(OBJECTIVE_LEAVE_CAR, pVehicle);
 			else
 				pVehicle->pPassengers[i]->SetObjective(OBJECTIVE_FLEE_ON_FOOT_TILL_SAFE);

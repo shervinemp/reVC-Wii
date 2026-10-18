@@ -51,6 +51,19 @@ AttackCulprit(CEntity *damagedBy)
 		return ((CVehicle*)damagedBy)->pDriver;
 	return nil;
 }
+
+// Whether this blow is one player's on another.  The design makes that neither
+// a crime nor a statistic, so it earns no havoc and no media attention.  With
+// one player it is never true: it needs an attacker who is a player other than
+// the victim.
+static bool
+IsPlayerOnPlayer(CEntity *damagedBy, CPed *victim)
+{
+	if(!victim->IsPlayer())
+		return false;
+	CPed *culprit = AttackCulprit(damagedBy);
+	return culprit != nil && culprit != victim && culprit->IsPlayer();
+}
 RpClump* flyingClumpTemp;
 
 FightMove tFightMoves[NUM_FIGHTMOVES] =
@@ -2709,11 +2722,20 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	bool willLinger = false;
 	int random;
 
-	if (IsAnyPlayerAttack(damagedBy) && damagedBy != this && damage > 3.0f)
+	// Couch co-op: what one player does to another is not heat.
+	const bool playerOnPlayer = IsPlayerOnPlayer(damagedBy, this);
+
+	// A player's own hit and nothing wider, as stock: IsAnyPlayerAttack would
+	// also count a car with a player in it, which this never did.
+	if (IsAnyPlayerPed(damagedBy) && damagedBy != this && damage > 3.0f && !playerOnPlayer)
 		++CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel;
 
-	if (player == this) {
-		if (!player->m_bCanBeDamaged)
+	// Any player's, not only player 1's: the cuffs on an arrested partner, the
+	// gang that is theirs, and the profile's fireproofing (a script's setting,
+	// the party's as the fast reload is) protect whoever it is.
+	if (IsAnyPlayerPed(this)) {
+		CPlayerPed *self = (CPlayerPed*)this;
+		if (!self->m_bCanBeDamaged)
 			return false;
 
 		if (damagedBy && damagedBy->IsPed() && ((CPed*)damagedBy)->m_nPedType == PEDTYPE_GANG7)
@@ -2722,7 +2744,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 		if ((method == WEAPONTYPE_FLAMETHROWER || method == WEAPONTYPE_MOLOTOV) && CWorld::Players[CWorld::PlayerInFocus].m_bFireproof)
 			return false;
 
-		player->AnnoyPlayerPed(false);
+		self->AnnoyPlayerPed(false);
 	}
 
 	if (DyingOrDead())
@@ -2734,7 +2756,12 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 	if (!bUsesCollision && (!bInVehicle || m_nPedState != PED_DRIVING) && method != WEAPONTYPE_DROWNING)
 		return false;
 
-	if (bOnlyDamagedByPlayer && !IsAnyPlayerAttack(damagedBy) &&
+	// The stock test first, then any other player's attack.  Kept that way
+	// because "damagedBy != FindPlayerVehicle()" is false for damage with no
+	// source while player 1 is on foot, which lets it through; IsAnyPlayerAttack
+	// alone would turn all of that damage away.
+	if (bOnlyDamagedByPlayer && damagedBy != player && damagedBy != FindPlayerVehicle() &&
+		!IsAnyPlayerAttack(damagedBy) &&
 		method != WEAPONTYPE_DROWNING && method != WEAPONTYPE_EXPLOSION)
 		return false;
 
@@ -3176,7 +3203,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 						}
 						SetDie(dieAnim, dieDelta, dieSpeed);
 
-						if (IsAnyPlayerAttack(damagedBy) && damagedBy != this) {
+						if (IsAnyPlayerPed(damagedBy) && damagedBy != this && !playerOnPlayer) {
 							CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 10;
 							CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 5.f;
 						}
@@ -3217,8 +3244,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 
 		if (IsAnyPlayerAttack(damagedBy)) {
 			CDarkel::RegisterKillByPlayer(this, method, headShot);
-			CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 10;
-			CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 5.f;
+			if (!playerOnPlayer) {
+				CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 10;
+				CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 5.f;
+			}
 			CPed *culprit = AttackCulprit(damagedBy);
 			m_threatEntity = culprit != nil && culprit->IsPlayer() ? culprit : player;
 		} else {

@@ -131,7 +131,7 @@ CEventList::RegisterEvent(eEventType type, eEventEntity entityType, CEntity *ent
 	// down on the party doing the work.  See CCoopModes::OnDuty.
 	if(IsAnyPlayerPed(criminal) && !(ent != criminal && IsAnyPlayerPed(ent)) &&
 	   !CCoopModes::OnDuty(criminal, ent, type == EVENT_GUNSHOT))
-		ReportCrimeForEvent(type, (intptr)ent, copsDontCare);
+		ReportCrimeForEvent(type, (intptr)ent, copsDontCare, criminal);
 }
 
 void
@@ -209,7 +209,7 @@ CEventList::FindClosestEvent(eEventType type, CVector posn, int32 *event)
 }
 
 void
-CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCare)
+CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCare, CPed *criminal)
 {
 	eCrimeType crime;
 	switch(type){
@@ -248,6 +248,14 @@ CEventList::ReportCrimeForEvent(eEventType type, intptr crimeId, bool copsDontCa
 	CVector playerPedCoors = FindPlayerPed()->GetPosition();
 #endif
 	CVector playerCoors = FindPlayerCoors();
+	// Couch co-op: a partner's crime is seen, or not, where the partner is.
+	// Whether a cop is close enough to see it, and where it is reported from,
+	// were player 1's, however far away the partner was.  The law still reads
+	// player 1's wanted level.
+	if(criminal != nil && criminal != FindPlayerPed()){
+		playerCoors = criminal->InVehicle() ? criminal->m_pMyVehicle->GetPosition() : criminal->GetPosition();
+		playerPedCoors = playerCoors;
+	}
 
 	if(CWanted::WorkOutPolicePresence(playerCoors, 14.0f) != 0 ||
 		CGame::germanGame && (crime == CRIME_SHOOT_PED || crime == CRIME_SHOOT_COP || crime == CRIME_COP_BURNED || crime == CRIME_VEHICLE_BURNED)){
