@@ -141,7 +141,10 @@ reaches it.
 
 **The wall only works on someone walking**, so behind it there is a leash at
 28 m for everything that gets past: a car driving off, a fall, the blast from an
-explosion. Past the leash a partner is brought back to player 1 — into the
+explosion. Anyone in a car a player is driving, driver or passenger, gets the 50 m
+driving leash instead. A partner who just stands there while player 1 pushes
+against the wall for about two and a half seconds is brought back too, so
+nobody can be pinned for good. Past the leash a partner is brought back to player 1 — into the
 passenger seat if there is one going, otherwise beside them. A car brought back
 is put one notch further behind player 1 for each partner, so several coming
 back at once line up along the road instead of piling onto one node.
@@ -419,7 +422,10 @@ nothing.
   level for hitting another player, and a dead partner is not a rampage kill.
 - **The heat is shared** for everything else, and the **Shared Wanted** toggle
   (on by default) is what "shared" means. With it on, a crime by anyone raises
-  everyone to the highest level; drops decay on their own. With it off each
+  everyone to the highest level. A drop is followed only on player 1, the level
+  the police read: stars above one do not wear off on their own in this game, so
+  without that a Pay'n'Spray would leave the partners wanted and the next small
+  crime would put everyone back. With it off each
   player keeps their own record — but a partner's rise is still put on player
   1, because every cop in the city reads player 1's wanted level and nobody
   else's; without that a partner's crime would call nobody.
@@ -435,7 +441,9 @@ nothing.
   by design: they chase and target the anchor.
 - **Notices.** The help box says when a partner joins or leaves — by name, one
   line per partner — when co-op is paused for a mission, and which framing the
-  camera button picked.
+  camera button picked. There is one help box, so notices wait their turn in a
+  short queue behind whatever it is saying (the game's own hints included), and
+  one that waits more than ten seconds is dropped as stale.
 - **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
   by their reticle and by a pip with a health bar and an ammo line over their
   head -- one set per player, shown once a partner is in the world. The menu

@@ -73,8 +73,10 @@ public:
 	// Whether damage from one player to another is switched off.  With friendly
 	// fire off, a hit that lands on a player from a player -- or from a car one
 	// of them is driving -- costs nothing.  The weapon paths still show their
-	// hit feedback on purpose: a glance, the blood.  Only CPed::InflictDamage
-	// drops the damage, and every path ends up there.
+	// hit feedback on purpose: a glance, the blood.  CPed::InflictDamage drops
+	// the damage of every hit that reaches it.  Not every death does: a car blown
+	// up with players in it kills them in CVehicle::KillPedsInVehicle without
+	// asking InflictDamage, so that asks here too.
 	static bool FriendlyFireBlocked(CEntity *attacker, CEntity *victim);
 
 	// --- staying together ----------------------------------------------------
@@ -131,6 +133,14 @@ public:
 	// or -1 for nobody's.  The camera can only follow one nose.
 	static int ms_nCameraFocus;
 	enum { NUM_FRAMINGS = 4 };
+
+	// A line in the help box, for the modes as much as for the session itself.  It
+	// waits its turn behind whatever the box is saying -- the game's own hints
+	// included -- and is dropped if the box stays busy too long to be news.  The
+	// key must outlive the call (a string literal); its words are in Text.cpp's
+	// fallback table.  Do not test the box for being empty first: CHud leaves the
+	// last line in it after it fades, so it never reads as empty again.
+	static void Notify(const char *key);
 
 	// For unattended test runs (WiiAutotest): the first this many partners join
 	// as soon as their controllers are present, without a button press.  0, the
