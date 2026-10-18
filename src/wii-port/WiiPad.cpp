@@ -201,6 +201,20 @@ struct PadDevice
 enum { PLAYER_ONE = 0, PLAYER_TWO, PLAYER_THREE, PLAYER_FOUR, NUM_PLAYERS };
 PadDevice s_devices[NUM_PLAYERS];
 
+// How many scans a controller may be missing before it stops counting: long
+// enough that a dropped report, a Nunchuk jogged in its socket or a GameCube
+// pad's one bad transfer is not taken for somebody leaving, short enough that
+// a controller really unplugged is let go of well inside CCoop's own wait.
+// Scans are once per frame.
+constexpr int kDeviceReleaseScans = 20;
+// Per partner: consecutive scans the controller they were given has been missing.
+int s_deviceAbsent[NUM_PLAYERS];
+// Per GameCube port: the same, for the connection mask.
+int s_gameCubeAbsent[4];
+// Set from the Wii Remote power button's callback, which runs outside the game's
+// thread, for WiiPadScan to act on.  See WiiPadPowerButtonQuits.
+volatile bool s_remoteOff[WPAD_MAX_WIIMOTES];
+
 // Which player a pad slot belongs to: pad 0 is player 1, and the co-op slots
 // follow in order -- PAD_COOP is the first partner, PAD_COOP2 the second.
 // -1 for anything else (PAD2 is the engine's debug pad and is nobody's).
@@ -327,7 +341,13 @@ constexpr float kAimSmoothGain = 60.0f;
 // --- what one scan leaves behind for the rest of the frame -------------------
 // WiiPadScan fills these and everything below reads them, which is the whole
 // reason it is a separate entry point; see WiiPad.h.
+// The GameCube ports with a pad in them, a pad that stops answering counting as
+// still there for kDeviceReleaseScans so one bad transfer does not move player 1.
 uint32 s_connectedGameCubePads;
+// The same ports as PAD_ScanPads last reported them, with no such grace: a pad
+// that is not answering this scan has no buttons held, whatever the library kept
+// of its last report.
+uint32 s_gameCubeLive;
 float s_pointerDt = 1.0f/60.0f;   // seeded so the first frame is not a special case
 u64 s_pointerLastTime;
 
@@ -1085,14 +1105,48 @@ wiimoteReady(int channel, u32 &expansion)
 	return true;
 }
 
+// Whether a controller that has been given to a partner is there and playable.
+bool
+devicePresent(const PadDevice &device)
+{
+	if(device.kind == PadDevice::GAMECUBE)
+		return (s_connectedGameCubePads & (1 << device.channel)) != 0;
+	if(device.kind == PadDevice::WIIMOTE){
+		u32 expansion = WPAD_EXP_NONE;
+		return wiimoteReady(device.channel, expansion) &&
+		       (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC);
+	}
+	return false;
+}
+
+// Whether some partner already has this controller.
+bool
+partnerHas(PadDevice::Kind kind, int channel)
+{
+	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
+		if(s_devices[player].kind == kind && s_devices[player].channel == channel)
+			return true;
+	}
+	return false;
+}
+
+// Gives a controller to the first partner slot with nobody in it.
+void
+givePartnerDevice(PadDevice::Kind kind, int channel)
+{
+	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
+		if(s_devices[player].kind != PadDevice::NONE)
+			continue;
+		s_devices[player].kind = kind;
+		s_devices[player].channel = channel;
+		s_deviceAbsent[player] = 0;
+		return;
+	}
+}
+
 void
 resolveDevices(void)
 {
-	for(int player = 0; player < NUM_PLAYERS; player++){
-		s_devices[player].kind = PadDevice::NONE;
-		s_devices[player].channel = 0;
-	}
-
 	// Player 1 first: the GameCube pad in port 1, or the first Wii Remote.
 	if(s_connectedGameCubePads & 1){
 		s_devices[PLAYER_ONE].kind = PadDevice::GAMECUBE;
@@ -1101,31 +1155,50 @@ resolveDevices(void)
 		s_devices[PLAYER_ONE].kind = PadDevice::WIIMOTE;
 		s_devices[PLAYER_ONE].channel = WPAD_CHAN_0;
 	}
+	const PadDevice lead = s_devices[PLAYER_ONE];
 
-	// Then everyone else: the remaining GameCube pads in port order, then the
-	// Wii Remotes player 1 is not holding.  A remote only counts with something
-	// to walk with plugged into it -- the same rule the boot screen holds
-	// player 1 to -- which also means a remote left on the table does not put a
-	// player in the game.
-	int next = PLAYER_TWO;
-	for(int port = 1; port < 4 && next < NUM_PLAYERS; port++){
-		if(s_connectedGameCubePads & (1 << port)){
-			s_devices[next].kind = PadDevice::GAMECUBE;
-			s_devices[next].channel = port;
-			next++;
+	// A partner keeps the controller they were given for as long as it is
+	// there.  Slots used to be dealt out afresh every scan in connection order,
+	// so one remote dropping out slid everyone behind it up a place: player 3's
+	// hands were on player 2's character, and player 4 was removed for leaving
+	// while still playing.  Now a controller that goes quiet leaves its slot
+	// waiting, and gives it up only after kDeviceReleaseScans.  Whatever player
+	// 1 has taken is not a partner's.
+	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
+		PadDevice &device = s_devices[player];
+		if(device.kind == PadDevice::NONE)
+			continue;
+		bool release = false;
+		if(device.kind == lead.kind && device.channel == lead.channel)
+			release = true;
+		else if(devicePresent(device))
+			s_deviceAbsent[player] = 0;
+		else if(++s_deviceAbsent[player] > kDeviceReleaseScans)
+			release = true;
+		if(release){
+			device.kind = PadDevice::NONE;
+			device.channel = 0;
+			s_deviceAbsent[player] = 0;
 		}
 	}
-	for(int channel = 0; channel < WPAD_MAX_WIIMOTES && next < NUM_PLAYERS; channel++){
-		if(s_devices[PLAYER_ONE].kind == PadDevice::WIIMOTE &&
-		   channel == s_devices[PLAYER_ONE].channel)
+
+	// Then whoever has turned up: the remaining GameCube pads in port order,
+	// then the Wii Remotes player 1 is not holding, each into the first free
+	// slot.  A remote only counts with something to walk with plugged into it --
+	// the same rule the boot screen holds player 1 to -- which also means a
+	// remote left on the table does not put a player in the game.
+	for(int port = 1; port < 4; port++){
+		if((s_connectedGameCubePads & (1 << port)) && !partnerHas(PadDevice::GAMECUBE, port))
+			givePartnerDevice(PadDevice::GAMECUBE, port);
+	}
+	for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+		if(lead.kind == PadDevice::WIIMOTE && channel == lead.channel)
 			continue;
 		u32 expansion = WPAD_EXP_NONE;
 		if(wiimoteReady(channel, expansion) &&
-		   (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)){
-			s_devices[next].kind = PadDevice::WIIMOTE;
-			s_devices[next].channel = channel;
-			next++;
-		}
+		   (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC) &&
+		   !partnerHas(PadDevice::WIIMOTE, channel))
+			givePartnerDevice(PadDevice::WIIMOTE, channel);
 	}
 }
 
@@ -1323,6 +1396,21 @@ WiiPadRemoteIsPartners(void)
 	return false;
 }
 
+bool
+WiiPadPowerButtonQuits(s32 chan)
+{
+	// Player 1's remote is the console's way out, as it has always been, and so
+	// is any remote while nobody has a controller of their own yet.  Anybody
+	// else's POWER button is theirs: it switches that remote off and the game
+	// goes on.
+	const PadDevice &lead = s_devices[PLAYER_ONE];
+	if(lead.kind == PadDevice::NONE || (lead.kind == PadDevice::WIIMOTE && lead.channel == chan))
+		return true;
+	if(chan >= 0 && chan < WPAD_MAX_WIIMOTES)
+		s_remoteOff[chan] = true;
+	return false;
+}
+
 const char *
 WiiPadPromptButton(int player, WiiPadPrompt prompt)
 {
@@ -1496,8 +1584,33 @@ WiiPadApplyControlDefaults(void)
 void
 WiiPadScan(void)
 {
-	s_connectedGameCubePads = (uint32)PAD_ScanPads();
+	// A port that reports nothing for one scan -- PAD_ScanPads drops a port's bit
+	// on any transfer error, not only on an unplug -- keeps its bit for a while,
+	// so a glitch does not hand player 1's slot to a Wii Remote for a frame and
+	// shift every partner along behind it.
+	const uint32 gameCubeNow = (uint32)PAD_ScanPads();
+	s_gameCubeLive = gameCubeNow;
+	for(int port = 0; port < 4; port++){
+		const uint32 bit = 1u << port;
+		if(gameCubeNow & bit){
+			s_gameCubeAbsent[port] = 0;
+			s_connectedGameCubePads |= bit;
+		}else if((s_connectedGameCubePads & bit) && ++s_gameCubeAbsent[port] > kDeviceReleaseScans){
+			s_connectedGameCubePads &= ~bit;
+			s_gameCubeAbsent[port] = 0;
+		}
+	}
 	WPAD_ScanPads();
+
+	// A remote whose POWER button was held, and which is not player 1's, is
+	// switched off the way the button does it on the console -- from here, not
+	// from the callback that noticed.
+	for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+		if(s_remoteOff[channel]){
+			s_remoteOff[channel] = false;
+			WPAD_Disconnect(channel);
+		}
+	}
 	WiiSpeakerService();
 	WiiTraceService();
 
@@ -1585,7 +1698,7 @@ WiiPadCapture(int padID, CControllerState &state)
 	// top of it was what made IR and remote buttons steal camera and actions
 	// while a GC controller was already plugged in.
 	if(device.kind == PadDevice::GAMECUBE){
-		captureGameCube(device.channel, s_connectedGameCubePads, state, sticks, settings);
+		captureGameCube(device.channel, s_gameCubeLive, state, sticks, settings);
 	}else{
 		WPADData *data = WPAD_Data(device.channel);
 		if(data != nullptr){

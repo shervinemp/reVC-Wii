@@ -741,6 +741,16 @@ RemovePartner(int player, const char *why, bool carry)
 	if(partner->m_nPedState == PED_EXIT_CAR && partner->m_pMyVehicle != nil && partner->m_pMyVehicle->IsBike())
 		partner->m_pMyVehicle->m_nGettingOutFlags &= ~(CAR_DOOR_FLAG_LR | CAR_DOOR_FLAG_RR);
 
+	// A driver takes the car's status with them.  The destructor lets go of the
+	// seat and nothing more: the car would stay in STATUS_PLAYER with nobody in
+	// it, holding its last throttle and steering, answering to player 1's pad if
+	// it is a bike or a helicopter, and in a boat asking the missing driver for
+	// a gun.  The engine abandons the car when it removes a player from one
+	// (CPed::FlagToDestroyWhenNextProcessed); so does this.
+	CVehicle *vehicle = partner->m_pMyVehicle;
+	if(partner->InVehicle() && vehicle->pDriver == partner && vehicle->GetStatus() != STATUS_WRECKED)
+		vehicle->SetStatus(STATUS_ABANDONED);
+
 	COOP_LOG("WII coop: player %d out (%s)\n", player + 1, why);
 	// The destructor does the rest: out of the world, out of whatever seat or
 	// doorway they were in, fire out, weapons freed.  It is the same path the

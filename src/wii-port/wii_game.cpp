@@ -596,8 +596,15 @@ onPowerButton(void)
 }
 
 void
-onWiimotePowerButton(s32)
+onWiimotePowerButton(s32 chan)
 {
+	// Every remote has a POWER button, a partner's included, and it is called on
+	// the remote's own channel.  Only player 1's quits the game; a partner
+	// holding theirs is switching their remote off.
+	if(!WiiPadPowerButtonQuits(chan)){
+		WiiTraceReport("WII system: wiimote %d power button, remote off\n", (int)chan);
+		return;
+	}
 	WiiTraceReport("WII system: wiimote power button\n");
 	HandleExit();
 }

@@ -263,12 +263,19 @@ CVector vecDAMAGE_ENGINE_POS_BIG(-0.5f, -0.3f, 0.0f);
 // couch co-op's partner's when they are the one driving the car: the model,
 // the vehicle it belongs to and the flag that says it is in use are all kept
 // per player, and reading player 1's for a partner-driven Voodoo would put the
-// wheels of one car on the other's.
+// wheels of one car on the other's.  Once the driver has got out there is
+// nobody to ask, but the car is still in use as far as the flag goes until the
+// next HydraulicControl hands the suspension back, so the owner is whoever
+// the car is registered to.
 static CPlayerInfo *
-SpecialColModelOwner(CPed *driver)
+SpecialColModelOwner(CAutomobile *car)
 {
+	CPed *driver = car->pDriver;
 	if(driver != nil && driver->IsPlayer())
 		return ((CPlayerPed*)driver)->GetPlayerInfoForThisPlayerPed();
+	for(int i = 0; i < NUMPLAYERS; i++)
+		if(CWorld::Players[i].m_pVehicleEx == car)
+			return &CWorld::Players[i];
 	return &CWorld::Players[CWorld::PlayerInFocus];
 }
 
@@ -283,7 +290,7 @@ CAutomobile::ProcessControl(void)
 	float brake = 0.0f;
 
 	if(bUsingSpecialColModel)
-		colModel = &SpecialColModelOwner(pDriver)->m_ColModel;
+		colModel = &SpecialColModelOwner(this)->m_ColModel;
 	else
 		colModel = GetColModel();
 	bool drivingInSand = false;
@@ -3075,7 +3082,7 @@ CAutomobile::ProcessEntityCollision(CEntity *ent, CColPoint *colpoints)
 		bVehicleColProcessed = true;
 
 	if(bUsingSpecialColModel)
-		colModel = &SpecialColModelOwner(pDriver)->m_ColModel;
+		colModel = &SpecialColModelOwner(this)->m_ColModel;
 	else
 		colModel = GetColModel();
 
@@ -3488,7 +3495,7 @@ CAutomobile::HydraulicControl(void)
 	// Couch co-op: a Voodoo's hydraulics belong to whoever is driving, so its
 	// special collision model and its controls come off that player, not
 	// player 1.
-	CPlayerInfo *playerInfo = SpecialColModelOwner(pDriver);
+	CPlayerInfo *playerInfo = SpecialColModelOwner(this);
 	CPad *pad = (pDriver != nil && pDriver->IsPlayer())
 		? GetPadFromPlayer((CPlayerPed*)pDriver)
 		: CPad::GetPad(0);

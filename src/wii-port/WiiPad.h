@@ -89,6 +89,13 @@ bool WiiPadReturnToMenuRequested(void);
 // player.  The remote speaker is that remote's, and its sounds are player 1's.
 bool WiiPadRemoteIsPartners(void);
 
+// What a Wii Remote's POWER button should do, asked from its callback on that
+// remote's channel.  True when it is the console's way out: player 1's remote,
+// or any remote while nobody has a controller of their own yet.  False for
+// anybody else's, which is theirs to switch off; WiiPadScan then does it, so
+// the game goes on.
+bool WiiPadPowerButtonQuits(s32 chan);
+
 // The physical button a prompt asks for, named as it is printed on the
 // player's own controller: "A" / "B" / "1" / "2" / "Y" / "X" / "ZL" / "R" /
 // "D-PAD DOWN".  The actions are the pad fields the engine reads -- Square

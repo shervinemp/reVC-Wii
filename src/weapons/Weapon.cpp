@@ -43,11 +43,12 @@
 #include "WiiSpeaker.h"
 #include "WiiPointerAim.h"
 #include "WiiPad.h"
-
-// AIM IN CAR: how far from where the gun already points a drive-by shot may be
-// bent towards the crosshair.  The cosine of seventy degrees.
-static const float kDriveByAimCone = 0.34f;
 #endif
+
+// How far from where the gun already points a drive-by shot may be bent towards
+// the crosshair: the Wii's AIM IN CAR, and couch co-op's reticle on every
+// platform.  The cosine of seventy degrees.
+static const float kDriveByAimCone = 0.34f;
 
 float fReloadAnimSampleFraction[5] = {  0.5f,  0.7f,  0.75f,  0.75f,  0.7f };
 float fSeaSparrowAimingAngle = 10.0f;
