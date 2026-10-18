@@ -851,7 +851,7 @@ CBoat::BlowUpCar(CEntity *culprit)
 	m_nBombTimer = 0;
 	TheCamera.CamShake(0.7f, GetPosition().x, GetPosition().y, GetPosition().z);
 
-	KillPedsInVehicle();
+	KillPedsInVehicle(culprit);
 
 	bEngineOn = false;
 	bLightsOn = false;
@@ -1414,6 +1414,10 @@ void
 CBoat::DoDriveByShootings(void)
 {
 	CAnimBlendAssociation *anim = nil;
+	// STATUS_PLAYER is no promise that somebody is at the wheel, and everything
+	// below reads the driver.
+	if(pDriver == nil)
+		return;
 	CPlayerInfo* playerInfo = ((CPlayerPed*)pDriver)->GetPlayerInfoForThisPlayerPed();
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
 		return;

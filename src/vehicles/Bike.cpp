@@ -2235,6 +2235,20 @@ CBike::DoDriveByShootings(void)
 	}
 }
 
+// The vehicles the engine's allowances for "the player's bike" were written for:
+// player 1's, in whichever seat they are in, and in couch co-op one a partner
+// has the wheel of.  The engine only ever asked for player 1's, so a partner
+// on a bike of their own got none of them.  With one player nobody else is a
+// player, so this is exactly FindPlayerVehicle().
+static bool
+IsPartyVehicle(CVehicle *vehicle)
+{
+	if(vehicle == FindPlayerVehicle())
+		return true;
+	CPed *driver = vehicle->pDriver;
+	return driver != nil && driver != FindPlayerPed() && driver->IsPlayer();
+}
+
 void
 CBike::VehicleDamage(void)
 {
@@ -2308,7 +2322,7 @@ CBike::VehicleDamage(void)
 					pDriver->Say(SOUND_PED_CRASH_VEHICLE);
 
 			int oldHealth = m_fHealth;
-			if(this == FindPlayerVehicle())
+			if(IsPartyVehicle(this))
 				m_fHealth -= bTakeLessDamage ? damage/6.0f : damage/2.0f;
 			else if(bTakeLessDamage)
 				m_fHealth -= damage/12.0f;
@@ -2528,7 +2542,7 @@ CBike::BlowUpCar(CEntity *culprit)
 
 #ifdef FIX_BUGS
 	// taken from CAutomobile. maybe tweak values?
-	if(IsAnyPlayerAttack(culprit)){
+	if(culprit == FindPlayerPed() || culprit == FindPlayerVehicle() || IsAnyPlayerAttack(culprit)){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 20;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 10.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumber()%6000 + 4000;
@@ -2545,7 +2559,7 @@ CBike::BlowUpCar(CEntity *culprit)
 
 	TheCamera.CamShake(0.7f, GetPosition().x, GetPosition().y, GetPosition().z);
 
-	KillPedsInVehicle();
+	KillPedsInVehicle(culprit);
 
 	bEngineOn = false;
 	bLightsOn = false;

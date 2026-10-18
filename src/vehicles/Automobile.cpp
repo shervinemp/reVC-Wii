@@ -279,6 +279,20 @@ SpecialColModelOwner(CAutomobile *car)
 	return &CWorld::Players[CWorld::PlayerInFocus];
 }
 
+// The vehicles the engine's allowances for "the player's car" were written for:
+// player 1's, in whichever seat they are in, and in couch co-op one a partner
+// has the wheel of.  The engine only ever asked for player 1's, so a partner
+// in a car of their own got none of them.  With one player nobody else is a
+// player, so this is exactly FindPlayerVehicle().
+static bool
+IsPartyVehicle(CVehicle *vehicle)
+{
+	if(vehicle == FindPlayerVehicle())
+		return true;
+	CPed *driver = vehicle->pDriver;
+	return driver != nil && driver != FindPlayerPed() && driver->IsPlayer();
+}
+
 #pragma optimize("", off) // a workaround for another compiler bug
 
 void
@@ -1742,7 +1756,7 @@ CAutomobile::ProcessControl(void)
 		if(Abs(m_vecMoveSpeed.x) < 0.005f &&
 		   Abs(m_vecMoveSpeed.y) < 0.005f &&
 		   Abs(m_vecMoveSpeed.z) < 0.005f &&
-		   !(m_fDamageImpulse > 0.0f && IsAnyPlayerAttack(m_pDamageEntity)) &&
+		   !(m_fDamageImpulse > 0.0f && IsAnyPlayerPed(m_pDamageEntity)) &&
 		   (m_aSuspensionSpringRatioPrev[0] < 1.0f || m_aSuspensionSpringRatioPrev[1] < 1.0f ||
 		    m_aSuspensionSpringRatioPrev[2] < 1.0f || m_aSuspensionSpringRatioPrev[3] < 1.0f)){
 			m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
@@ -3287,10 +3301,12 @@ CAutomobile::FireTruckControl(void)
 {
 	// Whose fire truck this is: player 1's, or in co-op the partner's.  Both
 	// work the hose from their own pad; a fire truck with nobody in it puts its
-	// own fires out below.
+	// own fires out below.  A partner at the wheel keeps the hose even with
+	// player 1 riding along, who is "in" this truck as far as FindPlayerVehicle
+	// goes: the hose is the driver's, not the passenger's.
 	CPad *pad = CPad::GetPad(0);
 	bool playerDriven = this == FindPlayerVehicle();
-	if(!playerDriven && this->pDriver != nil && this->pDriver != FindPlayerPed() && this->pDriver->IsPlayer()){
+	if(this->pDriver != nil && this->pDriver != FindPlayerPed() && this->pDriver->IsPlayer()){
 		pad = GetPadFromPlayer((CPlayerPed*)this->pDriver);
 		playerDriven = true;
 	}
@@ -3391,7 +3407,16 @@ CAutomobile::TankControl(void)
 			// thing rather than steered like a wheel, and each player has their
 			// own reticle to point it with.  Slewed at the rate the engine's own
 			// camera-followed turret uses, so it turns as it always has.
-			const float heading = CCoop::GetAimHeading(driver);
+			//
+			// The reticle's heading is the world's, but the turret's angle is the
+			// hull's: PreRender spins the turret node by it and the shot below is
+			// rotated by it relative to the tank.  So the heading is taken into
+			// the hull's frame first, the way Process_FollowCar_SA does it for
+			// the same turret; slewed as it was, the gun settled off by however
+			// far the tank itself was turned.
+			const float aimHeading = CCoop::GetAimHeading(driver);
+			const CVector aimDir(-Sin(aimHeading), Cos(aimHeading), 0.0f);
+			const float heading = Multiply3x3(aimDir, GetMatrix()).Heading();
 			float turn = CGeneral::LimitRadianAngle(heading - m_fCarGunLR);
 			const float maxTurn = CTimer::GetTimeStep()*0.015f;
 			if(Abs(turn) < maxTurn)
@@ -4071,13 +4096,15 @@ CAutomobile::DoDriveByShootings(void)
 			if (pPassengers[seat] != nil && pPassengers[seat]->IsPlayer())
 				DoPassengerDriveBy(this, (CPlayerPed*)pPassengers[seat], seat);
 
-	// A pilot does not fire their own gun out of an aircraft: their hands are on
-	// the controls, and an armed helicopter fires its mounted guns instead --
-	// the Hunter's rockets on the fire button, its gun and the Sea Sparrow's on
-	// the handbrake.  Without this the fire button in a Hunter fired the
-	// pilot's own gun alongside the rockets, and a plane's pilot could shoot
-	// out of the Dodo.
-	if (IsRealHeli() || IsRealPlane())
+	// Couch co-op: a pilot does not fire their own gun out of an aircraft: their
+	// hands are on the controls, and an armed helicopter fires its mounted guns
+	// instead -- the Hunter's rockets on the fire button, its gun and the Sea
+	// Sparrow's on the handbrake.  Without this the fire button in a Hunter
+	// fired the pilot's own gun alongside the rockets, and a plane's pilot could
+	// shoot out of the Dodo.  Co-op only: alone, a pilot with an SMG, or with
+	// the Drive-By Weapons option on, shoots out of a Maverick or a Dodo as the
+	// game before co-op let them.
+	if (CCoop::PairActive() && (IsRealHeli() || IsRealPlane()))
 		return;
 
 	if (playerInfo && !playerInfo->m_bDriveByAllowed)
@@ -4364,7 +4391,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 	}
 
 	// damage flipped over car
-	if(GetUp().z < 0.0f && this != FindPlayerVehicle()){
+	if(GetUp().z < 0.0f && !IsPartyVehicle(this)){
 		if(bNotDamagedUpsideDown || GetStatus() == STATUS_PLAYER_REMOTE || bIsInWater)
 			return;
 		if(GetStatus() != STATUS_WRECKED)
@@ -4387,7 +4414,12 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			shakePad->StartShake(40000/freq, freq);
 		}
 
-		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer && !IsAnyPlayerAttack(m_pDamageEntity))
+		// The stock test first, then any other player's attack: with no damage
+		// source and player 1 on foot "== FindPlayerVehicle()" lets the damage
+		// through, which IsAnyPlayerAttack(nil) alone would not.
+		if(GetStatus() != STATUS_PLAYER && bOnlyDamagedByPlayer &&
+		   m_pDamageEntity != FindPlayerPed() && m_pDamageEntity != FindPlayerVehicle() &&
+		   !IsAnyPlayerAttack(m_pDamageEntity))
 			return;
 
 		if(m_pDamageEntity && m_pDamageEntity->IsVehicle()){
@@ -4530,7 +4562,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			}
 
 			int oldHealth = m_fHealth;
-			if(this == FindPlayerVehicle())
+			if(IsPartyVehicle(this))
 				m_fHealth -= bTakeLessDamage ? damage/6.0f : damage/2.0f;
 			else if(bTakeLessDamage)
 				m_fHealth -= damage/12.0f;
@@ -5053,7 +5085,7 @@ CAutomobile::BlowUpCar(CEntity *culprit)
 	if(!bCanBeDamaged)
 		return;
 
-	if(IsAnyPlayerAttack(culprit)){
+	if(culprit == FindPlayerPed() || culprit == FindPlayerVehicle() || IsAnyPlayerAttack(culprit)){
 		CWorld::Players[CWorld::PlayerInFocus].m_nHavocLevel += 20;
 		CWorld::Players[CWorld::PlayerInFocus].m_fMediaAttention += 10.0f;
 		CStats::PropertyDestroyed += CGeneral::GetRandomNumber()%6000 + 4000;
@@ -5088,7 +5120,7 @@ CAutomobile::BlowUpCar(CEntity *culprit)
 
 	TheCamera.CamShake(0.7f, GetPosition().x, GetPosition().y, GetPosition().z);
 
-	KillPedsInVehicle();
+	KillPedsInVehicle(culprit);
 
 	bEngineOn = false;
 	bLightsOn = false;
