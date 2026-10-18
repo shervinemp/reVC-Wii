@@ -226,15 +226,111 @@ RwTexture *gpLaserSightTex;
 RwTexture *gpLaserDotTex;
 RwTexture *gpViewFinderTex;
 
-// Couch co-op: one colour per player, worn by their reticle and by the pip over
-// their head, so that on one screen it is plain whose aim is whose -- and, with
-// identical figures on it, which of them is you.  Player 1 and the first
+// Couch co-op: one colour per player, worn by their reticle and by the badge
+// over their head, so that on one screen it is plain whose aim is whose -- and,
+// with identical figures on it, which of them is you.  Player 1 and the first
 // partner are Vice City's own pair; the other two are the next most telling
-// hues against the game's streets.
+// hues against the game's streets.  The number on the badge is what tells them
+// apart for anyone hue does not, and the values differ in lightness as well as
+// in hue: relative luminance about 0.58 cyan, 0.27 pink, 0.46 green and 0.73
+// amber, so that green and amber -- the pair red-green colour blindness folds
+// into one -- are a clear step apart in lightness too.
 const CRGBA kCoopColours[NUMPLAYERS] = {
-	CRGBA(80, 215, 255, 255), CRGBA(255, 110, 200, 255),
-	CRGBA(140, 240, 120, 255), CRGBA(255, 200, 90, 255)
+	CRGBA(80, 215, 255, 255), CRGBA(245, 70, 175, 255),
+	CRGBA(80, 205, 70, 255), CRGBA(255, 220, 70, 255)
 };
+
+// How tall a label's plate is, for the scale it is printed at: the glyphs'
+// own height, 20 units a unit of scale, and a pixel of plate above and below.
+static float
+CoopLabelHeight(float scaleY)
+{
+	return 20.0f*SCREEN_SCALE_Y(scaleY) + 2.0f*SCREEN_SCALE_Y(1.0f);
+}
+
+// A few ASCII characters on a plate with a dark edge, centred on cx with the
+// plate's top at top.  The plate is what makes them read against sky, water and
+// tarmac alike, the same reason the pointer's dot has its rim; a player's colour
+// goes on one or the other, whichever the number or the word is easier to read
+// in.  CFont draws late and DrawRect at once, so the ink always lands on the
+// plate.  Returns the bottom of the plate with its edge, for stacking.  The
+// font is left proportional, with no justification and no drop shadow.
+static float
+DrawCoopLabel(float cx, float top, const char *ascii, const CRGBA &plate, const CRGBA &ink,
+	float scaleX, float scaleY, float minHalf)
+{
+	wchar text[16];
+	AsciiToUnicode(ascii, text);
+	CFont::SetPropOn();
+	CFont::SetBackgroundOff();
+	CFont::SetScale(SCREEN_SCALE_X(scaleX), SCREEN_SCALE_Y(scaleY));
+	CFont::SetJustifyOff();
+	CFont::SetCentreOff();
+	CFont::SetRightJustifyOff();
+	CFont::SetFontStyle(FONT_STANDARD);
+	CFont::SetDropShadowPosition(0);
+	CFont::SetColor(ink);
+	const float width = CFont::GetStringWidth(text);
+	const float ex = SCREEN_SCALE_X(1.0f);
+	const float ey = SCREEN_SCALE_Y(1.0f);
+	const float half = Max(0.5f*width + SCREEN_SCALE_X(2.0f), minHalf);
+	const float bottom = top + CoopLabelHeight(scaleY);
+	CSprite2d::DrawRect(CRect(cx - half - ex, top - ey, cx + half + ex, bottom + ey), CRGBA(0, 0, 0, 255));
+	CSprite2d::DrawRect(CRect(cx - half, top, cx + half, bottom), plate);
+	CFont::PrintString(cx - 0.5f*width, top + ey, text);
+	return bottom + ey;
+}
+
+// A bar with a dark edge, filled left to right to a fraction in a colour.
+static void
+DrawCoopBar(float cx, float top, float height, float halfWidth, float fill, const CRGBA &colour)
+{
+	const float ex = SCREEN_SCALE_X(1.0f);
+	const float ey = SCREEN_SCALE_Y(1.0f);
+	CSprite2d::DrawRect(CRect(cx - halfWidth - ex, top - ey, cx + halfWidth + ex, top + height + ey), CRGBA(0, 0, 0, 255));
+	if (fill > 0.0f)
+		CSprite2d::DrawRect(CRect(cx - halfWidth, top, cx - halfWidth + 2.0f*halfWidth*Min(fill, 1.0f), top + height), colour);
+}
+
+// A partner's solid dot with its dark rim, the single-player pointer's mark in
+// a player's colour: what the reticle is when there is no gun to aim, and the
+// same octagon (corners taken off) so that it reads as round.
+static void
+DrawCoopDot(float px, float py, float size, const CRGBA &colour)
+{
+	const float rx = SCREEN_SCALE_X(size);
+	const float ry = SCREEN_SCALE_Y(size);
+	const float ex = SCREEN_SCALE_X(1.0f);
+	const float ey = SCREEN_SCALE_Y(1.0f);
+	const CRGBA dark(0, 0, 0, 255);
+	// The rim is the dot a pixel wider on every side, as two overlapping bars
+	// whose corners are the dot's own edge.
+	CSprite2d::DrawRect(CRect(px - rx - ex, py - ry, px + rx + ex, py + ry), dark);
+	CSprite2d::DrawRect(CRect(px - rx, py - ry - ey, px + rx, py + ry + ey), dark);
+	CSprite2d::DrawRect(CRect(px - rx, py - ry + ey, px + rx, py + ry - ey), colour);
+	CSprite2d::DrawRect(CRect(px - rx + ex, py - ry, px + rx - ex, py + ry), colour);
+}
+
+// The rifle sight, the single-player HUD's mark for a gun, in a player's colour
+// and with a dark edge.  It is thin lines, which are lost at 480i against bright
+// sky and water, so it is drawn in black first at a pixel and a half off in each
+// direction and the colour goes on top: an edge all round every line.  The
+// sprite's size is its half-extent in 640x448 units.
+static void
+DrawCoopSight(float px, float py, float size, const CRGBA &colour)
+{
+	const float rx = SCREEN_SCALE_X(size);
+	const float ry = SCREEN_SCALE_Y(size);
+	const float ox = SCREEN_SCALE_X(1.5f);
+	const float oy = SCREEN_SCALE_Y(1.5f);
+	const float shift[4][2] = { { -ox, 0.0f }, { ox, 0.0f }, { 0.0f, -oy }, { 0.0f, oy } };
+	const CRGBA dark(0, 0, 0, 255);
+	for (int k = 0; k < 4; k++)
+		CHud::Sprites[HUD_SITEM16].Draw(CRect(px + shift[k][0] - rx, py + shift[k][1] - ry, px + shift[k][0] + rx, py + shift[k][1] + ry),
+			dark, 0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+	CHud::Sprites[HUD_SITEM16].Draw(CRect(px - rx, py - ry, px + rx, py + ry),
+		colour, 0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+}
 
 static void
 DrawCoopMarks(void)
@@ -285,63 +381,110 @@ DrawCoopMarks(void)
 				}
 				screen.x += SCREEN_SCALE_X(28.0f) * (seat - 0.5f*(seated - 1));
 			}
-			const float rx = SCREEN_SCALE_X(3.0f);
 			const float ry = SCREEN_SCALE_Y(3.0f);
-			const float ex = SCREEN_SCALE_X(1.0f);
 			const float ey = SCREEN_SCALE_Y(1.0f);
-			CSprite2d::DrawRect(CRect(screen.x - rx - ex, screen.y - ry - ey, screen.x + rx + ex, screen.y + ry + ey), CRGBA(0, 0, 0, 255));
-			CSprite2d::DrawRect(CRect(screen.x - rx, screen.y - ry, screen.x + rx, screen.y + ry), kCoopColours[i]);
+			const CRGBA &colour = kCoopColours[i];
+			const CRGBA black(0, 0, 0, 255);
 
-			const float health = Clamp(ped->m_fHealth/maxHealth, 0.0f, 1.0f);
+			// The badge: the player's colour with their number on it, standing where
+			// a pip used to, with its bottom edge on the same line so that the bar
+			// under it has not moved.  Colour alone does not tell four identical
+			// figures apart for everyone, and a speck of it is not a number across a
+			// room.  Black on the colour: every one of the four is light enough to
+			// read it against.
+			char number[2] = { (char)('1' + i), '\0' };
+			const float badgeTop = screen.y + ry - CoopLabelHeight(0.75f);
+			DrawCoopLabel(screen.x, badgeTop, number, colour, black, 0.5f, 0.75f, SCREEN_SCALE_X(7.5f));
+			// A controller that has stopped answering is a question mark beside the
+			// badge, white so that it is not taken for a player's colour.  The
+			// badge is 15 units wide whatever the digit, so this stands clear of it.
+			if (CCoop::IsControllerSilent(i))
+				DrawCoopLabel(screen.x + SCREEN_SCALE_X(17.5f), badgeTop, "?", CRGBA(255, 255, 255, 255), black,
+					0.5f, 0.75f, SCREEN_SCALE_X(6.75f));
+
 			const float half = SCREEN_SCALE_X(11.0f);
 			const float top = screen.y + ry + 2.0f*ey;
-			const float bottom = top + SCREEN_SCALE_Y(2.5f);
-			CSprite2d::DrawRect(CRect(screen.x - half - ex, top - ey, screen.x + half + ex, bottom + ey), CRGBA(0, 0, 0, 255));
-			if (health > 0.0f)
-				CSprite2d::DrawRect(CRect(screen.x - half, top, screen.x - half + 2.0f*half*health, bottom), kCoopColours[i]);
+			float bleedLeft, reviveProgress;
+			if (CCoop::GetDownedState(i, bleedLeft, reviveProgress)) {
+				// Down: out of health, on the ground or at the last point of it in a
+				// car, and not out of the party yet.  A health bar would be empty, so
+				// its place shows the time they have left instead, shrinking, and under
+				// it the word, so that it is not taken for health.  Another player
+				// standing by brings them back, and the hold that takes is the white bar
+				// filling under the word.  An arrested partner cannot be brought back,
+				// and is not shown a bar to wait for.
+				const bool busted = ped->m_nPedState == PED_ARRESTED;
+				const float barHeight = SCREEN_SCALE_Y(4.0f);
+				DrawCoopBar(screen.x, top, barHeight, half, bleedLeft, colour);
+				const float below = DrawCoopLabel(screen.x, top + barHeight + 2.0f*ey, busted ? "BUSTED" : "DOWN",
+					black, colour, 0.45f, 0.65f, 0.0f);
+				if (!busted && reviveProgress > 0.0f)
+					DrawCoopBar(screen.x, below + ey, barHeight, half, reviveProgress, CRGBA(255, 255, 255, 255));
+			} else {
+				const float health = Clamp(ped->m_fHealth/maxHealth, 0.0f, 1.0f);
+				const float bottom = top + SCREEN_SCALE_Y(2.5f);
+				DrawCoopBar(screen.x, top, bottom - top, half, health, colour);
 
-			// A partner has no HUD of their own, so their ammo is shown here
-			// or nowhere: the same "total-clip" the HUD proper gives player 1,
-			// in the same colour, right-aligned under the bar's right end.  A
-			// weapon with no clip to speak of -- the fists, a bat, the
-			// detonator -- shows nothing, exactly as it does up there.
-			CWeapon *weapon = ped->GetWeapon();
-			const eWeaponType weaponType = weapon->m_eWeaponType;
-			CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(weaponType);
-			if(weaponInfo->m_nWeaponSlot > 1 && weaponType != WEAPONTYPE_DETONATOR){
-				char sAmmo[16];
-				const int32 ammoAmount = weaponInfo->m_nAmountofAmmunition;
-				const int32 ammoInClip = weapon->m_nAmmoInClip;
-				const int32 totalAmmo = weapon->m_nAmmoTotal;
-				if(ammoAmount <= 1 || ammoAmount >= 1000)
-					sprintf(sAmmo, "%d", totalAmmo);
-				else if(weaponType == WEAPONTYPE_FLAMETHROWER)
-					sprintf(sAmmo, "%d-%d", Min((totalAmmo - ammoInClip)/10, 9999), ammoInClip/10);
-				else
-					sprintf(sAmmo, "%d-%d", Min(totalAmmo - ammoInClip, 9999), ammoInClip);
-				wchar sAmmoText[16];
-				AsciiToUnicode(sAmmo, sAmmoText);
-				CFont::SetPropOff();
-				CFont::SetBackgroundOff();
-				CFont::SetScale(SCREEN_SCALE_X(0.35f), SCREEN_SCALE_Y(0.5f));
-				CFont::SetJustifyOff();
-				CFont::SetCentreOff();
-				CFont::SetRightJustifyOn();
-				CFont::SetRightJustifyWrap(0.0f);
-				CFont::SetFontStyle(FONT_STANDARD);
-				CFont::SetDropShadowPosition(1);
-				CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-				CFont::SetColor(CRGBA(AMMO_COLOR.r, AMMO_COLOR.g, AMMO_COLOR.b, 255));
-				CFont::PrintString(screen.x + half, bottom + SCREEN_SCALE_Y(1.0f), sAmmoText);
-				CFont::SetRightJustifyOff();
+				// A partner has no HUD of their own, so their ammo is shown here
+				// or nowhere: the same "total-clip" the HUD proper gives player 1,
+				// in the same colour, right-aligned under the bar's right end.  A
+				// weapon with no clip to speak of -- the fists, a bat, the
+				// detonator -- shows nothing, exactly as it does up there.  It sits on
+				// a dark plate, as the words do, and is a fifth taller than it was but
+				// no wider: the width is what the pips beside it compete for.
+				CWeapon *weapon = ped->GetWeapon();
+				const eWeaponType weaponType = weapon->m_eWeaponType;
+				CWeaponInfo *weaponInfo = CWeaponInfo::GetWeaponInfo(weaponType);
+				if(weaponInfo->m_nWeaponSlot > 1 && weaponType != WEAPONTYPE_DETONATOR){
+					char sAmmo[16];
+					const int32 ammoAmount = weaponInfo->m_nAmountofAmmunition;
+					const int32 ammoInClip = weapon->m_nAmmoInClip;
+					const int32 totalAmmo = weapon->m_nAmmoTotal;
+					if(ammoAmount <= 1 || ammoAmount >= 1000)
+						sprintf(sAmmo, "%d", totalAmmo);
+					else if(weaponType == WEAPONTYPE_FLAMETHROWER)
+						sprintf(sAmmo, "%d-%d", Min((totalAmmo - ammoInClip)/10, 9999), ammoInClip/10);
+					else
+						sprintf(sAmmo, "%d-%d", Min(totalAmmo - ammoInClip, 9999), ammoInClip);
+					wchar sAmmoText[16];
+					AsciiToUnicode(sAmmo, sAmmoText);
+					CFont::SetPropOff();
+					CFont::SetBackgroundOff();
+					CFont::SetScale(SCREEN_SCALE_X(0.35f), SCREEN_SCALE_Y(0.6f));
+					CFont::SetJustifyOff();
+					CFont::SetCentreOff();
+					CFont::SetRightJustifyOn();
+					CFont::SetRightJustifyWrap(0.0f);
+					CFont::SetFontStyle(FONT_STANDARD);
+					CFont::SetDropShadowPosition(0);
+					CFont::SetColor(CRGBA(AMMO_COLOR.r, AMMO_COLOR.g, AMMO_COLOR.b, 255));
+					const float ammoRight = screen.x + half;
+					const float ammoTop = bottom + 2.0f*ey;
+					const float ammoPad = SCREEN_SCALE_X(1.5f);
+					CSprite2d::DrawRect(CRect(ammoRight - CFont::GetStringWidth(sAmmoText) - ammoPad, ammoTop,
+						ammoRight + ammoPad, ammoTop + CoopLabelHeight(0.6f)), black);
+					CFont::PrintString(ammoRight, ammoTop + ey, sAmmoText);
+					CFont::SetRightJustifyOff();
+				}
 			}
 		}
+		// The plates were drawn at once and the numbers and words on them are
+		// buffered; draw those now, so that the HUD proper, which comes after,
+		// covers a pip's plate and its writing together instead of leaving the
+		// writing on top of the radar.
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		CFont::DrawFonts();
 	}
 
 	// The reticles.  A full crosshair with something to shoot, a dot without --
-	// the same two marks the single-player HUD draws -- and red, like the
-	// single-player one, while it is on a target.  One per player, each in
-	// that player's colour.
+	// the same two marks the single-player HUD draws -- each with a dark edge, so
+	// that it reads against bright sky and water at 480i, where the bare sprite
+	// is thin lines and is lost.  One per player, each in that player's colour,
+	// and it stays that colour on a target.  The single-player one goes red
+	// there, but red swallows the pink one and is no signal to anyone who cannot
+	// tell it from green: a reticle on a target is the same mark drawn twice, the
+	// second half as big again.
 	for (int i = 0; i < NUMPLAYERS; i++) {
 		float x, y;
 		bool engaged;
@@ -350,17 +493,24 @@ DrawCoopMarks(void)
 			continue;
 		const eWeaponType weapon = ped->GetWeapon()->m_eWeaponType;
 		const bool armed = CWeaponInfo::GetWeaponInfo(weapon)->m_eWeaponFire != WEAPON_FIRE_MELEE;
-		// The single-player HUD draws the heavy automatics a size wider, and this
-		// is meant to be the same mark, so it draws them the same way.
-		const float size = !armed ? 3.0f :
-			(weapon == WEAPONTYPE_M4 || weapon == WEAPONTYPE_RUGER || weapon == WEAPONTYPE_M60) ? 32.0f * 0.6f : 32.0f * 0.4f;
 		const float px = SCREEN_WIDTH * x;
 		const float py = SCREEN_HEIGHT * y;
-		const float rx = SCREEN_SCALE_X(size);
-		const float ry = SCREEN_SCALE_Y(size);
-		CHud::Sprites[HUD_SITEM16].Draw(CRect(px - rx, py - ry, px + rx, py + ry),
-			engaged ? CRGBA(255, 70, 70, 255) : kCoopColours[i],
-			0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
+		if (!armed) {
+			DrawCoopDot(px, py, engaged ? 4.5f : 3.0f, kCoopColours[i]);
+			continue;
+		}
+		// The single-player HUD draws the heavy automatics a size wider, and this
+		// is meant to be the same mark, so it draws them the same way.
+		const float size = (weapon == WEAPONTYPE_M4 || weapon == WEAPONTYPE_RUGER || weapon == WEAPONTYPE_M60) ?
+			32.0f * 0.6f : 32.0f * 0.4f;
+		// A textured, masked sprite: the rects above leave depth testing on and
+		// vertex alpha off, which is the wrong way round for it.
+		RwRenderStateSet(rwRENDERSTATEZTESTENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEZWRITEENABLE, (void*)FALSE);
+		RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)TRUE);
+		if (engaged)
+			DrawCoopSight(px, py, size * 1.5f, kCoopColours[i]);
+		DrawCoopSight(px, py, size, kCoopColours[i]);
 	}
 
 	// The dance-off's prompts, when a round is on; the font is left as the
