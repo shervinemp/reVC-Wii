@@ -68,7 +68,18 @@ const float kStopSpeed = 2.0f * METERS_PER_SECOND_TO_GAME_SPEED;
 const uint32 kStopHoldMs = 2000;
 const uint32 kCleanupDelayMs = 4000;	// how long a resolved case lingers
 const float kGunfireRange = 60.0f;	// on duty: gunfire this near the case
+const uint32 kShiftResultMs = 2000;	// how long what a case came to stays on screen
 const int kCaseCars[] = { MI_SENTINEL, MI_STALLION, MI_VOODOO, MI_SABRE };
+
+// What the screen says about the shift's last turn, for kShiftResultMs.
+enum eShiftResult
+{
+	SHIFT_RESULT_NONE,
+	SHIFT_RESULT_CAUGHT,	// a case closed, with the pay
+	SHIFT_RESULT_AWAY,	// a case lost
+	SHIFT_RESULT_SIREN,	// the siren went off
+	SHIFT_RESULT_STOOD_DOWN	// the crew left the cruiser, or the switch went off
+};
 
 // --- the smuggling run's numbers ---------------------------------------------
 
@@ -109,6 +120,10 @@ struct ShiftState
 	bool cleanupPending;
 	bool escaped;
 	uint32 cleanupAt;
+	// what the last case or the end of the shift came to, for the screen
+	uint32 resultAt;
+	int resultKind;
+	uint32 resultPay;
 	CVehicle *suspectCar;
 	CPed *suspectPed;
 };
@@ -223,8 +238,8 @@ const uint32 kDanceRoundMs = 60000;
 const uint32 kDanceGestureWindowMs = 1500;	// everyone ducks together
 const uint32 kDanceRearmMs = 10000;
 const uint32 kDanceLingerMs = 4000;
-const uint32 kDanceBeatSlowMs = 700;	// the tempo climbs...
-const uint32 kDanceBeatFastMs = 420;	// ...to here by the time the round ends
+const uint32 kDanceBeatSlowMs = 1000;	// the tempo climbs...
+const uint32 kDanceBeatFastMs = 650;	// ...to here by the time the round ends
 const int kDanceHitPay = 10;
 const int kDanceWinPot = 200;
 
@@ -270,6 +285,8 @@ const float kCnRGrabRangeCar = 4.5f;	// ...and from a car
 const float kCnRDeliverRange = 4.5f;
 const float kCnRBustRange = 5.0f;
 const uint32 kCnRBustHoldMs = 1500;
+const uint32 kCnRBustLockMs = 2000;	// a busted carrier may not take the case back for this long
+const uint32 kCnRNoteMs = 2000;		// "P3 BUSTED P1" stays on screen this long
 const float kCnRArena = 34.0f;		// beyond this the case comes back
 const uint32 kCnROutGraceMs = 3000;
 const int kCnRWinScore = 3;
@@ -296,6 +313,15 @@ struct CnRState
 	int score[NUMPLAYERS];
 	uint32 bustSince;
 	int bustBy;
+	// A bust drops the case at the carrier's feet, where they would be the
+	// nearest player and take it straight back: the busted player is kept off
+	// it for kCnRBustLockMs, so it is up for the others -- and the screen
+	// says who busted whom.
+	int lockPlayer;
+	uint32 lockUntil;
+	int noteBuster;
+	int noteBusted;
+	uint32 noteAt;
 	uint32 outSince;
 	int winner;
 	int32 caseBlip;
@@ -303,6 +329,47 @@ struct CnRState
 	bool triangleHeld[NUMPLAYERS];
 };
 CnRState s_cnr;
+
+// --- what a mode tells the party when it arms --------------------------------
+
+// Every mode starts from something the party does in passing -- a honk, a pair
+// of jumps, a tap of the nod -- and the help box's mode name is all the game
+// says about it, for a second and a half.  So the first time a mode arms in a
+// session it also puts one line on the screen, a few seconds long, saying how
+// it is played and how it ends.  It is drawn, not told through the help box:
+// that is the one-and-a-half-second "quick" box, and it waits behind whatever
+// else is in it.  A rematch is not interrupted by it again; the flags go with
+// the session (see CCoopModes::Update).
+enum eExplainer
+{
+	EXPLAIN_SHIFT,
+	EXPLAIN_RUN,
+	EXPLAIN_DERBY,
+	EXPLAIN_RC,
+	EXPLAIN_DANCE,
+	EXPLAIN_CNR,
+	EXPLAIN_COUNT
+};
+
+const uint32 kExplainMs = 4500;
+
+struct ExplainState
+{
+	bool seen[EXPLAIN_COUNT];
+	int showing;
+	uint32 until;
+};
+ExplainState s_explain;
+
+void
+ShowExplainer(int mode, uint32 now)
+{
+	if(s_explain.seen[mode])
+		return;
+	s_explain.seen[mode] = true;
+	s_explain.showing = mode;
+	s_explain.until = now + kExplainMs;
+}
 
 // One world mode at a time: every one of these arms from something the party
 // does in the world, and two at once would be two modes fighting over the same
@@ -646,9 +713,14 @@ CloseCase(uint32 now, bool caught)
 		s_shift.streak++;
 		const uint32 pay = 100 + 50 * (s_shift.streak - 1);
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += pay;
+		s_shift.resultAt = now;
+		s_shift.resultKind = SHIFT_RESULT_CAUGHT;
+		s_shift.resultPay = pay;
 		COOP_LOG("WII coop: case closed, streak %u\n", (unsigned)s_shift.streak);
 	}else{
 		s_shift.streak = 0;
+		s_shift.resultAt = now;
+		s_shift.resultKind = SHIFT_RESULT_AWAY;
 		COOP_LOG("WII coop: case lost\n");
 	}
 	if(s_shift.suspectCar != nil)
@@ -750,8 +822,12 @@ StartCase(uint32 now)
 }
 
 void
-EndShift(uint32 now, const char *why)
+EndShift(uint32 now, const char *why, int result)
 {
+	if(result != SHIFT_RESULT_NONE){
+		s_shift.resultAt = now;
+		s_shift.resultKind = result;
+	}
 	if(s_shift.caseActive){
 		if(s_shift.suspectCar != nil)
 			CRadar::ClearBlipForEntity(BLIP_CAR, CPools::GetVehiclePool()->GetIndex(s_shift.suspectCar));
@@ -785,9 +861,11 @@ TryStartShift(uint32 now)
 	s_shift.active = true;
 	s_shift.streak = 0;
 	s_shift.crewLostAt = 0;
+	s_shift.resultAt = 0;
 	s_shift.nextCaseAt = now + kShiftStartDelayMs;
 	COOP_LOG("WII coop: cop shift on\n");
 	CCoop::Notify("WII_CSH");
+	ShowExplainer(EXPLAIN_SHIFT, now);
 }
 
 // --- the smuggling run -------------------------------------------------------
@@ -1058,6 +1136,7 @@ TryStartRun(uint32 now)
 	PlaceDropMarker();
 	COOP_LOG("WII coop: smuggling run on\n");
 	CCoop::Notify("WII_CSR");
+	ShowExplainer(EXPLAIN_RUN, now);
 }
 
 void
@@ -1279,6 +1358,7 @@ StartDerby(uint32 now, const CVector &centre)
 	CStreaming::RequestModel(MI_BLOODRA, 0);
 	COOP_LOG("WII coop: derby on\n");
 	CCoop::Notify("WII_CSD");
+	ShowExplainer(EXPLAIN_DERBY, now);
 }
 
 // Whoever has the most rounds takes the match, if anyone has any.
@@ -1654,6 +1734,7 @@ StartRc(uint32 now, const CVector &centre, const CVector &forward)
 	CStreaming::RequestModel(MI_RCBANDIT, 0);
 	COOP_LOG("WII coop: rc race armed\n");
 	CCoop::Notify("WII_CSC");
+	ShowExplainer(EXPLAIN_RC, now);
 }
 
 void
@@ -1952,6 +2033,7 @@ StartDance(uint32 now, const CVector &centre)
 	}
 	COOP_LOG("WII coop: dance-off on\n");
 	CCoop::Notify("WII_CSF");
+	ShowExplainer(EXPLAIN_DANCE, now);
 }
 
 void
@@ -2173,6 +2255,9 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	s_cnr.carrier = -1;
 	s_cnr.bustSince = 0;
 	s_cnr.bustBy = -1;
+	s_cnr.lockPlayer = -1;
+	s_cnr.lockUntil = 0;
+	s_cnr.noteAt = 0;
 	s_cnr.outSince = 0;
 	s_cnr.winner = -1;
 	s_cnr.caseBlip = -1;
@@ -2194,6 +2279,7 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	ShowLooseCase();
 	COOP_LOG("WII coop: cops & robbers on\n");
 	CCoop::Notify("WII_CSN");
+	ShowExplainer(EXPLAIN_CNR, now);
 }
 
 void
@@ -2307,6 +2393,11 @@ UpdateCnR(uint32 now)
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
 			if(ped == nil || ped->DyingOrDead())
 				continue;
+			// Just busted: not straight off their own feet, where they are the
+			// nearest player by definition and would take it back on the next
+			// frame -- and the buster score again 1.5 s after that.
+			if(i == s_cnr.lockPlayer && now < s_cnr.lockUntil)
+				continue;
 			const float reach = (ped->bInVehicle && ped->m_pMyVehicle != nil) ? kCnRGrabRangeCar : kCnRGrabRange;
 			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
 			if(dist < reach && (best < 0 || dist < bestDist)){
@@ -2364,9 +2455,15 @@ UpdateCnR(uint32 now)
 				s_cnr.bustBy = pin;
 				s_cnr.bustSince = now;
 			}else if(now - s_cnr.bustSince >= kCnRBustHoldMs){
+				const int busted = s_cnr.carrier;
 				s_cnr.score[pin]++;
-				COOP_LOG("WII coop: case busted by player %d\n", pin + 1);
+				COOP_LOG("WII coop: player %d busted player %d\n", pin + 1, busted + 1);
 				DropCase();
+				s_cnr.lockPlayer = busted;
+				s_cnr.lockUntil = now + kCnRBustLockMs;
+				s_cnr.noteBuster = pin;
+				s_cnr.noteBusted = busted;
+				s_cnr.noteAt = now;
 				if(s_cnr.score[pin] >= kCnRWinScore)
 					FinishCnR(now, pin);
 				return;
@@ -2401,19 +2498,35 @@ UpdateCnR(uint32 now)
 // Where a player's mark sits along the bottom lane: the cops & robbers, derby
 // and race bars and the dance chips all keep the same slots, so a player is
 // in the same place whichever mode it is.
+//
+// The numbers, at 640x448 (4:3 or 16:9 -- the framebuffer is the same and a
+// wide TV stretches it, with SCREEN_SCALE_X narrowing everything drawn by 3/4
+// to match): the lanes are centred on x = 176, 272, 368 and 464.  The radar
+// disc ends at x = 128 (96 at 16:9) and a bar starts at 144 (151 at 16:9), so
+// they never touch, and the widest dance chip, the remote's D-PAD DOWN,
+// starts at 129 (140): clear by a pixel at 4:3.  Vertically the lane is
+// y = 365..388 with the tag above it and the caption below, 345..404, and
+// the game's own subtitle starts at y = 348 and takes about 21 px a line --
+// so while one is up the whole lane steps above it, to y = 285..345.  The
+// zone and vehicle names, which would otherwise be there, are held back by
+// the HUD for as long as a subtitle is.
 void
 LaneSlot(int player, float &cx, float &cy)
 {
 	cx = SCREEN_WIDTH*(0.5f + (player - 1.5f)*0.15f);
 	cy = SCREEN_HEIGHT*0.84f;
+	if(CHud::m_Message[0] != 0)
+		cy -= SCREEN_SCALE_Y(64.0f);
 }
 
 // A few characters, centred on x, in the colour given.  The text is plain
 // ASCII on purpose -- a number, P2, GO -- and short; the same as the chips.
+// AsciiToUnicode does not look at the size of what it writes into, so what
+// goes in here is short enough for the buffer.
 void
 PrintCentred(float x, float y, const char *ascii, const CRGBA &colour, float scaleX, float scaleY)
 {
-	wchar text[32];
+	wchar text[48];
 	AsciiToUnicode(ascii, text);
 	CFont::SetPropOn();
 	CFont::SetBackgroundOff();
@@ -2429,18 +2542,50 @@ PrintCentred(float x, float y, const char *ascii, const CRGBA &colour, float sca
 	CFont::SetCentreOff();
 }
 
-// A player's bar in the lane, filled to a fraction in their colour.
+// The label colour that reads on a fill: black on a light one, white on a dark
+// one.  The player colours are all pastels, and white on them does not read.
+CRGBA
+InkFor(const CRGBA &fill)
+{
+	const int luma = (fill.r*299 + fill.g*587 + fill.b*114)/1000;
+	return luma >= 128 ? CRGBA(0, 0, 0, 255) : CRGBA(255, 255, 255, 255);
+}
+
+// A player's name over their lane, in their colour.  The colour alone is a
+// code nobody has been given the key to.
 void
-DrawLaneBar(int player, float fill)
+DrawLaneTag(int player, const char *text)
+{
+	float cx, cy;
+	LaneSlot(player, cx, cy);
+	PrintCentred(cx, cy - SCREEN_SCALE_Y(33.0f), text, kCoopColours[player], 0.55f, 0.85f);
+}
+
+// A player's bar in the lane, in their colour, filled to a fraction.  It is
+// cut into one cell for each thing being counted -- a round to win, a point,
+// a lap -- with a gap between them, so that a bar that is half full reads as
+// one of two and not as half of something; and over it, the player's name.
+void
+DrawLaneBar(int player, float fill, int cells)
 {
 	float cx, cy;
 	LaneSlot(player, cx, cy);
 	const float hw = SCREEN_SCALE_X(30.0f);
 	const float hh = SCREEN_SCALE_Y(10.0f);
+	const float gap = 2.0f;
 	CSprite2d::DrawRect(CRect(cx - hw - 2.0f, cy - hh - 2.0f, cx + hw + 2.0f, cy + hh + 2.0f), CRGBA(0, 0, 0, 255));
-	fill = Clamp(fill, 0.0f, 1.0f);
-	if(fill > 0.0f)
-		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx - hw + 2.0f*hw*fill, cy + hh), kCoopColours[player]);
+	fill = Clamp(fill, 0.0f, 1.0f)*(float)cells;
+	for(int cell = 0; cell < cells; cell++){
+		const float left = cx - hw + 2.0f*hw*(float)cell/(float)cells + (cell > 0 ? gap*0.5f : 0.0f);
+		const float right = cx - hw + 2.0f*hw*(float)(cell + 1)/(float)cells - (cell < cells - 1 ? gap*0.5f : 0.0f);
+		CSprite2d::DrawRect(CRect(left, cy - hh, right, cy + hh), CRGBA(70, 70, 70, 255));
+		const float part = Clamp(fill - (float)cell, 0.0f, 1.0f);
+		if(part > 0.0f)
+			CSprite2d::DrawRect(CRect(left, cy - hh, left + (right - left)*part, cy + hh), kCoopColours[player]);
+	}
+	char name[8];
+	sprintf(name, "P%d", player + 1);
+	DrawLaneTag(player, name);
 }
 
 // The mode's headline, near the top and out of the way of the help box and
@@ -2484,6 +2629,116 @@ DrawWinner(int winner)
 	DrawStatus(line, kCoopColours[winner]);
 }
 
+// The first-arming explainer: one line under the headline and the countdown,
+// on a dim band so it reads over sky and sea alike, for as long as the mode it
+// is for is still on.  Each is written from the rules in this file -- what
+// scores, what drops a player out, what ends it -- and has to be short enough
+// to read in kExplainMs.  It scales itself down to fit the screen if it must.
+void
+DrawExplainer(uint32 now)
+{
+	static const char *const kLines[EXPLAIN_COUNT] = {
+		"CHASE THE RADAR BLIP. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
+		"STOP AT EACH DROP MARKER TO UNLOAD. 3 DROPS. LEAVE THE BOAT TO QUIT",
+		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
+		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS",
+		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS",
+		"GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3"
+	};
+
+	if(s_explain.until == 0 || now >= s_explain.until)
+		return;
+	bool live;
+	switch(s_explain.showing){
+	case EXPLAIN_SHIFT: live = s_shift.active; break;
+	case EXPLAIN_RUN: live = s_run.active; break;
+	case EXPLAIN_DERBY: live = s_derby.active; break;
+	case EXPLAIN_RC: live = s_rc.active; break;
+	case EXPLAIN_DANCE: live = s_dance.active; break;
+	default: live = s_cnr.active; break;
+	}
+	if(!live)
+		return;
+
+	wchar text[96];
+	AsciiToUnicode(kLines[s_explain.showing], text);
+	CFont::SetPropOn();
+	CFont::SetBackgroundOff();
+	CFont::SetJustifyOff();
+	CFont::SetFontStyle(FONT_STANDARD);
+	float scaleX = SCREEN_SCALE_X(0.4f);
+	const float scaleY = SCREEN_SCALE_Y(0.82f);
+	CFont::SetScale(scaleX, scaleY);
+	float width = CFont::GetStringWidth(text, true);
+	const float room = SCREEN_WIDTH - SCREEN_SCALE_X(40.0f);
+	if(width > room){
+		scaleX *= room/width;
+		width = room;
+		CFont::SetScale(scaleX, scaleY);
+	}
+
+	const float x = SCREEN_WIDTH*0.5f;
+	// Below the countdown's digits (y = 65..106) and the wanted stars at the
+	// top right (to y = 107).
+	const float y = SCREEN_SCALE_Y(124.0f);
+	const float pad = SCREEN_SCALE_X(8.0f);
+	CSprite2d::DrawRect(CRect(x - width*0.5f - pad, y - 3.0f, x + width*0.5f + pad, y + 20.0f*scaleY + 3.0f), CRGBA(0, 0, 0, 150));
+	CFont::SetCentreOn();
+	CFont::SetCentreSize(room);
+	CFont::SetDropShadowPosition(1);
+	CFont::SetDropColor(CRGBA(0, 0, 0, 255));
+	CFont::SetColor(CRGBA(255, 255, 255, 255));
+	CFont::PrintString(x, y, text);
+	CFont::SetCentreOff();
+}
+
+// The cop shift's marks: the streak and the seconds the open case has left,
+// and for a moment after a case closes or the shift stands down, what it came
+// to.  The result sits in the countdown's place, under the headline.
+void
+DrawShiftMarks(uint32 now)
+{
+	if(s_shift.active){
+		char line[32];
+		if(s_shift.streak > 0)
+			sprintf(line, "COP SHIFT x%u", (unsigned)s_shift.streak);
+		else
+			sprintf(line, "COP SHIFT");
+		bool late = false;
+		if(s_shift.caseActive){
+			const uint32 age = now - s_shift.caseStartAt;
+			const uint32 left = age < kCaseTimeoutMs ? (kCaseTimeoutMs - age + 999)/1000 : 0;
+			sprintf(line + strlen(line), "  %us", (unsigned)left);
+			late = left <= 15;
+		}
+		DrawStatus(line, late ? CRGBA(255, 200, 90, 255) : CRGBA(255, 255, 255, 255));
+	}
+
+	if(s_shift.resultAt == 0 || now - s_shift.resultAt >= kShiftResultMs)
+		return;
+	char result[24];
+	CRGBA colour(255, 255, 255, 255);
+	switch(s_shift.resultKind){
+	case SHIFT_RESULT_CAUGHT:
+		sprintf(result, "CAUGHT  $%u", (unsigned)s_shift.resultPay);
+		colour = CRGBA(120, 255, 130, 255);
+		break;
+	case SHIFT_RESULT_AWAY:
+		sprintf(result, "GOT AWAY");
+		colour = CRGBA(255, 200, 90, 255);
+		break;
+	case SHIFT_RESULT_SIREN:
+		sprintf(result, "SIREN OFF");
+		break;
+	case SHIFT_RESULT_STOOD_DOWN:
+		sprintf(result, "OFF DUTY");
+		break;
+	default:
+		return;
+	}
+	PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), result, colour, 1.0f, 1.5f);
+}
+
 // Everything a mode shows on screen that is not a chip: the headline, the
 // countdown and the bars.  A mode that has ended keeps its marks for the
 // moment it lingers, so the result is on screen and not just in the log.
@@ -2492,6 +2747,9 @@ DrawModeMarks(uint32 now)
 {
 	char line[32];
 	const CRGBA white(255, 255, 255, 255);
+
+	// The cop shift: the streak, the case's clock, and what the last case came to.
+	DrawShiftMarks(now);
 
 	// The smuggling run: which drop, and when the boat is unloading.
 	if(s_run.active){
@@ -2503,12 +2761,14 @@ DrawModeMarks(uint32 now)
 	}
 
 	// The derby: the round and the bell, then how many cars are still running;
-	// a bar per player for the rounds they have won.
+	// a bar per player, a cell for each round they have won.
 	if(s_derby.active){
 		if(s_derby.finished){
 			DrawWinner(s_derby.matchWinner);
 		}else if(s_derby.counting){
-			sprintf(line, "ROUND %d", s_derby.round + 1);
+			// The fire button is off for everyone for the whole match.  The
+			// explainer says so once; this says so every time.
+			sprintf(line, "ROUND %d  RAMMING ONLY", s_derby.round + 1);
 			DrawStatus(line, white);
 			DrawCountdown(now, s_derby.countdownAt);
 		}else{
@@ -2522,11 +2782,11 @@ DrawModeMarks(uint32 now)
 		}
 		for(int i = 0; i < NUMPLAYERS; i++)
 			if(CCoop::GetPlayerPed(i) != nil)
-				DrawLaneBar(i, (float)s_derby.roundWins[i]/(float)kDerbyWinsNeeded);
+				DrawLaneBar(i, (float)s_derby.roundWins[i]/(float)kDerbyWinsNeeded, kDerbyWinsNeeded);
 	}
 
-	// The race: the lights, then a bar per racer for how far round they are
-	// and which lap they are on.
+	// The race: the lights, then a bar per racer for how far round they are,
+	// a cell to a lap, and which lap they are on.
 	if(s_rc.active){
 		if(s_rc.finished)
 			DrawWinner(s_rc.winner);
@@ -2540,7 +2800,7 @@ DrawModeMarks(uint32 now)
 		for(int i = 0; i < NUMPLAYERS; i++){
 			if(s_rc.nextGate[i] < 0)
 				continue;
-			DrawLaneBar(i, (float)(s_rc.lap[i]*kRcGates + s_rc.nextGate[i])/(float)(kRcLaps*kRcGates));
+			DrawLaneBar(i, (float)(s_rc.lap[i]*kRcGates + s_rc.nextGate[i])/(float)(kRcLaps*kRcGates), kRcLaps);
 			float cx, cy;
 			LaneSlot(i, cx, cy);
 			sprintf(line, "LAP %d/%d", Min(s_rc.lap[i] + 1, kRcLaps), kRcLaps);
@@ -2548,8 +2808,8 @@ DrawModeMarks(uint32 now)
 		}
 	}
 
-	// The dance-off: the time left, then each dancer's hits above their slot;
-	// the chips themselves are drawn by DrawHud.
+	// The dance-off: the time left, then each dancer's name and hits above their
+	// slot; the chips themselves are drawn by DrawHud.
 	if(s_dance.active){
 		if(s_dance.finished){
 			DrawWinner(s_dance.winner);
@@ -2561,17 +2821,19 @@ DrawModeMarks(uint32 now)
 		for(int i = 0; i < NUMPLAYERS; i++){
 			if(CCoop::GetPlayerPed(i) == nil)
 				continue;
-			float cx, cy;
-			LaneSlot(i, cx, cy);
-			sprintf(line, "%d", s_dance.score[i]);
-			PrintCentred(cx, cy - SCREEN_SCALE_Y(34.0f), line, kCoopColours[i], 0.6f, 0.9f);
+			sprintf(line, "P%d  %d", i + 1, s_dance.score[i]);
+			DrawLaneTag(i, line);
 		}
 	}
 
-	// Cops & robbers: who has the case, and each score as a bar, three to win.
+	// Cops & robbers: who has the case, and each score as a bar of three cells,
+	// three to win.  A bust is the headline for a moment: who busted whom.
 	if(s_cnr.active){
 		if(s_cnr.finished){
 			DrawWinner(s_cnr.winner);
+		}else if(s_cnr.noteAt != 0 && now - s_cnr.noteAt < kCnRNoteMs){
+			sprintf(line, "P%d BUSTED P%d", s_cnr.noteBuster + 1, s_cnr.noteBusted + 1);
+			DrawStatus(line, kCoopColours[s_cnr.noteBuster]);
 		}else if(s_cnr.carried && s_cnr.carrier >= 0){
 			sprintf(line, "P%d HAS THE CASE", s_cnr.carrier + 1);
 			DrawStatus(line, kCoopColours[s_cnr.carrier]);
@@ -2580,8 +2842,11 @@ DrawModeMarks(uint32 now)
 		}
 		for(int i = 0; i < NUMPLAYERS; i++)
 			if(CCoop::GetPlayerPed(i) != nil)
-				DrawLaneBar(i, (float)s_cnr.score[i]/(float)kCnRWinScore);
+				DrawLaneBar(i, (float)s_cnr.score[i]/(float)kCnRWinScore, kCnRWinScore);
 	}
+
+	// And, the first time the mode armed this session, how it is played.
+	DrawExplainer(now);
 }
 
 } // namespace
@@ -2631,12 +2896,24 @@ CCoopModes::Init(void)
 	s_cnr.winner = -1;
 	s_cnr.caseBlip = -1;
 	s_cnr.getawayBlip = -1;
+	s_cnr.lockPlayer = -1;
+	s_cnr.noteBuster = -1;
+	s_cnr.noteBusted = -1;
+
+	memset(&s_explain, 0, sizeof(s_explain));
 }
 
 void
 CCoopModes::Update(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	// The explainers are for the first time a mode arms in a session.  The
+	// session is what every mode below asks CCoop::PairActive about, and it is
+	// over for a mission, a cutscene, player 1 down, or the party gone: the
+	// next arming is a new session's, and is told again.
+	if(!CCoop::PairActive())
+		memset(&s_explain, 0, sizeof(s_explain));
 
 	// The modes are independent; all ride the same session state.
 	UpdateRun(now);
@@ -2657,14 +2934,14 @@ CCoopModes::Update(void)
 	}
 
 	if(!CCoop::PairActive()){
-		EndShift(now, "session");
+		EndShift(now, "session", SHIFT_RESULT_NONE);
 		return;
 	}
 
 	// The siren is the switch.  The crew sitting in a law car with it off --
 	// case or no case -- is the party standing down.
 	if(FindCrewedLawCar(false) != nil && FindCrewedLawCar(true) == nil){
-		EndShift(now, "siren off");
+		EndShift(now, "siren off", SHIFT_RESULT_SIREN);
 		return;
 	}
 
@@ -2677,7 +2954,7 @@ CCoopModes::Update(void)
 	// MINIGAMES off the open case was played out above and the shift is over,
 	// rather than raising suspects for as long as the siren stays on.
 	if(!CoopMinigames){
-		EndShift(now, "switched off");
+		EndShift(now, "switched off", SHIFT_RESULT_STOOD_DOWN);
 		return;
 	}
 
@@ -2688,7 +2965,7 @@ CCoopModes::Update(void)
 		if(s_shift.crewLostAt == 0)
 			s_shift.crewLostAt = now;
 		else if(now - s_shift.crewLostAt >= 5000)
-			EndShift(now, "no crew");
+			EndShift(now, "no crew", SHIFT_RESULT_STOOD_DOWN);
 		return;
 	}
 	s_shift.crewLostAt = 0;
@@ -2754,7 +3031,8 @@ CCoopModes::DrawHud(void)
 	if(!s_dance.active || s_dance.finished)
 		return;
 
-	static const char *promptNames[DANCE_PROMPTS] = { "JUMP", "DUCK", "2" };
+	// What each prompt is called; the chip itself holds the button.
+	static const char *const actionNames[DANCE_PROMPTS] = { "JUMP", "DUCK", "NOD" };
 
 	for(int i = 0; i < NUMPLAYERS; i++){
 		const bool missed = now - s_dance.missFlash[i] < 250;
@@ -2767,16 +3045,19 @@ CCoopModes::DrawHud(void)
 		// The player's own controller's button, when the label helper can name
 		// it: jump is X, Y and 1 across the GameCube pad, the Classic and the
 		// remote; duck R, ZL and D-pad down; the nod Y, X and 2.  A player the
-		// helper cannot name keeps the action word.
+		// helper cannot name keeps the action word.  When it can, the action
+		// word goes under the chip, so a player is told what to do as well as
+		// which button does it.
 		wchar text[16];
 		float hw = SCREEN_SCALE_X(30.0f);
+		const char *named = nil;
 		if(s_dance.prompt[i] >= 0){
-			const char *label = promptNames[s_dance.prompt[i]];
+			const char *label = actionNames[s_dance.prompt[i]];
 #ifdef NINTENDO_WII
 			const WiiPadPrompt button = s_dance.prompt[i] == DANCE_JUMP ? WII_PROMPT_JUMP :
 			                            s_dance.prompt[i] == DANCE_DUCK ? WII_PROMPT_DUCK :
 			                            WII_PROMPT_NOD;
-			const char *named = WiiPadPromptButton(i, button);
+			named = WiiPadPromptButton(i, button);
 			if(named != nil)
 				label = named;
 #endif
@@ -2808,10 +3089,24 @@ CCoopModes::DrawHud(void)
 			fill = CRGBA(255, 255, 255, 255);
 		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx + hw, cy + hh), fill);
 
-		CFont::SetDropShadowPosition(1);
-		CFont::SetDropColor(CRGBA(0, 0, 0, 255));
-		CFont::SetColor(CRGBA(255, 255, 255, 255));
-		CFont::PrintString(cx, cy - SCREEN_SCALE_Y(4.0f), text);
+		// Dark on the light fill, no shadow: the player colours are pastels, and
+		// a white label on them is about 1.4 to 2.5 to 1.  The label sits with
+		// the middle of its capitals on the middle of the chip.
+		CFont::SetDropShadowPosition(0);
+		CFont::SetColor(InkFor(fill));
+		CFont::PrintString(cx, cy - SCREEN_SCALE_Y(10.0f), text);
 		CFont::SetCentreOff();
+		CFont::SetDropShadowPosition(1);
+
+		// The action under the chip, in the player's colour, with the run of hits
+		// they are on once it is more than a couple.
+		if(named != nil){
+			char caption[24];
+			if(s_dance.combo[i] >= 3)
+				sprintf(caption, "%s x%d", actionNames[s_dance.prompt[i]], s_dance.combo[i]);
+			else
+				sprintf(caption, "%s", actionNames[s_dance.prompt[i]]);
+			PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), caption, kCoopColours[i], 0.45f, 0.7f);
+		}
 	}
 }

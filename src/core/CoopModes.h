@@ -54,13 +54,13 @@ class CVehicle;
 // a toy is a normal-sized ped through its roof.
 //
 // The fifth is the dance-off.  The party on foot in a knot and every one of
-// them ducking together: sixty seconds on a spot, a beat that climbs from 700
-// milliseconds to 420, and a prompt each -- jump, duck or the nod (not the
-// nod for a dancer with a car in reach: it would get them in), each
+// them ducking together: sixty seconds on a spot, a beat that climbs from a
+// second to 650 milliseconds, and a prompt each -- jump, duck or the nod (not
+// the nod for a dancer with a car in reach: it would get them in), each
 // printed as the player's own controller's button, in their colour at the
-// bottom of the screen.  Hit the prompt
-// before the next beat or the combo drops.  Every hit pays and the best score
-// takes the pot.  The prompts are real actions, so the dancing is the party's
+// bottom of the screen, with the action under it.  Hit the prompt before the
+// next beat or the run of hits shown under the chip starts again.  Every hit
+// pays and the best score takes the pot.  The prompts are real actions, so the dancing is the party's
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
 //
@@ -69,7 +69,8 @@ class CVehicle;
 // the enter-vehicle button and that press is somebody getting in: a case
 // appears at their feet and a getaway marker a short run away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
-// them -- the case falls where it fell, and anyone can take it.  First to
+// them -- the case falls where it fell, anyone but the busted player can take
+// it for the next two seconds, and the screen says who busted whom.  First to
 // three takes the pot.  The party's wall and leash stand aside for it: a
 // pursuit nobody can outrun is not a pursuit.
 class CCoopModes
@@ -103,8 +104,10 @@ public:
 	static bool IsModeVehicle(const CVehicle *vehicle);
 
 	// The minigames' screen marks, called by the HUD with the other co-op
-	// ones: the headline and countdown at the top, the bars along the bottom
-	// (derby rounds won, race progress, cops & robbers scores, dance hits),
-	// and the dance prompts, while a mode is on and for the moment after.
+	// ones: the headline and countdown at the top (the cop shift's streak and
+	// what its last case came to among them), the bars along the bottom, a
+	// cell to a round, a point or a lap, each with its player's name over it, the
+	// dance prompts, and the first time a mode arms in a session a line
+	// saying how it is played -- while a mode is on and for the moment after.
 	static void DrawHud(void);
 };
