@@ -31,6 +31,45 @@ enum NativeFlags {
 	NATIVE_TEXCOORDS  = 1 << 4
 };
 
+// Some of Vice City's own models ship with garbage in vertices: NaN or +-1e30
+// texture coordinates on about forty of them (the Mesa, Rancher, Boxville,
+// Deluxo and FBI Ranch, the stadium stands, the island LOD, the flags at the
+// golf club) and normals around 1e34 on three (Faggio, Pizza Boy, Mesa).  A scan
+// of all 4621 DFFs in gta3.img found nothing else wrong -- no position anywhere
+// is bad -- so these two are all that is mended.  A triangle with a coordinate
+// that is not finite leaves the GPU interpolating garbage across it, and a huge
+// normal saturates the lighting.  A bad coordinate becomes 0 and a bad normal
+// points up, once, when the model is instanced.
+static bool32
+saneComponent(float32 value)
+{
+	// Written so that a NaN fails: every comparison with one is false.
+	return value > -1.0e6f && value < 1.0e6f;
+}
+
+static void
+mendVertexStreams(InstanceDataHeader *header)
+{
+	for(uint32 i = 0; i < header->numVertices; i++){
+		if(header->hasNormals){
+			V3d *normal = &header->normals[i];
+			if(!saneComponent(normal->x) || !saneComponent(normal->y) ||
+			   !saneComponent(normal->z)){
+				normal->x = 0.0f;
+				normal->y = 0.0f;
+				normal->z = 1.0f;
+			}
+		}
+		if(header->hasTexCoords){
+			TexCoords *uv = &header->texCoords[i];
+			if(!saneComponent(uv->u))
+				uv->u = 0.0f;
+			if(!saneComponent(uv->v))
+				uv->v = 0.0f;
+		}
+	}
+}
+
 static uintptr
 alignArray(uintptr address)
 {
@@ -248,6 +287,7 @@ instanceGeometry(Geometry *geometry)
 		return nil;
 	}
 
+	mendVertexStreams(header);
 	geometry->instData = header;
 #ifdef RW_GX
 	prepareNativeGeometryForRender(header);
@@ -346,6 +386,7 @@ readNativeData(Stream *stream, int32, void *object, int32, int32)
 		return nil;
 	}
 
+	mendVertexStreams(header);
 	geometry->instData = header;
 #ifdef RW_GX
 	prepareNativeGeometryForRender(header);
