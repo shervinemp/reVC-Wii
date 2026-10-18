@@ -5,6 +5,7 @@
 #include "Bike.h"
 #include "Boat.h"
 #include "CarCtrl.h"
+#include "CoopModes.h"
 #ifdef MISSION_REPLAY
 #include "GenericGameStorage.h"
 #endif
@@ -251,7 +252,9 @@ INITSAVEBUF
 	int nPoolSize = GetVehiclePool()->GetSize();
 	for (int i = 0; i < nPoolSize; i++) {
 		CVehicle* pVehicle = GetVehiclePool()->GetSlot(i);
-		if (!pVehicle)
+		// Couch co-op's minigames' own vehicles are not part of the game being saved
+		// (see CCoopModes::IsModeVehicle), here and in the write loop below.
+		if (!pVehicle || CCoopModes::IsModeVehicle(pVehicle))
 			continue;
 		bool bHasPassenger = false;
 		for (int j = 0; j < ARRAY_SIZE(pVehicle->pPassengers); j++) {
@@ -290,7 +293,7 @@ INITSAVEBUF
 	WriteSaveBuf(buf, nNumBikes);
 	for (int i = 0; i < nPoolSize; i++) {
 		CVehicle* pVehicle = GetVehiclePool()->GetSlot(i);
-		if (!pVehicle)
+		if (!pVehicle || CCoopModes::IsModeVehicle(pVehicle))
 			continue;
 		bool bHasPassenger = false;
 		for (int j = 0; j < ARRAY_SIZE(pVehicle->pPassengers); j++) {

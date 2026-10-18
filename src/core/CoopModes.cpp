@@ -59,7 +59,12 @@ const uint32 kRetargetMs = 5000;	// routine re-flee interval
 const float kCloseRange = 70.0f;	// crew this close re-routes the suspect
 const uint32 kCloseRetargetMs = 2500;
 const float kStopRange = 12.0f;		// "cornered" needs a player this close
-const float kStopSpeed = 0.6f;
+// The speeds in this file are game speeds, not metres per second:
+// GetMoveSpeed() is in world units per game step and 1.0 is 50 m/s (see
+// CarCtrl.h), so they are written as a number of metres per second times
+// METERS_PER_SECOND_TO_GAME_SPEED.  A suspect at cruise is about 0.42; "held
+// still" is a few metres per second at the most.
+const float kStopSpeed = 2.0f * METERS_PER_SECOND_TO_GAME_SPEED;
 const uint32 kStopHoldMs = 2000;
 const uint32 kCleanupDelayMs = 4000;	// how long a resolved case lingers
 const float kGunfireRange = 60.0f;	// on duty: gunfire this near the case
@@ -72,7 +77,10 @@ const int kDrops = 3;
 const float kLegDistance = 320.0f;	// water between drops
 const float kDropSearch = 300.0f;	// how far a leg may look for water
 const float kDropRadius = 35.0f;	// in the ring...
-const float kDropSpeed = 4.0f;		// ...and this slow to unload
+const float kDropSpeed = 3.0f * METERS_PER_SECOND_TO_GAME_SPEED;	// ...and this slow (3 m/s) to unload
+// Three drops that planned out within this much of the boat, or of each other,
+// would pay out where the boat already is: a drop that near is not a drop.
+const float kMinDropSeparation = 150.0f;
 const uint32 kUnloadMs = 2000;
 const float kPursuerDistance = 130.0f;	// heat spawns this far out
 const uint32 kPursuerRetargetMs = 3000;
@@ -129,7 +137,9 @@ RunState s_run;
 // --- the Bloodring derby's numbers -------------------------------------------
 
 const float kDerbyGatherRange = 12.0f;	// parked this close to arm it
+const float kDerbyParkedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;	// "parked": 1.5 m/s or less
 const float kDerbyRadius = 14.0f;	// the ring itself
+const int kDerbyRingMarks = 10;		// coronas round it
 const float kDerbyJoinRange = 24.0f;	// cars this close to the middle at the bell are in
 const uint32 kDerbyCountdownMs = 3000;
 const uint32 kDerbyOutGraceMs = 3000;	// outside the ring this long = out
@@ -150,6 +160,7 @@ struct DerbyState
 	uint32 finishAt;
 	uint32 rearmAt;
 	CVector centre;
+	CVector ring[kDerbyRingMarks];
 	int round;
 	uint32 roundStartAt;
 	int roundWins[NUMPLAYERS];
@@ -168,6 +179,8 @@ const int kRcLaps = 3;
 const float kRcRadius = 16.0f;		// the gate ring
 const float kRcGateRange = 7.0f;
 const float kRcGatherRange = 12.0f;	// the knot that arms it
+const float kRcSeatedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;	// "still": 1.5 m/s or less
+const uint32 kRcFootGraceMs = 5000;	// a racer on foot waits this long for a toy before it is brought
 const uint32 kRcGridHoldMs = 2000;	// seated and still this long...
 const uint32 kRcCountdownMs = 3000;	// ...then the lights
 const uint32 kRcJumpWindowMs = 1500;	// two or more jump together to arm it
@@ -195,6 +208,7 @@ struct RcState
 	int nextGate[NUMPLAYERS];
 	int lap[NUMPLAYERS];
 	uint32 lastJump[NUMPLAYERS];
+	uint32 footSince[NUMPLAYERS];
 	int winner;
 	CVehicle *car[NUMPLAYERS];
 };
@@ -242,6 +256,7 @@ struct DanceState
 	uint32 missFlash[NUMPLAYERS];
 	int score[NUMPLAYERS];
 	int combo[NUMPLAYERS];
+	int winner;
 	bool triangleHeld[NUMPLAYERS];
 };
 DanceState s_dance;
@@ -321,6 +336,49 @@ CountPlayersIn(CVehicle *vehicle)
 			count++;
 	}
 	return count;
+}
+
+// Whether a player is in the vehicle or on the way into it.  Deleting a
+// vehicle takes its occupants with it -- ~CVehicle flags them to be destroyed --
+// so a mode that means to delete one asks this first.
+bool
+PlayerUsingVehicle(CVehicle *vehicle)
+{
+	if(CountPlayersIn(vehicle) > 0)
+		return true;
+	for(int player = 0; player < NUMPLAYERS; player++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped != nil && ped->m_carInObjective == vehicle &&
+		   (ped->m_nPedState == PED_SEEK_CAR || ped->m_nPedState == PED_ENTER_CAR || ped->m_nPedState == PED_CARJACK))
+			return true;
+	}
+	return false;
+}
+
+// Whether the nod would put this player into a vehicle.  On foot the nod is
+// the enter-vehicle button: CPlayerInfo::Process (and CCoop for a partner)
+// takes the nearest car within ten metres on the flat that is neither wrecked
+// nor on its roof.  This is that reach, a metre generous.  A press with a car
+// in reach is somebody getting in, not somebody starting a game.
+bool
+VehicleInReach(CPlayerPed *ped)
+{
+	const CVector pos = ped->GetPosition();
+	for(int i = CPools::GetVehiclePool()->GetSize() - 1; i >= 0; i--){
+		CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
+		if(vehicle == nil || !vehicle->bUsesCollision)
+			continue;
+		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->GetStatus() == STATUS_TRAIN_MOVING)
+			continue;
+		if(vehicle->GetUp().z <= 0.3f && !vehicle->IsBike())
+			continue;
+		const CVector centre = vehicle->GetBoundCentre();
+		if(Abs(centre.z - pos.z) > 4.0f)
+			continue;
+		if((centre - pos).Magnitude2D() <= 11.0f)
+			return true;
+	}
+	return false;
 }
 
 // A law car the party is riding in -- two or more players, a player driving.
@@ -525,7 +583,10 @@ SpawnSuspect(uint32 now)
 }
 
 // The ped and the car go away together: RemoveThisPed handles the seat and
-// the mission-ped count, and the car takes the DELETE_CAR door.
+// the mission-ped count, and the car takes the DELETE_CAR door.  A car a player
+// has climbed into during the cleanup delay -- the takedown leaves it standing
+// there for them -- is theirs instead and goes back to the world like an
+// escaped one: deleting it would delete them.
 void
 RemoveSuspect(void)
 {
@@ -539,6 +600,10 @@ RemoveSuspect(void)
 	if(car != nil){
 		car->CleanUpOldReference((CEntity**)&s_shift.suspectCar);
 		s_shift.suspectCar = nil;
+		if(PlayerUsingVehicle(car)){
+			CTheScripts::CleanUpThisVehicle(car);
+			return;
+		}
 		CWorld::Remove(car);
 		CWorld::RemoveReferencesToDeletedObject(car);
 		delete car;
@@ -722,8 +787,7 @@ TryStartShift(uint32 now)
 	s_shift.crewLostAt = 0;
 	s_shift.nextCaseAt = now + kShiftStartDelayMs;
 	COOP_LOG("WII coop: cop shift on\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSH"), true);
+	CCoop::Notify("WII_CSH");
 }
 
 // --- the smuggling run -------------------------------------------------------
@@ -773,6 +837,8 @@ FindCrewBoat(int minPlayers)
 // The drop marker: a radar blip in the game's target red, and a corona over
 // the water so the ring is visible from the boat.  The corona is registered
 // every frame while a drop is live and fades on its own once it stops being.
+// SetCoordBlip takes a colour and ignores it -- every blip it makes is magenta
+// -- so the colour is set after.
 void
 ClearDropMarker(void)
 {
@@ -786,6 +852,7 @@ void
 PlaceDropMarker(void)
 {
 	s_run.blip = CRadar::SetCoordBlip(BLIP_COORD, s_run.drop, RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+	CRadar::ChangeBlipColour(s_run.blip, RADAR_TRACE_RED);
 }
 
 void
@@ -799,11 +866,16 @@ RegisterDropCorona(void)
 }
 
 // Three drops, each a leg on from the last and turning from the boat's own
-// heading, each on water: the run follows the coast wherever it starts.
+// heading, each on water: the run follows the coast wherever it starts.  The
+// nearest water node to a point three hundred metres out can be a node right
+// beside where the leg started -- a narrow channel, a dock -- so a drop that
+// lands within kMinDropSeparation of the boat or of an earlier drop is not
+// taken, and another heading is tried.
 bool
 PlanRoute(CVehicle *boat)
 {
-	CVector prev = boat->GetPosition();
+	const CVector start = boat->GetPosition();
+	CVector prev = start;
 	CVector dir = boat->GetForward();
 	dir.z = 0.0f;
 	if(dir.Magnitude() < 0.1f)
@@ -817,7 +889,12 @@ PlanRoute(CVehicle *boat)
 			const float c = Cos(turn);
 			const float s = Sin(turn);
 			const CVector ndir(dir.x * c - dir.y * s, dir.x * s + dir.y * c, 0.0f);
-			if(FindWaterNodeNear(prev + ndir * kLegDistance, kDropSearch, s_run.dropPos[leg])){
+			if(!FindWaterNodeNear(prev + ndir * kLegDistance, kDropSearch, s_run.dropPos[leg]))
+				continue;
+			bool tooClose = (s_run.dropPos[leg] - start).Magnitude2D() < kMinDropSeparation;
+			for(int earlier = 0; earlier < leg && !tooClose; earlier++)
+				tooClose = (s_run.dropPos[leg] - s_run.dropPos[earlier]).Magnitude2D() < kMinDropSeparation;
+			if(!tooClose){
 				dir = ndir;
 				found = true;
 			}
@@ -850,9 +927,11 @@ ReleasePursuers(void)
 	}
 }
 
-// Chase the smuggling boat: the same drive-to-coords call the scripts use for
-// any vehicle, on a water node beside the boat, re-aimed on a clock.  The
-// path search is handed the vehicle, so a boat's route stays on water.
+// Chase the smuggling boat: COMMAND_BOAT_GOTO_COORDS' recipe, on a water node
+// beside the boat, re-aimed on a clock.  Not the car recipe: the road-system
+// call searches the car network without ever looking at the vehicle it was
+// given, so it would route a boat along roads; the boat mission steers
+// straight at the destination, over water.
 void
 DrivePursuer(int index, uint32 now, CVehicle *boat)
 {
@@ -862,10 +941,8 @@ DrivePursuer(int index, uint32 now, CVehicle *boat)
 	CVector dest;
 	if(!FindWaterNodeNear(boat->GetPosition(), 150.0f, dest))
 		dest = boat->GetPosition();
-	if(CCarCtrl::JoinCarWithRoadSystemGotoCoors(predator, dest, false))
-		predator->AutoPilot.m_nCarMission = MISSION_GOTOCOORDS_STRAIGHT;
-	else
-		predator->AutoPilot.m_nCarMission = MISSION_GOTOCOORDS;
+	predator->AutoPilot.m_vecDestinationCoors = dest;
+	predator->AutoPilot.m_nCarMission = MISSION_GOTOCOORDS_ASTHECROWSWIMS;
 	predator->SetStatus(STATUS_PHYSICS);
 	predator->bEngineOn = true;
 	predator->AutoPilot.m_nCruiseSpeed = predator->AutoPilot.m_fMaxTrafficSpeed = 25;
@@ -980,8 +1057,7 @@ TryStartRun(uint32 now)
 	s_run.nextRetargetAt = now;
 	PlaceDropMarker();
 	COOP_LOG("WII coop: smuggling run on\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSR"), true);
+	CCoop::Notify("WII_CSR");
 }
 
 void
@@ -1108,18 +1184,34 @@ SuppressFire(CPad *pad)
 	}
 }
 
+// Lets go of a player's loaner: the world takes it back, like the suspect and
+// the Predators.
+void
+ReleaseLoaner(int player)
+{
+	CVehicle *car = s_derby.loaner[player];
+	if(car != nil){
+		CTheScripts::CleanUpThisVehicle(car);
+		car->CleanUpOldReference((CEntity**)&s_derby.loaner[player]);
+		s_derby.loaner[player] = nil;
+	}
+}
+
 // A Bloodring Banger beside a player who needs one, parked, locked, ready.
-// Handed back to the world when the derby is over, like the suspect and the
-// Predators.
+// Handed back to the world when the derby is over.  A loaner that was wrecked
+// in an earlier round is let go and replaced: this is only asked of a player
+// with no running car, and a wreck standing there would leave them without.
 void
 SpawnLoaner(int player)
 {
-	if(s_derby.loaner[player] != nil)
-		return;
 	if(!CStreaming::HasModelLoaded(MI_BLOODRA))
 		return;
 	CPlayerPed *ped = CCoop::GetPlayerPed(player);
 	if(ped == nil)
+		return;
+	if(s_derby.loaner[player] != nil && s_derby.loaner[player]->GetStatus() == STATUS_WRECKED)
+		ReleaseLoaner(player);
+	if(s_derby.loaner[player] != nil)
 		return;
 
 	CVector pos = ped->GetPosition() + ped->GetRight()*4.0f;
@@ -1165,6 +1257,16 @@ StartDerby(uint32 now, const CVector &centre)
 	s_derby.finished = false;
 	s_derby.countdownAt = now + kDerbyCountdownMs;
 	s_derby.centre = centre;
+	// The ring, once: where it stands on the ground is a collision query, so
+	// it is worked out here and not every frame it is drawn.
+	for(int i = 0; i < kDerbyRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kDerbyRingMarks;
+		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kDerbyRadius;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
+		mark.z = (found ? ground : centre.z) + 1.0f;
+		s_derby.ring[i] = mark;
+	}
 	s_derby.round = 0;
 	s_derby.roundStartAt = 0;
 	s_derby.matchWinner = -1;
@@ -1176,8 +1278,7 @@ StartDerby(uint32 now, const CVector &centre)
 	}
 	CStreaming::RequestModel(MI_BLOODRA, 0);
 	COOP_LOG("WII coop: derby on\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSD"), true);
+	CCoop::Notify("WII_CSD");
 }
 
 // Whoever has the most rounds takes the match, if anyone has any.
@@ -1236,14 +1337,8 @@ StartDerbyRound(uint32 now)
 void
 EndDerby(uint32 now, const char *why)
 {
-	for(int i = 0; i < NUMPLAYERS; i++){
-		CVehicle *car = s_derby.loaner[i];
-		if(car != nil){
-			CTheScripts::CleanUpThisVehicle(car);
-			car->CleanUpOldReference((CEntity**)&s_derby.loaner[i]);
-			s_derby.loaner[i] = nil;
-		}
-	}
+	for(int i = 0; i < NUMPLAYERS; i++)
+		ReleaseLoaner(i);
 	s_derby.active = false;
 	s_derby.counting = false;
 	s_derby.finished = false;
@@ -1279,7 +1374,7 @@ TryStartDerby(uint32 now)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(car[i] == nil)
 			continue;
-		if(car[i]->GetMoveSpeed().Magnitude() > 0.6f ||
+		if(car[i]->GetMoveSpeed().Magnitude() > kDerbyParkedSpeed ||
 		   (car[i]->GetPosition() - centre).Magnitude2D() > kDerbyGatherRange)
 			return;
 	}
@@ -1294,6 +1389,20 @@ TryStartDerby(uint32 now)
 			return;
 		}
 	}
+}
+
+// The ring itself: a circle of red coronas on the ground round the middle,
+// registered every frame it stands, from the countdown to the last bell.  It
+// is the edge the round is judged by -- three seconds outside it and a player
+// is out -- so it has to be seen.
+void
+RegisterDerbyCoronas(void)
+{
+	for(int i = 0; i < kDerbyRingMarks; i++)
+		CCoronas::RegisterCorona((uintptr)&s_derby + i, 255, 60, 40, 255,
+			s_derby.ring[i], 3.0f, 150.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 }
 
 void
@@ -1312,6 +1421,7 @@ UpdateDerby(uint32 now)
 			EndDerby(now, "over");
 		return;
 	}
+	RegisterDerbyCoronas();
 
 	// Ramming only, for everyone, for the whole match.
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -1539,11 +1649,11 @@ StartRc(uint32 now, const CVector &centre, const CVector &forward)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_rc.nextGate[i] = -1;
 		s_rc.lap[i] = 0;
+		s_rc.footSince[i] = 0;
 	}
 	CStreaming::RequestModel(MI_RCBANDIT, 0);
 	COOP_LOG("WII coop: rc race armed\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSC"), true);
+	CCoop::Notify("WII_CSC");
 }
 
 void
@@ -1653,7 +1763,7 @@ UpdateRc(uint32 now)
 			CVehicle *car;
 			if(PlayerInRcCar(i, &car)){
 				seated++;
-				if(car->GetMoveSpeed().Magnitude() > 0.6f)
+				if(car->GetMoveSpeed().Magnitude() > kRcSeatedSpeed)
 					moving = true;
 				SuppressRcBody(ped);
 			}
@@ -1710,9 +1820,27 @@ UpdateRc(uint32 now)
 		if(car != nil && car->GetStatus() == STATUS_WRECKED)
 			continue;	// the driver gets out first; the replacement waits
 		if(car == nil){
-			RespawnRcCar(i);
+			// On foot.  A toy is put beside the racer once -- at once if theirs
+			// is gone or wrecked, after a few seconds of walking if it is not --
+			// and then they walk into it.  Doing this every frame released the
+			// last toy and raised a new one, dozens a second, until the racer
+			// sat in one.  One on its way into a toy is not asking for another.
+			if(ped->m_nPedState == PED_SEEK_CAR || ped->EnteringCar()){
+				s_rc.footSince[i] = now;
+				continue;
+			}
+			CVehicle *toy = s_rc.car[i];
+			const bool first = s_rc.footSince[i] == 0;
+			if(first)
+				s_rc.footSince[i] = now;
+			const bool gone = toy == nil || toy->GetStatus() == STATUS_WRECKED;
+			if((first && gone) || now - s_rc.footSince[i] >= kRcFootGraceMs){
+				s_rc.footSince[i] = now;
+				RespawnRcCar(i);
+			}
 			continue;
 		}
+		s_rc.footSince[i] = 0;
 		SuppressRcBody(ped);
 		if((car->GetPosition() - s_rc.gate[s_rc.nextGate[i]]).Magnitude2D() < kRcGateRange){
 			s_rc.nextGate[i]++;
@@ -1740,7 +1868,12 @@ DanceBeatInterval(uint32 now)
 {
 	float progress = (float)(now - s_dance.startAt) / (float)kDanceRoundMs;
 	progress = Clamp(progress, 0.0f, 1.0f);
-	return (uint32)(kDanceBeatSlowMs + (kDanceBeatFastMs - kDanceBeatSlowMs)*progress);
+	// In float: the beat gets shorter, so fast minus slow is negative, and as
+	// the unsigned milliseconds the constants are it wraps to four billion --
+	// one beat, then nothing for the rest of the round.
+	const float slow = (float)kDanceBeatSlowMs;
+	const float fast = (float)kDanceBeatFastMs;
+	return (uint32)(slow + (fast - slow)*progress);
 }
 
 // The stage: a ring in the four players' colours, the same colours the
@@ -1789,6 +1922,7 @@ FinishDance(uint32 now)
 			best = i;
 		}
 	}
+	s_dance.winner = best;
 	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceHitPay*totalHits;
 	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
 	if(best >= 0){
@@ -1807,6 +1941,7 @@ StartDance(uint32 now, const CVector &centre)
 	s_dance.startAt = now;
 	s_dance.beatAt = now + kDanceBeatSlowMs;
 	s_dance.centre = centre;
+	s_dance.winner = -1;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_dance.prompt[i] = -1;
 		s_dance.promptHit[i] = false;
@@ -1816,8 +1951,7 @@ StartDance(uint32 now, const CVector &centre)
 		s_dance.combo[i] = 0;
 	}
 	COOP_LOG("WII coop: dance-off on\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSF"), true);
+	CCoop::Notify("WII_CSF");
 }
 
 void
@@ -1901,6 +2035,11 @@ UpdateDance(uint32 now)
 		for(int i = 0; i < NUMPLAYERS; i++)
 			if(onFloor[i]){
 				s_dance.prompt[i] = CGeneral::GetRandomNumberInRange(0, DANCE_PROMPTS);
+				// The nod is also the enter-vehicle button.  A dancer with a car
+				// in reach is given jump or duck instead, or the prompt would
+				// walk them off the floor and into it.
+				if(s_dance.prompt[i] == DANCE_TWO && VehicleInReach(CCoop::GetPlayerPed(i)))
+					s_dance.prompt[i] = CGeneral::GetRandomNumberInRange(0, (int)DANCE_TWO);
 				s_dance.promptHit[i] = false;
 			}
 		s_dance.beatAt = now + DanceBeatInterval(now);
@@ -1952,18 +2091,24 @@ ClearCaseMarker(void)
 	}
 }
 
+// The radar calls take a colour and ignore it (a coordinate blip is always
+// magenta, a character's yellow), so each is set after, or the case and the
+// getaway would look the same.
 void
 ShowLooseCase(void)
 {
 	s_cnr.caseBlip = CRadar::SetCoordBlip(BLIP_COORD, s_cnr.casePos, RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+	CRadar::ChangeBlipColour(s_cnr.caseBlip, RADAR_TRACE_RED);
 }
 
 void
 ShowCarriedCase(void)
 {
 	CPlayerPed *ped = s_cnr.carrier >= 0 ? CCoop::GetPlayerPed(s_cnr.carrier) : nil;
-	if(ped != nil)
-		CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedPool()->GetIndex(ped), RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+	if(ped != nil){
+		const int32 blip = CRadar::SetEntityBlip(BLIP_CHAR, CPools::GetPedPool()->GetIndex(ped), RADAR_TRACE_RED, BLIP_DISPLAY_BOTH);
+		CRadar::ChangeBlipColour(blip, RADAR_TRACE_RED);
+	}
 }
 
 void
@@ -2045,10 +2190,10 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	s_cnr.getaway.z = (found ? ground : centre.z) + 1.0f;
 
 	s_cnr.getawayBlip = CRadar::SetCoordBlip(BLIP_COORD, s_cnr.getaway, RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
+	CRadar::ChangeBlipColour(s_cnr.getawayBlip, RADAR_TRACE_GREEN);
 	ShowLooseCase();
 	COOP_LOG("WII coop: cops & robbers on\n");
-	if(CHud::m_HelpMessage[0] == 0 && CHud::m_HelpMessageState == 0)
-		CHud::SetHelpMessage(TheText.Get("WII_CSN"), true);
+	CCoop::Notify("WII_CSN");
 }
 
 void
@@ -2092,18 +2237,28 @@ void
 UpdateCnR(uint32 now)
 {
 	// The nod's holding edge, tracked every frame so a press during a
-	// match is not read as one right after it.
+	// match is not read as one right after it.  The nod is also the
+	// enter-vehicle button on foot, so a press from a player with a vehicle in
+	// reach is somebody getting in and starts nothing; otherwise a party
+	// walking up to a car would be starting a match.
 	bool pressed = false;
+	bool entering = false;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
 		CPad *pad = GetPadFromPlayer(ped);
 		const bool tri = pad->NewState.Triangle != 0;
-		if(tri && !s_cnr.triangleHeld[i])
-			pressed = true;
+		if(tri && !s_cnr.triangleHeld[i]){
+			if(s_cnr.active || !VehicleInReach(ped))
+				pressed = true;
+			else
+				entering = true;
+		}
 		s_cnr.triangleHeld[i] = tri;
 	}
+	if(entering)
+		pressed = false;
 
 	if(!s_cnr.active){
 		TryStartCnR(now, pressed);
@@ -2241,6 +2396,194 @@ UpdateCnR(uint32 now)
 	RegisterCnRCoronas();
 }
 
+// --- the screen marks --------------------------------------------------------
+
+// Where a player's mark sits along the bottom lane: the cops & robbers, derby
+// and race bars and the dance chips all keep the same slots, so a player is
+// in the same place whichever mode it is.
+void
+LaneSlot(int player, float &cx, float &cy)
+{
+	cx = SCREEN_WIDTH*(0.5f + (player - 1.5f)*0.15f);
+	cy = SCREEN_HEIGHT*0.84f;
+}
+
+// A few characters, centred on x, in the colour given.  The text is plain
+// ASCII on purpose -- a number, P2, GO -- and short; the same as the chips.
+void
+PrintCentred(float x, float y, const char *ascii, const CRGBA &colour, float scaleX, float scaleY)
+{
+	wchar text[32];
+	AsciiToUnicode(ascii, text);
+	CFont::SetPropOn();
+	CFont::SetBackgroundOff();
+	CFont::SetScale(SCREEN_SCALE_X(scaleX), SCREEN_SCALE_Y(scaleY));
+	CFont::SetJustifyOff();
+	CFont::SetCentreOn();
+	CFont::SetCentreSize(SCREEN_SCALE_X(560.0f));
+	CFont::SetFontStyle(FONT_STANDARD);
+	CFont::SetDropShadowPosition(1);
+	CFont::SetDropColor(CRGBA(0, 0, 0, 255));
+	CFont::SetColor(colour);
+	CFont::PrintString(x, y, text);
+	CFont::SetCentreOff();
+}
+
+// A player's bar in the lane, filled to a fraction in their colour.
+void
+DrawLaneBar(int player, float fill)
+{
+	float cx, cy;
+	LaneSlot(player, cx, cy);
+	const float hw = SCREEN_SCALE_X(30.0f);
+	const float hh = SCREEN_SCALE_Y(10.0f);
+	CSprite2d::DrawRect(CRect(cx - hw - 2.0f, cy - hh - 2.0f, cx + hw + 2.0f, cy + hh + 2.0f), CRGBA(0, 0, 0, 255));
+	fill = Clamp(fill, 0.0f, 1.0f);
+	if(fill > 0.0f)
+		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx - hw + 2.0f*hw*fill, cy + hh), kCoopColours[player]);
+}
+
+// The mode's headline, near the top and out of the way of the help box and
+// the money.
+void
+DrawStatus(const char *line, const CRGBA &colour)
+{
+	PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(36.0f), line, colour, 0.7f, 1.0f);
+}
+
+// The seconds left to a bell, large, under the headline.  Nothing once it has
+// rung.
+void
+DrawCountdown(uint32 now, uint32 bellAt)
+{
+	if(now >= bellAt)
+		return;
+	char digits[16];
+	sprintf(digits, "%u", (unsigned)((bellAt - now + 999)/1000));
+	PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), digits, CRGBA(255, 255, 255, 255), 1.6f, 2.2f);
+}
+
+// "GO" for the first second after the bell.
+void
+DrawGo(uint32 now, uint32 bellAt)
+{
+	if(now >= bellAt && now - bellAt < 1000)
+		PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), "GO", CRGBA(120, 255, 130, 255), 1.6f, 2.2f);
+}
+
+// Who took it, in their colour, for as long as the mode lingers after the end.
+void
+DrawWinner(int winner)
+{
+	if(winner < 0 || winner >= NUMPLAYERS){
+		DrawStatus("NO WINNER", CRGBA(255, 255, 255, 255));
+		return;
+	}
+	char line[16];
+	sprintf(line, "P%d WINS", winner + 1);
+	DrawStatus(line, kCoopColours[winner]);
+}
+
+// Everything a mode shows on screen that is not a chip: the headline, the
+// countdown and the bars.  A mode that has ended keeps its marks for the
+// moment it lingers, so the result is on screen and not just in the log.
+void
+DrawModeMarks(uint32 now)
+{
+	char line[32];
+	const CRGBA white(255, 255, 255, 255);
+
+	// The smuggling run: which drop, and when the boat is unloading.
+	if(s_run.active){
+		if(s_run.unloadSince != 0)
+			sprintf(line, "UNLOADING %d/%d", s_run.leg + 1, kDrops);
+		else
+			sprintf(line, "DROP %d/%d", s_run.leg + 1, kDrops);
+		DrawStatus(line, s_run.unloadSince != 0 ? CRGBA(255, 200, 90, 255) : white);
+	}
+
+	// The derby: the round and the bell, then how many cars are still running;
+	// a bar per player for the rounds they have won.
+	if(s_derby.active){
+		if(s_derby.finished){
+			DrawWinner(s_derby.matchWinner);
+		}else if(s_derby.counting){
+			sprintf(line, "ROUND %d", s_derby.round + 1);
+			DrawStatus(line, white);
+			DrawCountdown(now, s_derby.countdownAt);
+		}else{
+			int left = 0;
+			for(int i = 0; i < NUMPLAYERS; i++)
+				if(s_derby.running[i])
+					left++;
+			sprintf(line, "ROUND %d  %d LEFT", s_derby.round, left);
+			DrawStatus(line, white);
+			DrawGo(now, s_derby.roundStartAt);
+		}
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(CCoop::GetPlayerPed(i) != nil)
+				DrawLaneBar(i, (float)s_derby.roundWins[i]/(float)kDerbyWinsNeeded);
+	}
+
+	// The race: the lights, then a bar per racer for how far round they are
+	// and which lap they are on.
+	if(s_rc.active){
+		if(s_rc.finished)
+			DrawWinner(s_rc.winner);
+		else if(s_rc.grid)
+			DrawStatus("GET IN A TOY", white);
+		else if(s_rc.counting){
+			DrawStatus("RC RACE", white);
+			DrawCountdown(now, s_rc.countdownAt);
+		}else
+			DrawGo(now, s_rc.countdownAt);
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_rc.nextGate[i] < 0)
+				continue;
+			DrawLaneBar(i, (float)(s_rc.lap[i]*kRcGates + s_rc.nextGate[i])/(float)(kRcLaps*kRcGates));
+			float cx, cy;
+			LaneSlot(i, cx, cy);
+			sprintf(line, "LAP %d/%d", Min(s_rc.lap[i] + 1, kRcLaps), kRcLaps);
+			PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), line, white, 0.45f, 0.7f);
+		}
+	}
+
+	// The dance-off: the time left, then each dancer's hits above their slot;
+	// the chips themselves are drawn by DrawHud.
+	if(s_dance.active){
+		if(s_dance.finished){
+			DrawWinner(s_dance.winner);
+		}else{
+			const uint32 elapsed = now - s_dance.startAt;
+			sprintf(line, "DANCE-OFF %u", (unsigned)(elapsed < kDanceRoundMs ? (kDanceRoundMs - elapsed + 999)/1000 : 0));
+			DrawStatus(line, white);
+		}
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil)
+				continue;
+			float cx, cy;
+			LaneSlot(i, cx, cy);
+			sprintf(line, "%d", s_dance.score[i]);
+			PrintCentred(cx, cy - SCREEN_SCALE_Y(34.0f), line, kCoopColours[i], 0.6f, 0.9f);
+		}
+	}
+
+	// Cops & robbers: who has the case, and each score as a bar, three to win.
+	if(s_cnr.active){
+		if(s_cnr.finished){
+			DrawWinner(s_cnr.winner);
+		}else if(s_cnr.carried && s_cnr.carrier >= 0){
+			sprintf(line, "P%d HAS THE CASE", s_cnr.carrier + 1);
+			DrawStatus(line, kCoopColours[s_cnr.carrier]);
+		}else{
+			DrawStatus("GRAB THE CASE", white);
+		}
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(CCoop::GetPlayerPed(i) != nil)
+				DrawLaneBar(i, (float)s_cnr.score[i]/(float)kCnRWinScore);
+	}
+}
+
 } // namespace
 
 void
@@ -2279,6 +2622,7 @@ CCoopModes::Init(void)
 	s_rc.winner = -1;
 
 	memset(&s_dance, 0, sizeof(s_dance));
+	s_dance.winner = -1;
 	for(int i = 0; i < NUMPLAYERS; i++)
 		s_dance.prompt[i] = -1;
 
@@ -2329,6 +2673,14 @@ CCoopModes::Update(void)
 		return;
 	}
 
+	// The switch gates what starts, and a case is what starts here: with
+	// MINIGAMES off the open case was played out above and the shift is over,
+	// rather than raising suspects for as long as the siren stays on.
+	if(!CoopMinigames){
+		EndShift(now, "switched off");
+		return;
+	}
+
 	// No case open: the shift lives on a crewed cruiser with the siren on.
 	// Scattered or on foot, it has a moment to get back in.
 	CVehicle *cruiser = FindCrewedLawCar(true);
@@ -2376,25 +2728,28 @@ CCoopModes::FreeRoam(void)
 	return s_cnr.active;
 }
 
+bool
+CCoopModes::IsModeVehicle(const CVehicle *vehicle)
+{
+	if(vehicle == nil)
+		return false;
+	if(vehicle == s_shift.suspectCar)
+		return true;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(vehicle == s_derby.loaner[i] || vehicle == s_rc.car[i])
+			return true;
+	}
+	return vehicle == s_run.pursuer[0] || vehicle == s_run.pursuer[1];
+}
+
 void
 CCoopModes::DrawHud(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 
-	// Cops & robbers: each score as a bar, three to win.
-	if(s_cnr.active && !s_cnr.finished){
-		for(int i = 0; i < NUMPLAYERS; i++){
-			const float cx = SCREEN_WIDTH*(0.5f + (i - 1.5f)*0.15f);
-			const float cy = SCREEN_HEIGHT*0.84f;
-			const float hw = SCREEN_SCALE_X(30.0f);
-			const float hh = SCREEN_SCALE_Y(10.0f);
-			CSprite2d::DrawRect(CRect(cx - hw - 2.0f, cy - hh - 2.0f, cx + hw + 2.0f, cy + hh + 2.0f), CRGBA(0, 0, 0, 255));
-			if(s_cnr.score[i] > 0){
-				const float fill = (float)Clamp(s_cnr.score[i], 0, kCnRWinScore)/(float)kCnRWinScore;
-				CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx - hw + 2.0f*hw*fill, cy + hh), kCoopColours[i]);
-			}
-		}
-	}
+	// The headlines, countdowns and bars, and what is left of them once a mode
+	// has ended.
+	DrawModeMarks(now);
 
 	if(!s_dance.active || s_dance.finished)
 		return;
@@ -2405,8 +2760,8 @@ CCoopModes::DrawHud(void)
 		const bool missed = now - s_dance.missFlash[i] < 250;
 		if(s_dance.prompt[i] < 0 && !missed)
 			continue;
-		const float cx = SCREEN_WIDTH*(0.5f + (i - 1.5f)*0.15f);
-		const float cy = SCREEN_HEIGHT*0.84f;
+		float cx, cy;
+		LaneSlot(i, cx, cy);
 		const float hh = SCREEN_SCALE_Y(10.0f);
 
 		// The player's own controller's button, when the label helper can name

@@ -1,13 +1,16 @@
 #pragma once
 
 class CEntity;
+class CVehicle;
 
 // Couch co-op's minigames: engine-side modes the party starts in the world,
 // as opposed to the game's own scripted missions.  The design is in
 // COOP-4-PLAN.md, "Minigames".  Each mode arms from something the players
 // deliberately do in the world, and the co-op page's MINIGAMES row
 // (CoopMinigames, in Coop.h) switches them off entirely -- it gates arming
-// only, so a mode already running is left to finish.
+// only, so a mode already running is left to finish.  The cop shift has no
+// end of its own, so with the switch off it plays out the case it has open
+// and then stands down.
 //
 // The first one is the cop shift.  A police car or Enforcer with two or more
 // players aboard and the siren on puts the party on duty.  Cases spawn a
@@ -52,7 +55,8 @@ class CEntity;
 //
 // The fifth is the dance-off.  The party on foot in a knot and every one of
 // them ducking together: sixty seconds on a spot, a beat that climbs from 700
-// milliseconds to 420, and a prompt each -- jump, duck or the nod, each
+// milliseconds to 420, and a prompt each -- jump, duck or the nod (not the
+// nod for a dancer with a car in reach: it would get them in), each
 // printed as the player's own controller's button, in their colour at the
 // bottom of the screen.  Hit the prompt
 // before the next beat or the combo drops.  Every hit pays and the best score
@@ -61,8 +65,9 @@ class CEntity;
 // engine cannot name.
 //
 // The sixth is cops & robbers.  The party on foot in a knot and a press of the
-// nod: a case appears at their feet and a getaway marker a short run
-// away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
+// nod -- not one from a player with a car in reach, because the nod is also
+// the enter-vehicle button and that press is somebody getting in: a case
+// appears at their feet and a getaway marker a short run away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
 // them -- the case falls where it fell, and anyone can take it.  First to
 // three takes the pot.  The party's wall and leash stand aside for it: a
@@ -90,8 +95,16 @@ public:
 	// robbers, which the session's wall and leash would otherwise strangle.
 	static bool FreeRoam(void);
 
+	// Whether a vehicle is one a mode made for itself and means to hand back: a
+	// toy, a loaner, the suspect's car, a smuggler's pursuer.  They are all
+	// mission vehicles, which is what the game saves when they stand empty, so
+	// the save leaves them out; loaded back they would be orphans nothing in the
+	// world would ever clear away.
+	static bool IsModeVehicle(const CVehicle *vehicle);
+
 	// The minigames' screen marks, called by the HUD with the other co-op
-	// ones: the dance prompts and the cops & robbers scores, when a round is
-	// on.
+	// ones: the headline and countdown at the top, the bars along the bottom
+	// (derby rounds won, race progress, cops & robbers scores, dance hits),
+	// and the dance prompts, while a mode is on and for the moment after.
 	static void DrawHud(void);
 };
