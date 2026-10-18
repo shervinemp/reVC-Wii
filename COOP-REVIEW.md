@@ -25,6 +25,32 @@ no fix. A few fixes chose between two readings of the intent; the commit message
   fixes introduced (wall hold 2.5 s, 5 s on foot before a new RC toy, 20-scan controller grace,
   6 s skin wait, 40 m regroup cutoff), want a look on a console.
 
+**Second pass (2026-10-18, a UX and polish audit; read from the code, nothing seen on a TV)**
+Done: notices that stay up long enough to read, "press A to join", the pause menu from joined
+pads only, a note for a bare Wiimote, a join buzz, messages for being brought back / waiting for a
+seat / the wall / the mission pause, per-controller camera and leave tips, the GameCube Z+R chord
+masked, low battery and a "?" for a lost controller; badges with numbers, outlined reticles that
+keep their colour on a target, a luminance spread in the four colours, a DOWN bar and a revive bar;
+the cops & robbers bust lockout, the cop shift's streak and result, readable dance chips and a
+slower beat, lane tags and cells, first-time explainers, the derby's "ramming only" announced.
+Open, and not for code alone:
+- Design calls left to the owner: friendly fire defaults on; every partner defaults to player 1's
+  skin; Shared Wanted barely changes anything (both settings put a partner's crime on player 1 and
+  follow player 1's drops); co-op is reachable only from the pause menu; the smuggling run can never
+  start (`FindCrewBoat(2)` needs two players in one boat and partners cannot board boats).
+- Minigame arming has no guard against an accident (a wanted-level check, a held press for cops &
+  robbers); a glued pair can still trade busts for about 7.5 s a round.
+- The GameCube chord's first button still fires its own action for a frame or two.
+- The battery flag is the remote's own status flag and may lag; nobody has watched it.
+- The explainer flags reset whenever the session pauses (a mission, a cutscene), so one returns
+  afterwards.
+- HUD badges can overlap other things when the party spreads out, and nothing clamps them. At
+  640x448 (4:3): the top-right cluster of clock, money, health, stars and weapon is x 392-605, y
+  20-105; the radar x 34-128, y 328-418; the help box x 30-234, y 26-100; subtitles x 148-612, y
+  348-391. A badge stack reaches about 26 left, 12 right, 14 above and 22-31 below its anchor, and
+  the HUD proper draws over it.
+- Everything above that is a size, a colour, a position or a pace needs the real TV.
+
 Tags: **[V]** the code was re-read a second time to check the claim. **[R]** one reviewer
 traced it and it was not re-checked. **[S]** suspected: plausible but not closed.
 

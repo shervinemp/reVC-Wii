@@ -95,10 +95,16 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
 - **Joining takes a button press.** A controller being connected is not a
   player: the remote that launched the game is still switched on while its
   owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
-  everyone who plays that way. The help box says "Player 3: press any button to
-  join" once when that controller is noticed — one line per partner, so it
-  names the right player. They leave when their controller has been gone for
-  6 s, and one partner leaving is nobody else's business.
+  everyone who plays that way. The help box says "Player 3: press A to join"
+  when that controller is noticed — one line per partner, so it names the right
+  player — and again, at most every 20 s per controller, when someone presses
+  +, − or the stick on it, none of which joins. A Wii Remote with nothing
+  plugged in is told once that it needs a Nunchuk or Classic Controller. A
+  joined controller buzzes for a moment. They leave when their controller has
+  been gone for 6 s (the HUD shows a "?" on their badge after 1.5 s, and a
+  remote with low batteries is named), and one partner leaving is nobody else's
+  business. Only player 1's pad and joined pads open the pause menu or move
+  about in it: a remote left on the table cannot pause the game for everyone.
 
 ### Coming and going
 
@@ -359,7 +365,9 @@ Each frame, per player:
 3. **Assist.** While firing, a reticle that is on nothing still bends the shot
    to a live target that is nearly in line (the same cone `CAimAssist` uses, and
    the same "Aim Assist" option switches it off). On-screen targets only. The
-   reticle turns red on a target.
+   reticle stays its player's colour on a target and is drawn twice, the second
+   half as big again: the single-player one goes red there, but red swallows
+   the pink one and tells nothing to anyone who cannot tell it from green.
 
 **An aim does not lapse while it is being used.** While a player is firing, a
 direction that has stopped arriving — the right stick let go so the same thumb
@@ -439,14 +447,28 @@ nothing.
   first drives it: health and armour to them, the weapons and the money to
   the shared arsenal and wallet. The AI and the law still read player 1 alone,
   by design: they chase and target the anchor.
-- **Notices.** The help box says when a partner joins or leaves — by name, one
-  line per partner — when co-op is paused for a mission, and which framing the
-  camera button picked. There is one help box, so notices wait their turn in a
-  short queue behind whatever it is saying (the game's own hints included), and
-  one that waits more than ten seconds is dropped as stale.
+- **Notices.** The help box says when a partner joins, goes down or leaves — by
+  name, one line per partner — when one is brought back to the group or has to
+  wait for a seat or out a boat ride (at most once per player per 10 s), when
+  the wall is slowing someone (again every 30 s while they lean on it), when
+  co-op is paused for a mission (again when a partner touches a pad, at most
+  every 20 s, and "back" when it ends), and which framing the camera button
+  picked. The first partner to arrive is also told that ammo and money are the
+  party's, and which button is the camera for their kind of controller. Only the
+  camera lines are the quick 1.5 s kind; the rest stay up for the box's
+  ordinary time (3 s and 0.05 s a character). There is one help box, so notices
+  wait their turn in a queue of eight behind whatever it is saying (the game's
+  own hints included), and one is dropped as stale if it waits 15 s (8 s for a
+  "down" line, 60 s for the explanations).
 - **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
-  by their reticle and by a pip with a health bar and an ammo line over their
-  head -- one set per player, shown once a partner is in the world. The menu
+  by their reticle and by a badge with their number on it, over their head (or
+  their vehicle), with a health bar and an ammo line under it -- one set per
+  player, shown once a partner is in the world. The colours differ in lightness
+  as well as hue, and the number is what tells them apart for anyone hue does
+  not. A downed partner's bar becomes the seconds they have left to bleed out,
+  with "DOWN" under it and a white bar filling while someone revives them
+  ("BUSTED", with no revive bar, if they were arrested). A controller that has
+  stopped answering gets a white "?" beside the badge. The menu
   and the per-partner skins went to N with stage 5: three skin rows, one each.
 - **The stock zoom does not cycle** while co-op has the camera button.
 
@@ -470,6 +492,18 @@ cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
   dancing is the players' own bodies), and
 - **cops & robbers** (a press of the nod while gathered: grab the case, deliver or bust,
   first to three).
+
+The first time a mode arms in a session, one line under the headline says how it
+is played and how it ends, for 4.5 s (`DrawExplainer`); it comes back after a
+mission or a cutscene, not for a rematch. The derby cuts the fire button for
+every player, not only those in it, so that nobody shoots a driver mid-match;
+its headline says "ramming only" each round. Every lane has its player's name,
+and its bar is cut into one cell for each round, point or lap. The cop shift
+shows its streak and the seconds left on the open case, then what the case came
+to (caught with the pay, got away, siren off). In cops & robbers a bust keeps
+the busted player off the case for two seconds, so the buster does not score
+again at once, and the screen says who busted whom. The dance-off's beat runs
+from 1000 ms to 650 ms, and each chip shows the action as well as the button.
 
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
 and twitchy cars would whip the shared view around), and the wall and leash
@@ -547,7 +581,7 @@ Recorded because each was stated as a verified fact.
 - **Pop-in at the top of the screen when the players are far apart.** Pedestrians
   are created about 40 m from player 1, on the understanding that this is off
   screen; pulled all the way back, the low framing sees further than that.
-- **A partner's ammo readout is the pip.** The HUD proper shows player 1's
+- **A partner's ammo readout is under the badge.** The HUD proper shows player 1's
   weapon, which is the shared count; each partner's own gun and its count are
   on their pip, and the engine switching weapon when the pool runs dry is the
   only other notice they get.
