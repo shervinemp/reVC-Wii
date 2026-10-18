@@ -183,7 +183,8 @@ const int COOP_NUM_SKINS = ARRAY_SIZE(coopSkins);
 // clock, so it is also told when to stop (end of CMenuManager::SwitchMenuOnAndOff).
 void VibrationAfterChange(int8 before, int8 after) {
 	if (after) {
-		CPad::GetPad(0)->StartShake(350, 150);
+		// The pad driving the menu, which is a partner's when they opened it.
+		FrontEndPad()->StartShake(350, 150);
 		TimeToStopPadShaking = CTimer::GetTimeInMillisecondsPauseMode() + 500;
 	}
 }
@@ -1045,6 +1046,7 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_CHANGEMENU, "WII_CPL", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_PLAYER }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHANGEMENU, "WII_CWH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_WORLD }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHANGEMENU, "WII_CVH", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_VEHICLES }, 0, 0, MENUALIGN_LEFT,
+		MENUACTION_CHANGEMENU, "WII_CEF", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_CAR_EFFECTS }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_CHANGEMENU, "WII_CDB", { nil, SAVESLOT_NONE, MENUPAGE_CHEATS_DEBUG }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
@@ -1098,10 +1100,6 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_CAD", WiiCheat_Caddy)
 		WII_CHEAT_ROW("WII_HTA", WiiCheat_Hotrina)
 		WII_CHEAT_ROW("WII_HTB", WiiCheat_Hotrinb)
-		WII_CHEAT_ROW("WII_CCB", WiiCheat_ChittyChittyBangBang)
-		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
-		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
-		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
@@ -1118,8 +1116,6 @@ CMenuScreenCustom aScreens[] = {
 		WII_CHEAT_ROW("WII_DBG", WiiCheat_SwitchDebugDisplay)
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
-
-	#undef WII_CHEAT_ROW
 
 	// MENUPAGE_ENHANCEMENTS
 	//
@@ -1155,6 +1151,24 @@ CMenuScreenCustom aScreens[] = {
 		MINIGAMES_TOGGLE
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
+
+	// MENUPAGE_CHEATS_CAR_EFFECTS
+	//
+	// The cheats that change how cars behave, apart from the ones that spawn one.
+	// Appended after the co-op page like the rest, so it sits out of order with
+	// the other cheats pages; its parent is what puts Back in the right place.
+	// The spawns and these together were fourteen rows, and the Back row of a
+	// page that long fell below the menu's frame.
+
+	{ "WII_CEF", MENUPAGE_CHEATS, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
+		WII_CHEAT_ROW("WII_CCB", WiiCheat_ChittyChittyBangBang)
+		WII_CHEAT_ROW("WII_GRP", WiiCheat_StrongGrip)
+		WII_CHEAT_ROW("WII_WCL", WiiCheat_WallClimbing)
+		WII_CHEAT_ROW("WII_HEL", WiiCheat_AllCarsHeli)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
+	},
+
+	#undef WII_CHEAT_ROW
 #endif
 
 	// MENUPAGE_OUTRO = 34

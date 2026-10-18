@@ -32,6 +32,8 @@
 #include "Coop.h"
 #include "CoopModes.h"
 #include "PlayerPed.h"
+#include "Vehicle.h"
+#include "ModelInfo.h"
 #include "WeaponInfo.h"
 
 #if defined(FIX_BUGS)
@@ -252,14 +254,37 @@ DrawCoopMarks(void)
 		const float maxHealth = Max(1.0f, (float)CWorld::Players[0].m_nMaxHealth);
 		for (int i = 0; i < NUMPLAYERS; i++) {
 			CPlayerPed *ped = CWorld::Players[i].m_pPed;
-			if (ped == nil || ped->bInVehicle || !ped->bIsVisible)
+			if (ped == nil)
 				continue;
-			CVector above = ped->GetPosition();
-			above.z += 1.35f;
+			// A player in a vehicle is marked over the vehicle, because there is
+			// nothing else to mark: the HUD proper is player 1's, so this is the only
+			// place a driving partner's health and ammo are shown at all.  Those
+			// sharing one vehicle stand side by side over it, in player order.
+			CVehicle *vehicle = ped->InVehicle() ? ped->m_pMyVehicle : nil;
+			CEntity *marked = vehicle != nil ? (CEntity*)vehicle : (CEntity*)ped;
+			if (!marked->bIsVisible)
+				continue;
+			CVector above = marked->GetPosition();
+			if (vehicle != nil)
+				above.z += vehicle->GetColModel()->boundingBox.max.z + 0.6f;
+			else
+				above.z += 1.35f;
 			CVector screen;
 			float w, h;
 			if (!CSprite::CalcScreenCoors(above, &screen, &w, &h, false))
 				continue;
+			if (vehicle != nil) {
+				int seat = 0, seated = 0;
+				for (int j = 0; j < NUMPLAYERS; j++) {
+					CPlayerPed *other = CWorld::Players[j].m_pPed;
+					if (other == nil || !other->InVehicle() || other->m_pMyVehicle != vehicle)
+						continue;
+					if (j < i)
+						seat++;
+					seated++;
+				}
+				screen.x += SCREEN_SCALE_X(28.0f) * (seat - 0.5f*(seated - 1));
+			}
 			const float rx = SCREEN_SCALE_X(3.0f);
 			const float ry = SCREEN_SCALE_Y(3.0f);
 			const float ex = SCREEN_SCALE_X(1.0f);

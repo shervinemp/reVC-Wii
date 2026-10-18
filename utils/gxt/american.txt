@@ -14365,7 +14365,7 @@ Player 2 has left.
 Co-op is paused until the mission is over.
 
 [WII_TTH]
-You cannot get any further from each other on foot.
+You cannot get any further apart on foot.
 
 [WII_CF0]
 Shared camera: low.

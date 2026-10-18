@@ -243,6 +243,7 @@ WiiFallbackText(const char *key)
 		{ "WII_CPL", "PLAYER" },
 		{ "WII_CWH", "WORLD" },
 		{ "WII_CVH", "VEHICLES" },
+		{ "WII_CEF", "CAR EFFECTS" },
 		{ "WII_CDB", "DEBUG" },
 
 		// Each row names the word the engine's own cheat matcher uses for that handler,
