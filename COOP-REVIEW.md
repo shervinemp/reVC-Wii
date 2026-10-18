@@ -4,9 +4,26 @@ Scope: everything the multiplayer work changed since 352ca4b4 (about 8,600 added
 Nothing was built or run. Five reviewers read the code, one area each, and I read the menu,
 HUD and text changes myself.
 
-**Status (2026-10-18):** items 1, 2, 4, 5 and 6 are fixed in the working tree (uncommitted) and pass a
-`-fsyntax-only` compile with the Wii build's flags; item 3 turned out to be wrong and needs no fix.
-Nothing has been run on a console.
+**Status (2026-10-18):** everything below is fixed except the list under "Still open". All of it
+compiles (`-fsyntax-only`, the Wii build's flags, all 250 game sources, no warnings); none of it has
+been run on a console, and the PC build was not compiled. Item 3 turned out to be wrong and needed
+no fix. A few fixes chose between two readings of the intent; the commit messages say which.
+
+**Still open**
+- 12: player 1's controller dying does not pause the game (not built). `updateFlick` and
+  `NunchukLean` still read `exp.type`, on purpose (the probe could feed them zeros).
+- 18: two RC toys are still placed per party member, not per jumper (a design call), and money
+  from a mode still goes to player 1 whoever wins.
+- 33: the shared camera's four line-of-sight tests per frame are not throttled (no way to see a
+  pop without hardware).
+- 28: a partner killed while driving leaves the car in `STATUS_PLAYER` (`PedFight.cpp` ~3236).
+- Vehicles: the crash voice line and the 1/1.5 ram bonus still treat only player 1's car as the
+  player's.
+- `Ped.cpp` ~9318 (NPC jump heading under pointer controls) differs from stock on purpose; it is a
+  bug fix, not co-op.
+- Camera/HUD layout of the new mode headlines, countdowns and bars, and every timing constant the
+  fixes introduced (wall hold 2.5 s, 5 s on foot before a new RC toy, 20-scan controller grace,
+  6 s skin wait, 40 m regroup cutoff), want a look on a console.
 
 Tags: **[V]** the code was re-read a second time to check the claim. **[R]** one reviewer
 traced it and it was not re-checked. **[S]** suspected: plausible but not closed.
