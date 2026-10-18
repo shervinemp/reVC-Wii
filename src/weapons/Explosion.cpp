@@ -3,6 +3,7 @@
 #include "Automobile.h"
 #include "Bike.h"
 #include "Camera.h"
+#include "Coop.h"
 #include "Coronas.h"
 #include "DMAudio.h"
 #include "Entity.h"
@@ -353,12 +354,17 @@ CExplosion::AddExplosion(CEntity *explodingEntity, CEntity *culprit, eExplosionT
 		TheCamera.CamShake(0.2f, pos.x, pos.y, pos.z);
 	} else {
 		TheCamera.CamShake(0.6f, pos.x, pos.y, pos.z);
-		// Every pad.  StartShake_Distance measures from the shared camera, so
-		// this is already a "near the players" test rather than a "near player
-		// 1" one; the pad was the only part of it that was player 1's alone.
+		// Every pad with somebody on it.  StartShake_Distance measures from the
+		// shared camera, so this is already a "near the players" test rather than
+		// a "near player 1" one; the pad was the only part of it that was player
+		// 1's alone.  A co-op slot nobody has joined is left alone: with co-op off
+		// there are none, and an idle controller must not buzz for a game it is
+		// not in.  (Pad PAD_COOP is player slot 1, and so on up.)
 		CPad::GetPad(0)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
-		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
-			CPad::GetPad(coop)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
+		for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
+			if(CCoop::GetPlayerPed(1 + coop - PAD_COOP) != nil)
+				CPad::GetPad(coop)->StartShake_Distance(300, 128, pos.x, pos.y, pos.z);
+		}
 	}
 	return true;
 }

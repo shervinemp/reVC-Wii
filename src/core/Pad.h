@@ -154,9 +154,8 @@ enum
 	PAD_COOP,
 	// Partners two and three of a four player session.  Same reasoning as
 	// PAD_COOP: slots of their own, read only by the player peds they belong
-	// to.  The device layer captures and drives them from the start; the co-op
-	// layer starts using them when it grows its own four player loops
-	// (stage 3 of the four player work).
+	// to.  The device layer captures and drives them, and the co-op layer's
+	// loops run over all of them.
 	PAD_COOP2,
 	PAD_COOP3,
 

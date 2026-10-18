@@ -8,6 +8,7 @@
 #include <ogc/lwp_watchdog.h>
 #include <wiiuse/wpad.h>
 
+#include "WiiPad.h"
 #include "WiiSpeaker.h"
 #include "WiiTrace.h"
 
@@ -318,13 +319,25 @@ encodeCall(const s16 *samples, u32 count)
 		startCallStream();
 }
 
+// Whether the speaker is free to speak.  It is the remote on channel 0's, and everything
+// it is asked to say -- the radio's tuning, the phone, a mission call -- is player 1's.
+// While that remote is in a couch co-op partner's hands they would hear all of it, so the
+// three ways in (a clip, waking it for a call, routing a call) and the service loop all
+// ask here, so the callers do not each have to.  The gunshot sites in Weapon.cpp ask as
+// well, which is now redundant and does no harm.
+bool
+speakerIsPlayerOnes(void)
+{
+	return !WiiPadRemoteIsPartners();
+}
+
 // Asks for a clip, powering the speaker up if it is off.  A request that is still
 // waiting when a better one arrives is replaced rather than queued: there is room
 // for one, and the better one is the one worth hearing.
 void
 request(Clip clip)
 {
-	if(!WiiRemoteSpeakerEnabled)
+	if(!WiiRemoteSpeakerEnabled || !speakerIsPlayerOnes())
 		return;
 
 	u32 expansion;
@@ -365,7 +378,7 @@ WiiSpeakerPlayRing(void)
 void
 WiiSpeakerWake(void)
 {
-	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode)
+	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || !speakerIsPlayerOnes())
 		return;
 	u32 expansion;
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
@@ -381,7 +394,8 @@ WiiSpeakerWake(void)
 bool
 WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 {
-	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate)
+	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate ||
+	   !speakerIsPlayerOnes())
 		return false;
 	releaseCallBuffer();
 	// Only a speaker that is already up, and nothing else still streaming: a line
@@ -485,8 +499,11 @@ WiiSpeakerService(void)
 	if(s_state == STATE_OFF)
 		return;
 
+	// A remote that has been handed to a partner mid-clip or mid-call is let go of the
+	// same way a lost one is: the line goes back to the TV.
 	u32 expansion;
-	if(!WiiRemoteSpeakerEnabled || WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE){
+	if(!WiiRemoteSpeakerEnabled || !speakerIsPlayerOnes() ||
+	   WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE){
 		powerDown();
 		return;
 	}

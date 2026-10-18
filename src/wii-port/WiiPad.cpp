@@ -631,6 +631,18 @@ captureGameCube(int channel, uint32 connectedMask, CControllerState &state,
 	setButton(state.LeftShoulder1, buttons & PAD_TRIGGER_Z);
 	setButton(state.LeftShock, buttons & PAD_TRIGGER_R);
 
+	// The camera button, which is couch co-op's: the shared camera's framing and a
+	// partner's claim on it both read Select (CycleCameraModeUpJustDown), and every
+	// button on this pad already has a job.  So it is Z and R together.  L and R
+	// would be the obvious pair, but L is the brake and the aim and is held for long
+	// stretches, so every touch of the radio while braking would have cycled the
+	// camera; Z is the horn, and on foot only picks things up and recentres the
+	// camera, so it is the button least likely to be down at the time.  Only while
+	// two players share the camera: for a lone player there has never been a camera
+	// button on this pad, and a chord that is also horn and radio must not start
+	// changing their view.
+	setButton(state.Select, CCoop::PairActive() && (buttons & PAD_TRIGGER_Z) && (buttons & PAD_TRIGGER_R));
+
 	const bool dpadLeft = (buttons & PAD_BUTTON_LEFT) != 0;
 	const bool dpadRight = (buttons & PAD_BUTTON_RIGHT) != 0;
 	const bool dpadDown = (buttons & PAD_BUTTON_DOWN) != 0;
@@ -1386,9 +1398,12 @@ bool
 WiiPadRemoteIsPartners(void)
 {
 	// The speaker drives the first remote, so player 1's shots are silent
-	// through it while that remote is in a partner's hands.
+	// through it while that remote is in a partner's hands.  A partner counts
+	// while the co-op switch is on even if they are out of the world, as they are
+	// for a mission: the remote is still theirs, and it is mission calls that
+	// would otherwise come out of it.
 	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
-		if(CCoop::GetPlayerPed(player) != nullptr &&
+		if((CCoop::GetPlayerPed(player) != nullptr || CCamera::bWiiCoopCamera) &&
 		   s_devices[player].kind == PadDevice::WIIMOTE &&
 		   s_devices[player].channel == WPAD_CHAN_0)
 			return true;
@@ -1746,7 +1761,10 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	}
 
 	const bool tracked = data->ir.valid != 0;
-	s_leadPointerAims = data->exp.type != WPAD_EXP_CLASSIC;
+	// The probe, as WiiPadCapture asks it: this decides whether player 1's stick is
+	// the aim, and exp.type only describes the last data report, so it can disagree
+	// with what capture is reading for a frame at a hot plug (see probeExpansion).
+	s_leadPointerAims = probeExpansion(WPAD_CHAN_0, *data) != WPAD_EXP_CLASSIC;
 
 	const bool aimWithPointer = !FrontEndMenuManager.m_bMenuActive && pointerAimWanted();
 	if(!aimWithPointer)
@@ -1876,6 +1894,20 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	state.y = MousePointerStateHelper.bInvertVertically ? -deltaY : deltaY;
 }
 
+// A motor is a Wii Remote's by its WPAD channel or a GameCube pad's by its port, and
+// those are two numberings of two different things: the remote on channel 1 and the
+// pad in port 1 are not the same hands.  Each is only ever told about by its own
+// call, or one player's write would land on another's controller -- a partner's
+// remote on channel 0 stopping player 1's GameCube pad in port 0, last write wins.
+static void
+driveMotor(const PadDevice &device, bool on)
+{
+	if(device.kind == PadDevice::GAMECUBE)
+		PAD_ControlMotor(device.channel, on ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+	else if(device.kind == PadDevice::WIIMOTE)
+		WPAD_Rumble(device.channel, on ? 1 : 0);
+}
+
 void
 WiiPadUpdateRumble(void)
 {
@@ -1885,6 +1917,19 @@ WiiPadUpdateRumble(void)
 	// player's pulse pattern is not spent by another's.
 	constexpr float kRumbleMinDuty = 0.35f;
 	static float s_rumblePhase[NUM_PLAYERS];
+	// The controller each player's motor was last told about.  A controller that
+	// stops being theirs -- released after its Nunchuk was pulled, a pad in another
+	// port -- is no longer written to, so whatever it was last told would run until
+	// it was switched off: it is sent one last stop.
+	static PadDevice s_driven[NUM_PLAYERS];
+
+	for(int player = 0; player < NUM_PLAYERS; player++){
+		const PadDevice &was = s_driven[player];
+		const PadDevice &now = s_devices[player];
+		if(was.kind != PadDevice::NONE && (was.kind != now.kind || was.channel != now.channel))
+			driveMotor(was, false);
+		s_driven[player] = now;
+	}
 
 	for(int player = 0; player < NUM_PLAYERS; player++){
 		CPad *pad = CPad::GetPad(padForPlayer(player));
@@ -1915,12 +1960,17 @@ WiiPadUpdateRumble(void)
 		}else
 			s_rumblePhase[player] = 0.0f;
 
-		const PadDevice &device = s_devices[player];
-		if(device.kind == PadDevice::NONE)
-			continue;
-		const bool onGameCube = device.kind == PadDevice::GAMECUBE;
-		WPAD_Rumble(device.channel, onGameCube ? 0 : running);
-		PAD_ControlMotor(device.channel, (onGameCube && running) ? PAD_MOTOR_RUMBLE : PAD_MOTOR_STOP);
+		// A partner's controller buzzes only for a partner who is in the game.  The
+		// engine queues shakes on every co-op pad whether or not anyone is playing
+		// it (an explosion, thunder), and a remote with a Nunchuk plugged in is a
+		// player's from the moment it is bound; one nobody has joined with is on a
+		// table, or in the hands of someone about to press a button to join.  It is
+		// still written to, with nothing, every frame: that is also what stops a
+		// motor left running when its player went.
+		if(player != PLAYER_ONE && CCoop::GetPlayerPed(player) == nullptr)
+			running = 0;
+
+		driveMotor(s_devices[player], running != 0);
 	}
 }
 

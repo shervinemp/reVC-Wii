@@ -97,11 +97,17 @@ extern bool gGravityCheat;
 #endif
 
 #ifdef NINTENDO_WII
-// True on the frame a pad has had any menu button pressed.  Used only to pick which
-// pad the pause menu follows, so it lists the buttons the menu itself uses.
+// True on the frame a pad has had any menu button pressed, or its stick pushed
+// out of the middle.  Used only to pick which pad the pause menu follows, so it
+// lists the buttons the menu itself uses, and the stick the way the menu reads it
+// (CPad::GetAnaloguePadUp and its siblings: from at rest to a definite push).
 static bool
 PadJustPressed(CPad *pad)
 {
+	const CControllerState &now = pad->NewState, &was = pad->OldState;
+	if((Abs(now.LeftStickY) > 15 && Abs(was.LeftStickY) <= 5) ||
+	   (Abs(now.LeftStickX) > 15 && Abs(was.LeftStickX) <= 5))
+		return true;
 	return pad->GetStartJustDown() || pad->GetSelectJustDown() ||
 	       pad->GetCircleJustDown() || pad->GetCrossJustDown() ||
 	       pad->GetSquareJustDown() || pad->GetTriangleJustDown() ||
@@ -110,16 +116,33 @@ PadJustPressed(CPad *pad)
 	       pad->GetLeftShoulder1JustDown() || pad->GetLeftShoulder2JustDown() ||
 	       pad->GetRightShoulder1JustDown() || pad->GetRightShoulder2JustDown();
 }
+
+// The pad the menu is following: pad 0 unless a partner opened it or has pressed
+// something in it since.  Kept between frames, because a menu is driven by more
+// than presses -- the stick, a held direction, the release of a button -- and none
+// of those say whose they are on the frame they matter.
+static int s_menuPad;
 #endif
 
 CPad *
 FrontEndPad(void)
 {
 	// The pause menu is player 1's pad by default.  Couch co-op's partners
-	// have pads of their own and may open and drive the menu too, so on the
-	// frame a partner presses a button the menu follows their pad instead.
-	// Stateless on purpose: there is nothing to reset when they unplug, and
-	// player 1's pad is the answer again the moment they stop.
+	// have pads of their own and may open and drive the menu too: Start on any
+	// pad opens it, and from then on it follows the pad that last pressed
+	// something it uses.
+	//
+	// In game that is Start and nothing else.  This used to answer with any
+	// partner pad that had a fresh press, fire and jump and weapon cycle
+	// included, and the caller then asked THAT pad about Start -- so player 1's
+	// one frame Start was lost whenever a partner happened to have an edge, and
+	// a partner outranked player 1 on a simultaneous press.
+	//
+	// In the menu, the follow moves only on a press (or a push of the stick)
+	// that the menu reads, and player 1 wins a tie.  It is kept rather than
+	// worked out afresh each frame (it used to be stateless) so that a partner's
+	// stick moves the menu and not player 1's; a pad that has gone away is let
+	// go of the next time player 1 presses anything.
 	//
 	// Only while couch co-op is switched on.  Keyed on the toggle and not on
 	// the partner ped, so a partner can still pause during a mission -- co-op
@@ -133,10 +156,29 @@ FrontEndPad(void)
 	// button exists to ignore -- so it must not be able to nudge the menu.
 #ifdef NINTENDO_WII
 	if(CCamera::bWiiCoopCamera){
-		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
-			if(PadJustPressed(CPad::GetPad(coop)))
-				return CPad::GetPad(coop);
+		if(!FrontEndMenuManager.m_bMenuActive){
+			s_menuPad = 0;
+			if(!CPad::GetPad(0)->GetStartJustDown()){
+				for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
+					if(CPad::GetPad(coop)->GetStartJustDown()){
+						s_menuPad = coop;
+						break;
+					}
+				}
+			}
+		}else if(PadJustPressed(CPad::GetPad(0))){
+			s_menuPad = 0;
+		}else{
+			for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
+				if(PadJustPressed(CPad::GetPad(coop))){
+					s_menuPad = coop;
+					break;
+				}
+			}
+		}
+		return CPad::GetPad(s_menuPad);
 	}
+	s_menuPad = 0;
 #endif
 	return CPad::GetPad(0);
 }
@@ -2211,6 +2253,13 @@ void CPad::DoCheats(int16 unk)
 void CPad::StopPadsShaking(void)
 {
 	GetPad(0)->StopShaking(0);
+#ifdef NINTENDO_WII
+	// Couch co-op's partners have motors of their own, and a shake is spent down by
+	// the game clock, which does not run behind the menu: one left running when it
+	// opened would buzz in a partner's hands until it closed.
+	for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
+		GetPad(coop)->StopShaking(coop);
+#endif
 }
 
 void CPad::StopShaking(int16 pad)
@@ -3279,11 +3328,26 @@ bool CPad::ShiftTargetRightJustDown(void)
 	return !!(NewState.LeftShoulder1 && !OldState.LeftShoulder1) || !!(NewState.RightShoulder2 && !OldState.RightShoulder2);
 }
 
+// The stick the menu helpers below read.  They have always read pad 0, which is who
+// drives the menu; with couch co-op the menu follows the pad that opened it (see
+// FrontEndPad), so a partner's pad asks about its own stick.  Anything else that
+// asks -- the debug console is on pad 1 -- still gets pad 0, as it always did.
+static CPad *
+MenuStickPad(CPad *asked)
+{
+#ifdef NINTENDO_WII
+	const int slot = (int)(asked - Pads);
+	if(slot >= PAD_COOP && slot < MAX_PADS)
+		return asked;
+#endif
+	return CPad::GetPad(0);
+}
+
 bool CPad::GetAnaloguePadUp(void)
 {
 	static int16 oldfStickY = 0;
 
-	int16 leftStickY = CPad::GetPad(0)->GetLeftStickY();
+	int16 leftStickY = MenuStickPad(this)->GetLeftStickY();
 
 	if ( leftStickY < -15 && oldfStickY >= -5 )
 	{
@@ -3301,7 +3365,7 @@ bool CPad::GetAnaloguePadDown(void)
 {
 	static int16 oldfStickY = 0;
 
-	int16 leftStickY = CPad::GetPad(0)->GetLeftStickY();
+	int16 leftStickY = MenuStickPad(this)->GetLeftStickY();
 
 	if ( leftStickY > 15 && oldfStickY <= 5 )
 	{
@@ -3319,7 +3383,7 @@ bool CPad::GetAnaloguePadLeft(void)
 {
 	static int16 oldfStickX = 0;
 
-	int16 leftStickX = CPad::GetPad(0)->GetLeftStickX();
+	int16 leftStickX = MenuStickPad(this)->GetLeftStickX();
 
 	if ( leftStickX < -15 && oldfStickX >= -5 )
 	{
@@ -3337,7 +3401,7 @@ bool CPad::GetAnaloguePadRight(void)
 {
 	static int16 oldfStickX = 0;
 
-	int16 leftStickX = CPad::GetPad(0)->GetLeftStickX();
+	int16 leftStickX = MenuStickPad(this)->GetLeftStickX();
 
 	if ( leftStickX > 15 && oldfStickX <= 5 )
 	{
@@ -3355,7 +3419,7 @@ bool CPad::GetAnaloguePadLeftJustUp(void)
 {
 	static int16 oldfStickX = 0;
 
-	int16 X = GetPad(0)->GetPedWalkLeftRight();
+	int16 X = MenuStickPad(this)->GetPedWalkLeftRight();
 
 	if ( X == 0 && oldfStickX < 0 )
 	{
@@ -3375,7 +3439,7 @@ bool CPad::GetAnaloguePadRightJustUp(void)
 {
 	static int16 oldfStickX = 0;
 
-	int16 X = GetPad(0)->GetPedWalkLeftRight();
+	int16 X = MenuStickPad(this)->GetPedWalkLeftRight();
 
 	if ( X == 0 && oldfStickX > 0 )
 	{

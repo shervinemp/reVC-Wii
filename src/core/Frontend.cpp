@@ -38,6 +38,7 @@
 #include "sampman.h"
 #include "AimAssist.h"
 #ifdef NINTENDO_WII
+#include "Coop.h"
 #include "WiiPad.h"
 #include "WiiPointerAim.h"
 #include "WiiSpeaker.h"
@@ -5036,6 +5037,12 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					WiiAimInCar = 1;
 					WiiDriveByAnyWeapon = 0;
 					WiiCoopSkin[0] = WiiCoopSkin[1] = WiiCoopSkin[2] = 0;
+					// The rest of the co-op page: the options that are not pad settings, and
+					// the switch itself.  Values are the ones they start the game with.
+					CoopFriendlyFire = 1;
+					CoopSharedWanted = 1;
+					CoopMinigames = 1;
+					CCamera::bWiiCoopCamera = 0;
 					m_PrefsUseVibration = true;
 #endif
 					SaveSettings();
@@ -5674,12 +5681,18 @@ CMenuManager::SwitchMenuOnAndOff()
 {
 	if (!TheCamera.m_WideScreenOn) {
 
+		// Asked once, because which pad that is can change under the code below: with
+		// couch co-op it is whichever pad has pressed Start while the menu is closed,
+		// and clearing that pad on the way out would make the question come out
+		// differently.  Everywhere else it is pad 0.
+		CPad *menuPad = FrontEndPad();
+
 		// Reminder: You need REGISTER_START_BUTTON defined to make it work.
-		if ((FrontEndPad()->GetStartJustDown() || FrontEndPad()->GetEscapeJustDown())
+		if ((menuPad->GetStartJustDown() || menuPad->GetEscapeJustDown())
 			&& (!m_bMenuActive || m_nCurrScreen == MENUPAGE_PAUSE_MENU || m_nCurrScreen == MENUPAGE_CHOOSE_SAVE_SLOT || m_nCurrScreen == MENUPAGE_SAVE_CHEAT_WARNING)
 			|| m_bShutDownFrontEndRequested || m_bStartUpFrontEndRequested
 #ifdef REGISTER_START_BUTTON
-			|| FrontEndPad()->GetStartJustDown() && !m_bGameNotLoaded
+			|| menuPad->GetStartJustDown() && !m_bGameNotLoaded
 #endif
 			) {
 
@@ -5745,16 +5758,38 @@ CMenuManager::SwitchMenuOnAndOff()
 				m_bWaitingForNewKeyBind = false;
 
 #ifdef REGISTER_START_BUTTON
-				int16 start1 = FrontEndPad()->PCTempJoyState.Start, start2 = FrontEndPad()->PCTempKeyState.Start,
-					start3 = FrontEndPad()->OldState.Start, start4 = FrontEndPad()->NewState.Start;
+				int16 start1 = menuPad->PCTempJoyState.Start, start2 = menuPad->PCTempKeyState.Start,
+					start3 = menuPad->OldState.Start, start4 = menuPad->NewState.Start;
 #endif
-				FrontEndPad()->Clear(false);
+				menuPad->Clear(false);
 				CPad::GetPad(1)->Clear(false);
 #ifdef REGISTER_START_BUTTON
-				FrontEndPad()->PCTempJoyState.Start = start1;
-				FrontEndPad()->PCTempKeyState.Start = start2;
-				FrontEndPad()->OldState.Start = start3;
-				FrontEndPad()->NewState.Start = start4;
+				menuPad->PCTempJoyState.Start = start1;
+				menuPad->PCTempKeyState.Start = start2;
+				menuPad->OldState.Start = start3;
+				menuPad->NewState.Start = start4;
+#endif
+#ifdef NINTENDO_WII
+				// Every pad that exists, not just the one the menu followed: what a pad
+				// was holding when the menu closed must not reach the game as a fresh
+				// press.  Start is kept as it is for the followed pad, or a pad still
+				// holding it would open the menu again the next frame.
+				for (int padSlot = 0; padSlot < MAX_PADS; padSlot++) {
+					CPad *other = CPad::GetPad(padSlot);
+					if (other == menuPad || padSlot == 1)
+						continue;
+#ifdef REGISTER_START_BUTTON
+					int16 otherStart1 = other->PCTempJoyState.Start, otherStart2 = other->PCTempKeyState.Start,
+						otherStart3 = other->OldState.Start, otherStart4 = other->NewState.Start;
+#endif
+					other->Clear(false);
+#ifdef REGISTER_START_BUTTON
+					other->PCTempJoyState.Start = otherStart1;
+					other->PCTempKeyState.Start = otherStart2;
+					other->OldState.Start = otherStart3;
+					other->NewState.Start = otherStart4;
+#endif
+				}
 #endif
 				UnloadTextures();
 				CTimer::EndUserPause();

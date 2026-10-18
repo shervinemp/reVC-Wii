@@ -4,6 +4,7 @@
 
 #include "Camera.h"
 #include "Clock.h"
+#include "Coop.h"
 #include "CutsceneMgr.h"
 #include "DMAudio.h"
 #include "General.h"
@@ -203,10 +204,15 @@ void CWeather::Update(void)
 	}
 	if (WhenToPlayLightningSound && CTimer::GetTimeInMilliseconds() > WhenToPlayLightningSound) {
 		DMAudio.PlayOneShot(SoundHandle, SOUND_LIGHTNING, LightningDuration);
-		// Thunder is everybody's: no position, so it is not a proximity test.
+		// Thunder is everybody's: no position, so it is not a proximity test.  Everybody
+		// who is playing: a co-op slot nobody has joined is left alone, so an idle
+		// controller does not buzz for a game it is not in.  (Pad PAD_COOP is player
+		// slot 1, and so on up.)
 		CPad::GetPad(0)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
-		for(int coop = PAD_COOP; coop < MAX_PADS; coop++)
-			CPad::GetPad(coop)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
+		for(int coop = PAD_COOP; coop < MAX_PADS; coop++){
+			if(CCoop::GetPlayerPed(1 + coop - PAD_COOP) != nil)
+				CPad::GetPad(coop)->StartShake(40 * LightningDuration + 100, 2 * LightningDuration + 80);
+		}
 		WhenToPlayLightningSound = 0;
 	}
 

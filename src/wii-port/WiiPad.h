@@ -69,6 +69,9 @@ void WiiPadCaptureMouse(CMouseControllerState &state);
 
 // Drives the rumble motors from the shake the game asked for, and spends down
 // its remaining duration.  No other backend on this platform does either.
+// A Wii Remote's motor is written by its channel and a GameCube pad's by its
+// port, never one for the other; a partner's only buzzes while they are in the
+// game; and a controller that stops being a player's is told to stop once.
 void WiiPadUpdateRumble(void);
 
 // Which controller currently owns pad 0 (GameCube preferred).
