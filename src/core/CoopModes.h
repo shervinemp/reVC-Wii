@@ -30,14 +30,23 @@ class CVehicle;
 // suspect melt back into the traffic.  Nothing is spawned that the engine does
 // not already know how to own.
 //
-// The second one is the smuggling run.  A boat with two or more players and
-// the horn arms it; three drops are planned along the coast on water path
-// nodes, each marked by a radar blip and a corona, and each unloads by holding
-// the boat in the ring at rest.  Every drop pays, raises the party's wanted
+// The second one is the smuggling run.  Player 1 at the wheel of a boat and the
+// horn arms it.  A boat cannot carry the party -- the game gives every boat one
+// passenger seat at most, on top of the driver's -- so the rest of the party
+// are each given a boat of their own: as a partner comes into the world with
+// player 1 at sea, CCoop asks EscortBoat, which makes a boat of the lead's own
+// model on the water beside it, and the partner is put at its wheel.  They
+// are the crew while they keep within range of the lead boat, and the regroup
+// that holds a driven boat to player 1 holds them.  Three drops are planned
+// along the coast on water path nodes, each marked by a radar blip and a
+// corona, and each unloads by holding the lead boat in the ring at rest.
+// Every drop pays (more for each boat of the crew), raises the party's wanted
 // level by one, and brings heat: a Predator, the game's own police boat, with
-// a cop at the wheel, chasing on the same drive-to-coords machinery.  Deliver
-// all three for the cache -- an Uzi into the party's arsenal.  A boat lost,
-// wrecked, or left empty for a moment is a run over.
+// a cop at the wheel, chasing the lead boat on the same drive-to-coords
+// machinery.  Deliver all three for the cache -- an Uzi into the party's
+// arsenal.  The lead boat lost, wrecked, or left by player 1 for a moment is a
+// run over, and the party's boats are handed back: partners at their wheels
+// are taken out of the world, and come back by the usual rules.
 //
 // The third is the Bloodring derby.  Two or more players parked in a knot --
 // any open ground will do; the ring is drawn around them -- and a honk starts
@@ -64,15 +73,22 @@ class CVehicle;
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
 //
-// The sixth is cops & robbers.  The party on foot in a knot and a press of the
-// nod -- not one from a player with a car in reach, because the nod is also
+// The sixth is cops & robbers.  The party on foot in a knot and the nod held
+// for 0.6 s -- not a tap, which is as likely to be meant for something else,
+// and not a press from a player with a car in reach, because the nod is also
 // the enter-vehicle button and that press is somebody getting in: a case
 // appears at their feet and a getaway marker a short run away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
 // them -- the case falls where it fell, anyone but the busted player can take
-// it for the next two seconds, and the screen says who busted whom.  First to
-// three takes the pot.  The party's wall and leash stand aside for it: a
-// pursuit nobody can outrun is not a pursuit.
+// it for the next two seconds, whoever does cannot be busted for two seconds,
+// and the screen says who busted whom.  First to three takes the pot.  The
+// party's wall and leash stand aside for it: a pursuit nobody can outrun is
+// not a pursuit.
+//
+// The toy race, the dance-off and cops & robbers do not arm while anyone in
+// the party is wanted: they start from a jump, a duck and a press of the nod,
+// the things a party being chased does anyway.  The cop shift and the
+// smuggling run are about the police, and are not held back.
 class CCoopModes
 {
 public:
@@ -87,6 +103,18 @@ public:
 	// case.  Called from CEventList::RegisterEvent for events a player
 	// caused.
 	static bool OnDuty(CEntity *criminal, CEntity *victim, bool gunfire);
+
+	// A boat for a partner to take the wheel of, while the smuggling run is on
+	// and player 1 is sailing the run's boat.  Asked by CCoop when it is about to
+	// bring a partner into the world and finds player 1 in a boat, where there
+	// would otherwise be no seat for them: a mission boat of the lead's own
+	// model, made in the water beside it, empty, and the caller seats the
+	// partner at its wheel.  The run keeps hold of it (it is a mode vehicle,
+	// so the save leaves it out) and hands it back when the run is over, with
+	// any partner still in it taken out of the world first.  Nil when the run
+	// is not on, the boat is not the run's, or there is no clear water for it.
+	// The same boat comes back until it is wrecked, taken, or left behind.
+	static CVehicle *EscortBoat(int player, CVehicle *lead);
 
 	// Whether a mode is running that wants the camera to hold still rather
 	// than turn with a car's nose: the derby and the toy race.

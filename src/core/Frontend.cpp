@@ -5040,7 +5040,6 @@ CMenuManager::ProcessUserInput(uint8 goDown, uint8 goUp, uint8 optionSelected, u
 					// The rest of the co-op page: the options that are not pad settings, and
 					// the switch itself.  Values are the ones they start the game with.
 					CoopFriendlyFire = 1;
-					CoopSharedWanted = 1;
 					CoopMinigames = 1;
 					CCamera::bWiiCoopCamera = 0;
 					m_PrefsUseVibration = true;

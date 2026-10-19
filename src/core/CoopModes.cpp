@@ -28,6 +28,7 @@
 #include "Timer.h"
 #include "Vehicle.h"
 #include "Wanted.h"
+#include "WaterLevel.h"
 #include "WeaponInfo.h"
 #include "World.h"
 #include "Zones.h"
@@ -95,7 +96,12 @@ const float kMinDropSeparation = 150.0f;
 const uint32 kUnloadMs = 2000;
 const float kPursuerDistance = 130.0f;	// heat spawns this far out
 const uint32 kPursuerRetargetMs = 3000;
-const uint32 kCrewGraceMs = 5000;
+const uint32 kCrewGraceMs = 5000;	// the skipper may be out of the boat this long
+const float kEscortRange = 80.0f;	// a partner's boat this near the lead's is the crew
+const float kEscortGap = 14.0f;		// an escort appears this far to the side of the lead boat...
+const float kEscortBack = 8.0f;		// ...and this far astern, a boat length more for each partner
+const int kDropPay = 100;
+const int kEscortPay = 50;		// on top of it, for each boat of the crew at a drop
 
 // The shift, and the case it may have open.  The suspect is held as
 // registered references, so the engine nils them if anything ever deletes
@@ -129,9 +135,11 @@ struct ShiftState
 };
 ShiftState s_shift;
 
-// The run: the party's boat, the three drops planned from where it armed, and
-// the two police boats the heat brings.  Same rule as the shift: every entity
-// is a registered reference, and nil means gone.
+// The run: player 1's boat, the three drops planned from where it armed, the
+// boats the rest of the party is given to drive alongside it, and the two
+// police boats the heat brings.  Same rule as the shift: every entity is a
+// registered reference, and nil means gone.  Slot 0 of the escorts is player
+// 1's and stays empty.
 struct RunState
 {
 	bool active;
@@ -144,6 +152,7 @@ struct RunState
 	uint32 crewLostAt;
 	uint32 nextRetargetAt;
 	CVehicle *boat;
+	CVehicle *escort[NUMPLAYERS];
 	CVehicle *pursuer[2];
 	CPed *pursuerDriver[2];
 };
@@ -286,6 +295,8 @@ const float kCnRDeliverRange = 4.5f;
 const float kCnRBustRange = 5.0f;
 const uint32 kCnRBustHoldMs = 1500;
 const uint32 kCnRBustLockMs = 2000;	// a busted carrier may not take the case back for this long
+const uint32 kCnRGraceMs = 2000;	// ...and whoever picks it up cannot be busted for this long
+const uint32 kCnRHoldMs = 600;		// the nod is held this long to start a match, not tapped
 const uint32 kCnRNoteMs = 2000;		// "P3 BUSTED P1" stays on screen this long
 const float kCnRArena = 34.0f;		// beyond this the case comes back
 const uint32 kCnROutGraceMs = 3000;
@@ -319,6 +330,12 @@ struct CnRState
 	// says who busted whom.
 	int lockPlayer;
 	uint32 lockUntil;
+	// The other half of the same fix: whoever takes the case up is out of
+	// reach of a bust for kCnRGraceMs, so the buster -- who is almost always
+	// the one who picks it up -- is not busted by the player they just busted
+	// 1.5 s later, and a pair glued together cannot trade the case, a point
+	// each time, at the speed of the hold.
+	uint32 graceUntil;
 	int noteBuster;
 	int noteBusted;
 	uint32 noteAt;
@@ -326,14 +343,19 @@ struct CnRState
 	int winner;
 	int32 caseBlip;
 	int32 getawayBlip;
-	bool triangleHeld[NUMPLAYERS];
+	// The nod that starts a match: when each player's press began (0 for not
+	// down), and whether the press is one that cannot start anything -- it
+	// began with a car in reach, or while a match or another mode was on, or
+	// it has already been tried -- and so counts for nothing until it is let go.
+	uint32 nodSince[NUMPLAYERS];
+	bool nodSpent[NUMPLAYERS];
 };
 CnRState s_cnr;
 
 // --- what a mode tells the party when it arms --------------------------------
 
 // Every mode starts from something the party does in passing -- a honk, a pair
-// of jumps, a tap of the nod -- and the help box's mode name is all the game
+// of jumps, a held press of the nod -- and the help box's mode name is all the game
 // says about it, for a second and a half.  So the first time a mode arms in a
 // session it also puts one line on the screen, a few seconds long, saying how
 // it is played and how it ends.  It is drawn, not told through the help box:
@@ -443,6 +465,25 @@ VehicleInReach(CPlayerPed *ped)
 		if(Abs(centre.z - pos.z) > 4.0f)
 			continue;
 		if((centre - pos).Magnitude2D() <= 11.0f)
+			return true;
+	}
+	return false;
+}
+
+// Whether anyone in the party is wanted.  The heat is the party's: the level the
+// police read is player 1's, and the partners carry it with them, but a partner
+// on a record of their own is as much the party's problem, so everyone in the
+// world is asked.  The toy race, the dance-off and cops & robbers all start
+// from something the party does in passing, and a party with the police after
+// it is doing it for another reason -- a jump to clear a fence, a duck behind a
+// car, a press of the nod at a door.  The cop shift and the smuggling run are
+// not held back by this: the police are what they are about.
+bool
+PartyWanted(void)
+{
+	for(int player = 0; player < NUMPLAYERS; player++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() > 0)
 			return true;
 	}
 	return false;
@@ -882,34 +923,126 @@ FindWaterNodeNear(const CVector &point, float radius, CVector &out)
 	return true;
 }
 
-// The boat the party is riding in: a player driving, this many players or
-// more aboard.  Only the arming uses this; the run itself holds its own boat.
+// The boat player 1 is driving, if it is one a run can be sailed in.  The
+// skipper is always player 1, because the world is streamed round player 1 and
+// the whole party is held to them.  Nobody else can be aboard: a boat has no
+// door frames, so the game gives it one passenger seat at most, and that seat
+// is on top of the driver's (see CCoopModes::EscortBoat).  The Skimmer is a
+// boat that flies, and holding it "slow in the ring" means nothing.  Only the
+// arming uses this; the run itself holds its own boat.
 CVehicle *
-FindCrewBoat(int minPlayers)
+FindLeadBoat(void)
 {
-	CVehicle *best = nil;
-	int bestCount = 0;
-	for(int player = 0; player < NUMPLAYERS; player++){
+	CPlayerPed *ped = CCoop::GetPlayerPed(0);
+	if(ped == nil || ped->DyingOrDead() || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		return nil;
+	CVehicle *veh = ped->m_pMyVehicle;
+	if(veh->GetVehicleAppearance() != VEHICLE_APPEARANCE_BOAT || veh->GetModelIndex() == MI_SKIMMER)
+		return nil;
+	if(veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED)
+		return nil;
+	return veh;
+}
+
+// The crew apart from the skipper: boats a partner is driving, near the lead
+// boat.  Whether the boat is one the run made for them or one of their own
+// makes no difference.
+int
+CountEscorts(CVehicle *lead)
+{
+	int count = 0;
+	for(int player = 1; player < NUMPLAYERS; player++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(player);
-		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil || ped->m_pMyVehicle == lead)
 			continue;
 		CVehicle *veh = ped->m_pMyVehicle;
-		if(veh->GetVehicleAppearance() != VEHICLE_APPEARANCE_BOAT)
+		if(!veh->IsBoat() || veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED)
 			continue;
-		if(veh->pDriver == nil || !veh->pDriver->IsPlayer())
-			continue;
-		int count = 0;
-		for(int p = 0; p < NUMPLAYERS; p++){
-			CPlayerPed *other = CCoop::GetPlayerPed(p);
-			if(other != nil && other->bInVehicle && other->m_pMyVehicle == veh)
-				count++;
-		}
-		if(count >= minPlayers && count > bestCount){
-			bestCount = count;
-			best = veh;
-		}
+		if((veh->GetPosition() - lead->GetPosition()).Magnitude() <= kEscortRange)
+			count++;
 	}
-	return best;
+	return count;
+}
+
+// Water for one partner's boat: to a side of the lead boat and astern of it,
+// further out for each partner, then the other side, then straight astern.  It
+// has to be water -- the same test the regroup uses for a boat it puts back --
+// and clear of anything standing at the surface, a pier or a moored boat, the
+// lead boat and the partners' own included; a spot that fails either is not
+// used, and a partner with none waits as they would for any boat ride.  The
+// test is a sphere that reaches two metres under the surface, no deeper: a boat
+// is not turned away from the shallows of a bay, only from what it would hit.
+// Nothing is ever cleared from the spot (CTheScripts::ClearSpaceForMissionEntity
+// deletes the vehicles it finds there, and the lead boat is one).
+bool
+FindEscortSpot(int player, CVehicle *lead, CVector &out)
+{
+	CVector right = lead->GetRight();
+	CVector forward = lead->GetForward();
+	right.z = 0.0f;
+	forward.z = 0.0f;
+	if(right.Magnitude() < 0.1f || forward.Magnitude() < 0.1f){
+		right = CVector(1.0f, 0.0f, 0.0f);
+		forward = CVector(0.0f, 1.0f, 0.0f);
+	}
+	right.Normalise();
+	forward.Normalise();
+
+	const float lane = (float)(player - 1);
+	const float side = (player & 1) ? 1.0f : -1.0f;
+	const float wide = kEscortGap * (1.0f + 0.8f*(float)((player - 1)/2));
+	const float back = kEscortBack + 6.0f*lane;
+	const float offsets[4][2] = {
+		{ side*wide, back },
+		{ -side*wide, back },
+		{ 0.0f, back + kEscortGap },
+		{ 0.0f, back + 2.0f*kEscortGap },
+	};
+	for(int i = 0; i < 4; i++){
+		CVector pos = lead->GetPosition() + right*offsets[i][0] - forward*offsets[i][1];
+		float level;
+		if(!CWaterLevel::GetWaterLevel(pos, &level, true))
+			continue;
+		pos.z = level;
+		if(CWorld::TestSphereAgainstWorld(CVector(pos.x, pos.y, level + 2.0f), 4.0f, nil, true, true, false, true, false, false) != nil)
+			continue;
+		out = pos;
+		return true;
+	}
+	return false;
+}
+
+// Lets go of a partner's boat the way the world takes back the Predators: it
+// becomes any other boat on the water.  Never deleted here, so nobody sitting
+// in it goes with it.
+void
+ReleaseEscort(int player)
+{
+	CVehicle *boat = s_run.escort[player];
+	if(boat != nil){
+		CTheScripts::CleanUpThisVehicle(boat);
+		boat->CleanUpOldReference((CEntity**)&s_run.escort[player]);
+		s_run.escort[player] = nil;
+	}
+}
+
+// The end of the run: the party's boats are handed back.  A partner at the
+// wheel of one is taken out of the world first -- CCoop::Suspend, the same
+// door a change of clothes uses -- and comes back by the usual rules: beside
+// player 1 on foot, or after the boat ride if player 1 is still sailing.  Left
+// where they were they would be stuck at the wheel of a boat at sea, which has
+// no exit button for them while it floats.
+void
+ReleaseEscorts(void)
+{
+	bool crewed = false;
+	for(int player = 1; player < NUMPLAYERS; player++)
+		if(s_run.escort[player] != nil && s_run.escort[player]->pDriver != nil)
+			crewed = true;
+	if(crewed)
+		CCoop::Suspend("smuggling run over");
+	for(int player = 1; player < NUMPLAYERS; player++)
+		ReleaseEscort(player);
 }
 
 // The drop marker: a radar blip in the game's target red, and a corona over
@@ -1113,7 +1246,10 @@ TryStartRun(uint32 now)
 		return;
 	if(now < s_run.rearmAt)
 		return;
-	CVehicle *boat = FindCrewBoat(2);
+	// Player 1 at the wheel of a boat and the horn: the rest of the party is
+	// given boats of their own beside it as they come into the world, by
+	// CCoopModes::EscortBoat.
+	CVehicle *boat = FindLeadBoat();
 	if(boat == nil)
 		return;
 	CPad *pad = GetPadFromVehicleDriver(boat);
@@ -1144,6 +1280,7 @@ EndRun(uint32 now, const char *why)
 {
 	ClearDropMarker();
 	ReleasePursuers();
+	ReleaseEscorts();
 	if(s_run.boat != nil){
 		s_run.boat->CleanUpOldReference((CEntity**)&s_run.boat);
 		s_run.boat = nil;
@@ -1158,7 +1295,8 @@ EndRun(uint32 now, const char *why)
 void
 CompleteDrop(uint32 now, CVehicle *boat)
 {
-	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 100;
+	// The pay is the party's, and the boats that kept up are what earn it.
+	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDropPay + kEscortPay*CountEscorts(boat);
 	CPlayerPed *lead = FindPlayerPed();
 	if(lead != nil && lead->m_pWanted != nil && lead->m_pWanted->GetWantedLevel() < 3)
 		lead->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel() + 1);
@@ -1197,8 +1335,10 @@ UpdateRun(uint32 now)
 		return;
 	}
 
-	// The boat is the run: while it exists and somebody is aboard it goes on;
-	// lost, wrecked, or empty for a moment and it is over.
+	// The lead boat is the run: while it exists and its skipper is in it the run
+	// goes on; lost, wrecked, or left empty for a moment and it is over.  The
+	// partners' boats are not the run's to keep -- a partner who is down or has
+	// left is simply not in the crew -- and are handed back with it.
 	CVehicle *boat = s_run.boat;
 	if(boat == nil){
 		EndRun(now, "boat lost");
@@ -1208,17 +1348,14 @@ UpdateRun(uint32 now)
 		EndRun(now, "boat wrecked");
 		return;
 	}
-	int crew = 0;
-	for(int player = 0; player < NUMPLAYERS; player++){
-		CPlayerPed *ped = CCoop::GetPlayerPed(player);
-		if(ped != nil && ped->bInVehicle && ped->m_pMyVehicle == boat)
-			crew++;
-	}
-	if(crew == 0){
-		if(s_run.crewLostAt == 0)
+	CPlayerPed *skipper = CCoop::GetPlayerPed(0);
+	if(skipper == nil || !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
+		if(s_run.crewLostAt == 0){
 			s_run.crewLostAt = now;
-		else if(now - s_run.crewLostAt >= kCrewGraceMs)
-			EndRun(now, "crew ashore");
+		}else if(now - s_run.crewLostAt >= kCrewGraceMs){
+			EndRun(now, "skipper ashore");
+			return;
+		}
 		// A halt while nobody is aboard does not keep counting towards an
 		// unload.
 		s_run.unloadSince = 0;
@@ -1746,6 +1883,8 @@ TryStartRc(uint32 now)
 		return;
 	if(now < s_rc.rearmAt)
 		return;
+	if(PartyWanted())
+		return;
 
 	// The party on foot, in a knot, and two or more of them jump together:
 	// one person hopping about is not a race.
@@ -2045,6 +2184,8 @@ TryStartDance(uint32 now)
 		return;
 	if(now < s_dance.rearmAt)
 		return;
+	if(PartyWanted())
+		return;
 
 	// The party on foot, in a knot, and every one of them ducking together:
 	// the whole floor gets down, so the whole floor starts it.
@@ -2257,6 +2398,7 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	s_cnr.bustBy = -1;
 	s_cnr.lockPlayer = -1;
 	s_cnr.lockUntil = 0;
+	s_cnr.graceUntil = 0;
 	s_cnr.noteAt = 0;
 	s_cnr.outSince = 0;
 	s_cnr.winner = -1;
@@ -2283,7 +2425,7 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 }
 
 void
-TryStartCnR(uint32 now, bool pressed)
+TryStartCnR(uint32 now, bool held)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
@@ -2291,10 +2433,12 @@ TryStartCnR(uint32 now, bool pressed)
 		return;
 	if(now < s_cnr.rearmAt)
 		return;
-	if(!pressed)
+	if(PartyWanted())
+		return;
+	if(!held)
 		return;
 
-	// The party on foot in a knot; the nod (Triangle) starts it.
+	// The party on foot in a knot; the nod (Triangle) held for kCnRHoldMs starts it.
 	CVector sum(0.0f, 0.0f, 0.0f);
 	CVector forward(0.0f, 0.0f, 0.0f);
 	int count = 0;
@@ -2322,32 +2466,38 @@ TryStartCnR(uint32 now, bool pressed)
 void
 UpdateCnR(uint32 now)
 {
-	// The nod's holding edge, tracked every frame so a press during a
-	// match is not read as one right after it.  The nod is also the
-	// enter-vehicle button on foot, so a press from a player with a vehicle in
-	// reach is somebody getting in and starts nothing; otherwise a party
-	// walking up to a car would be starting a match.
-	bool pressed = false;
-	bool entering = false;
+	// The nod is held, not tapped, to start a match: it is the enter-vehicle
+	// button on foot, a prompt in the dance-off, and a tap as likely as not
+	// meant for something else.  It is tracked every frame, press by press.  A
+	// press that begins with a vehicle in reach is somebody getting in, and one
+	// that begins during a match, another mode or the cool-down is somebody's
+	// for another reason; neither starts anything, however long it is held, and
+	// nor does one that has already been tried -- a button held down asks
+	// once, not every frame.  Each is spent until it is let go.
+	bool held = false;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil)
+		if(ped == nil || GetPadFromPlayer(ped)->NewState.Triangle == 0){
+			s_cnr.nodSince[i] = 0;
+			s_cnr.nodSpent[i] = false;
 			continue;
-		CPad *pad = GetPadFromPlayer(ped);
-		const bool tri = pad->NewState.Triangle != 0;
-		if(tri && !s_cnr.triangleHeld[i]){
-			if(s_cnr.active || !VehicleInReach(ped))
-				pressed = true;
-			else
-				entering = true;
 		}
-		s_cnr.triangleHeld[i] = tri;
+		if(s_cnr.nodSpent[i])
+			continue;
+		if(s_cnr.nodSince[i] == 0){
+			if(s_cnr.active || ModeActive() || now < s_cnr.rearmAt || VehicleInReach(ped))
+				s_cnr.nodSpent[i] = true;
+			else
+				s_cnr.nodSince[i] = now;
+		}else if(now - s_cnr.nodSince[i] >= kCnRHoldMs){
+			held = true;
+			s_cnr.nodSince[i] = 0;
+			s_cnr.nodSpent[i] = true;
+		}
 	}
-	if(entering)
-		pressed = false;
 
 	if(!s_cnr.active){
-		TryStartCnR(now, pressed);
+		TryStartCnR(now, held);
 		return;
 	}
 	if(!CCoop::PairActive()){
@@ -2413,6 +2563,7 @@ UpdateCnR(uint32 now)
 			ShowCarriedCase();
 			s_cnr.bustSince = 0;
 			s_cnr.bustBy = -1;
+			s_cnr.graceUntil = now + kCnRGraceMs;
 			COOP_LOG("WII coop: case to player %d\n", best + 1);
 		}
 	}
@@ -2435,10 +2586,12 @@ UpdateCnR(uint32 now)
 			return;
 		}
 
-		// Busted: a cop holds them for a moment.
+		// Busted: a cop holds them for a moment.  Not in the first kCnRGraceMs
+		// after the case was picked up -- nobody is pinning anyone then, so the
+		// hold below starts when the grace is over and not before.
 		int pin = -1;
 		float pinDist = kCnRBustRange;
-		for(int i = 0; i < NUMPLAYERS; i++){
+		for(int i = 0; i < NUMPLAYERS && now >= s_cnr.graceUntil; i++){
 			if(i == s_cnr.carrier)
 				continue;
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -2639,11 +2792,11 @@ DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
 		"CHASE THE RADAR BLIP. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
-		"STOP AT EACH DROP MARKER TO UNLOAD. 3 DROPS. LEAVE THE BOAT TO QUIT",
+		"PARTY GETS ESCORT BOATS. STOP IN EACH DROP RING TO UNLOAD. 3 DROPS. P1 LEAVES BOAT TO QUIT",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
-		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS",
-		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS",
-		"GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3"
+		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
+		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
+		"HOLD NOD TO START. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -2660,7 +2813,7 @@ DrawExplainer(uint32 now)
 	if(!live)
 		return;
 
-	wchar text[96];
+	wchar text[128];
 	AsciiToUnicode(kLines[s_explain.showing], text);
 	CFont::SetPropOn();
 	CFont::SetBackgroundOff();
@@ -2751,12 +2904,14 @@ DrawModeMarks(uint32 now)
 	// The cop shift: the streak, the case's clock, and what the last case came to.
 	DrawShiftMarks(now);
 
-	// The smuggling run: which drop, and when the boat is unloading.
+	// The smuggling run: which drop, when the boat is unloading, and how many
+	// boats are keeping up -- each of them pays at the drop.
 	if(s_run.active){
+		const int crew = 1 + (s_run.boat != nil ? CountEscorts(s_run.boat) : 0);
 		if(s_run.unloadSince != 0)
-			sprintf(line, "UNLOADING %d/%d", s_run.leg + 1, kDrops);
+			sprintf(line, "UNLOADING %d/%d  CREW %d", s_run.leg + 1, kDrops, crew);
 		else
-			sprintf(line, "DROP %d/%d", s_run.leg + 1, kDrops);
+			sprintf(line, "DROP %d/%d  CREW %d", s_run.leg + 1, kDrops, crew);
 		DrawStatus(line, s_run.unloadSince != 0 ? CRGBA(255, 200, 90, 255) : white);
 	}
 
@@ -2835,7 +2990,7 @@ DrawModeMarks(uint32 now)
 			sprintf(line, "P%d BUSTED P%d", s_cnr.noteBuster + 1, s_cnr.noteBusted + 1);
 			DrawStatus(line, kCoopColours[s_cnr.noteBuster]);
 		}else if(s_cnr.carried && s_cnr.carrier >= 0){
-			sprintf(line, "P%d HAS THE CASE", s_cnr.carrier + 1);
+			sprintf(line, "P%d HAS THE CASE%s", s_cnr.carrier + 1, now < s_cnr.graceUntil ? "  SAFE" : "");
 			DrawStatus(line, kCoopColours[s_cnr.carrier]);
 		}else{
 			DrawStatus("GRAB THE CASE", white);
@@ -2862,6 +3017,10 @@ CCoopModes::Init(void)
 
 	if(s_run.boat != nil)
 		s_run.boat->CleanUpOldReference((CEntity**)&s_run.boat);
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_run.escort[i] != nil)
+			s_run.escort[i]->CleanUpOldReference((CEntity**)&s_run.escort[i]);
+	}
 	for(int i = 0; i < 2; i++){
 		if(s_run.pursuer[i] != nil)
 			s_run.pursuer[i]->CleanUpOldReference((CEntity**)&s_run.pursuer[i]);
@@ -2987,6 +3146,53 @@ CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 	return false;
 }
 
+CVehicle *
+CCoopModes::EscortBoat(int player, CVehicle *lead)
+{
+	if(!s_run.active || lead == nil || lead != s_run.boat || player < 1 || player >= NUMPLAYERS)
+		return nil;
+	if(lead->GetStatus() == STATUS_WRECKED || !CStreaming::HasModelLoaded(lead->GetModelIndex()))
+		return nil;
+
+	// The one this partner was given before, if it is still afloat, empty, and
+	// with the lead; a retry after a failed arrival must not make a boat each
+	// time.
+	CVehicle *old = s_run.escort[player];
+	if(old != nil){
+		if(old->GetStatus() != STATUS_WRECKED && old->pDriver == nil &&
+		   (old->GetPosition() - lead->GetPosition()).Magnitude() < kEscortRange)
+			return old;
+		ReleaseEscort(player);
+	}
+
+	CVector spot;
+	if(!FindEscortSpot(player, lead, spot))
+		return nil;
+
+	// The same model as the lead's, which is in memory because the lead is in
+	// it.  A mission boat, locked and with nobody in it, made the way the
+	// Predators are; the partner is put at its wheel by the caller.
+	CBoat *boat = new CBoat(lead->GetModelIndex(), MISSION_VEHICLE);
+	if(boat == nil)
+		return nil;
+	spot.z += boat->GetDistanceFromCentreOfMassToBaseOfModel();
+	boat->SetPosition(spot);
+	boat->SetOrientation(0.0f, 0.0f, lead->GetForward().Heading());
+	boat->SetStatus(STATUS_ABANDONED);
+	boat->bIsLocked = true;
+	boat->AutoPilot.m_nCarMission = MISSION_NONE;
+	boat->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	boat->bEngineOn = true;
+	boat->m_nZoneLevel = CTheZones::GetLevelFromPosition(&spot);
+	// Keeping pace with the lead from the first frame, as a regrouped boat does.
+	boat->m_vecMoveSpeed = lead->GetMoveSpeed();
+	CWorld::Add(boat);
+	boat->RegisterReference((CEntity**)&s_run.escort[player]);
+	s_run.escort[player] = boat;
+	COOP_LOG("WII coop: escort boat for player %d\n", player + 1);
+	return boat;
+}
+
 bool
 CCoopModes::SteadyView(void)
 {
@@ -3013,7 +3219,7 @@ CCoopModes::IsModeVehicle(const CVehicle *vehicle)
 	if(vehicle == s_shift.suspectCar)
 		return true;
 	for(int i = 0; i < NUMPLAYERS; i++){
-		if(vehicle == s_derby.loaner[i] || vehicle == s_rc.car[i])
+		if(vehicle == s_derby.loaner[i] || vehicle == s_rc.car[i] || vehicle == s_run.escort[i])
 			return true;
 	}
 	return vehicle == s_run.pursuer[0] || vehicle == s_run.pursuer[1];

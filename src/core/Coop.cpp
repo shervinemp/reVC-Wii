@@ -53,16 +53,14 @@ int CCoop::ms_nAutoJoinPartners;
 
 // The co-op options that are not pad settings, set from the co-op page and
 // saved in the INI under "Wii".  Friendly fire is on by default -- the game as
-// it was, with no rule against players shooting each other -- and the party
-// shares one wanted level, which is what the party was designed around.  With
-// sharing off a partner's crimes are still the party's problem, because the
-// police only ever read player 1; see ShareWantedLevel.
+// it was, with no rule against players shooting each other.  The wanted level
+// is not an option: the party always shares one, because the police only ever
+// read player 1's; see ShareWantedLevel.
 //
 // The minigames are on by default too: they only ever arm from something the
 // party does on purpose -- a siren, in the cop shift's case -- so the switch
 // is there for a party that wants the city to itself.
 int8_t CoopFriendlyFire = 1;
-int8_t CoopSharedWanted = 1;
 int8_t CoopMinigames = 1;
 
 namespace
@@ -516,16 +514,23 @@ eWeaponType s_owedType[NUMPLAYERS][TOTAL_WEAPON_SLOTS];
 int32 s_poolAmmo[NUMPLAYERS][TOTAL_WEAPON_SLOTS];
 
 // --- the wanted level ---------------------------------------------------------
-// One heat for the party, in the direction that matters: a crime by anyone is
-// the party's crime, so when any player's level rises everyone goes to the
-// highest of them -- and the stars on the HUD, player 1's, are the ones the
-// party is judged by.  Holding everyone at the highest level every frame would
-// keep the party wanted for good, so a drop is not mirrored as it happens; but
-// one on player 1, the level the police read, is followed.  CWanted::Update
-// only wears down a single star, so a level above that goes away because
-// something cleared it -- a Pay'n'Spray, a bribe, a cheat -- and a partner left
-// at the old level would put the whole party back on it with the next small
-// crime, and spend a FindNewAttackPoints scan every frame in the meantime.
+// One heat for the party, always; there is no option to split it.  A crime by
+// anyone is the party's crime, so when any player's level rises everyone goes
+// to the highest of them -- and the stars on the HUD, player 1's, are the ones
+// the party is judged by, because every cop reads player 1's level and nobody
+// else's.  Most crimes are registered on player 1's record to begin with; the
+// rise is what carries across the few that land on a partner's own, such as a
+// cop seeing one of them point a gun (CPed::ReactToPointGun).  A player who
+// joins starts at player 1's level.  Holding everyone at the highest level
+// every frame would keep the party wanted for good, so a drop is not mirrored
+// as it happens; but one on player 1, the level the police read, is followed.
+// CWanted::Update only wears down a single star, so a level above that goes
+// away because something cleared it -- a Pay'n'Spray, a bribe, a cheat -- and a
+// partner left at the old level would put the whole party back on it with the
+// next small crime, and spend a FindNewAttackPoints scan every frame in the
+// meantime.  A partner's own level can be lower than player 1's (a single star
+// wears off by itself), and then nobody reads it; the sync never leaves it
+// higher.
 //
 // The one cost is a statistic: SetWantedLevel is also what counts
 // CStats::WantedStarsAttained and WantedStarsEvaded, so the party's crimes and
@@ -543,7 +548,6 @@ ShareWantedLevel(void)
 	int32 highest = leadLevel;
 	bool rose = leadLevel > s_wanted[LEAD];
 	const bool leadFell = leadLevel < s_wanted[LEAD];
-	int32 highestRise = 0;
 	for(int i = 1; i < NUMPLAYERS; i++){
 		CPlayerPed *partner = CWorld::Players[i].m_pPed;
 		if(partner == nil || partner->m_pWanted == nil)
@@ -551,40 +555,24 @@ ShareWantedLevel(void)
 		const int32 level = partner->m_pWanted->GetWantedLevel();
 		if(level > highest)
 			highest = level;
-		if(level > s_wanted[i]){
+		if(level > s_wanted[i])
 			rose = true;
-			if(level > highestRise)
-				highestRise = level;
-		}
 	}
-	if(CoopSharedWanted){
-		if(rose){
-			for(int i = 0; i < NUMPLAYERS; i++){
-				CPlayerPed *ped = CWorld::Players[i].m_pPed;
-				if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() != highest)
-					ped->m_pWanted->SetWantedLevel(highest);
-			}
-		}else if(leadFell){
-			// Player 1's level came down with nobody's going up: the party's
-			// heat was cleared where the police read it.  Partners above it
-			// come down to it, never past it, and one already lower is left.
-			for(int i = 1; i < NUMPLAYERS; i++){
-				CPlayerPed *partner = CWorld::Players[i].m_pPed;
-				if(partner != nil && partner->m_pWanted != nil && partner->m_pWanted->GetWantedLevel() > leadLevel)
-					partner->m_pWanted->SetWantedLevel(leadLevel);
-			}
+	if(rose){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CWorld::Players[i].m_pPed;
+			if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() != highest)
+				ped->m_pWanted->SetWantedLevel(highest);
 		}
-	}else{
-		// With the option off the party does not share one level: player 1's
-		// crimes are not the partners', and each partner's record is their
-		// own.  But the law is still the party's problem.  Every cop in the
-		// city reads player 1's wanted level and nobody else's, so a
-		// partner's crime the police never hear about is a crime with no
-		// consequence at all.  A rise of theirs is therefore put on player 1
-		// -- the stars and the chase both follow -- while a rise of his is
-		// not put on them.
-		if(highestRise > leadLevel)
-			lead->m_pWanted->SetWantedLevel(highestRise);
+	}else if(leadFell){
+		// Player 1's level came down with nobody's going up: the party's
+		// heat was cleared where the police read it.  Partners above it
+		// come down to it, never past it, and one already lower is left.
+		for(int i = 1; i < NUMPLAYERS; i++){
+			CPlayerPed *partner = CWorld::Players[i].m_pPed;
+			if(partner != nil && partner->m_pWanted != nil && partner->m_pWanted->GetWantedLevel() > leadLevel)
+				partner->m_pWanted->SetWantedLevel(leadLevel);
+		}
 	}
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CWorld::Players[i].m_pPed;
@@ -915,14 +903,15 @@ FindPartnerCarWithSeat(int player)
 // pointer that was meant to be nilled when its target is deleted then dangles:
 // the partner's own slot in CWorld::Players, the vehicle they sit in, the one
 // they are about to hop into.  So whoever is about to register those asks first,
-// and tries again later if it is not so.  Eight is the few with some to spare.
+// and tries again later if it is not so.  Eight is the few with some to spare;
+// a partner put at the wheel of a boat takes about a dozen, and asks for twenty.
 bool
-ReferencesToSpare(void)
+ReferencesToSpare(int wanted = 8)
 {
 	int spare = 0;
-	for(CReference *ref = CReferences::pEmptyList; ref != nil && spare < 8; ref = ref->next)
+	for(CReference *ref = CReferences::pEmptyList; ref != nil && spare < wanted; ref = ref->next)
 		spare++;
-	return spare >= 8;
+	return spare >= wanted;
 }
 
 // Straight into a seat, the way COMMAND_CREATE_CHAR_AS_PASSENGER seats a ped
@@ -947,6 +936,27 @@ SeatPartner(CPlayerPed *partner, CVehicle *vehicle)
 	partner->bUsesCollision = false;
 	partner->AddInCarAnims(vehicle, false);
 	return true;
+}
+
+// At the wheel of a boat the smuggling run has made for them, the way
+// COMMAND_WARP_PLAYER_INTO_CAR seats player 1 (Script4.cpp): the order to drive
+// it, then CPed::WarpPedIntoCar, which makes them its driver, puts the boat in
+// the player state and gives them the driving animation.  This is the one place
+// WarpPedIntoCar is wanted: a boat is a vehicle a player is always the driver
+// of.  The order was only the key to that, so it is taken off again; a normal
+// entry ends with none.
+bool
+SeatPartnerAsDriver(CPlayerPed *partner, CVehicle *boat)
+{
+	if(boat->pDriver != nil || boat->GetStatus() == STATUS_WRECKED)
+		return false;
+	partner->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, boat);
+	// WarpPedIntoCar does nothing but sit the ped down unless that order took.
+	if(partner->m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER)
+		return false;
+	partner->WarpPedIntoCar(boat);
+	partner->SetObjective(OBJECTIVE_NONE);
+	return partner->bInVehicle && boat->pDriver == partner;
 }
 
 void
@@ -1191,6 +1201,8 @@ SpawnPartner(CPlayerPed *lead, int player)
 	}
 
 	CVehicle *ride = nil;
+	// Whether the seat is the wheel of a boat the smuggling run made for them.
+	bool atWheel = false;
 	CVector pos;
 	if(s_reviveValid[player]){
 		// Brought back where they fell, not beside player 1 and not into their
@@ -1218,6 +1230,12 @@ SpawnPartner(CPlayerPed *lead, int player)
 			}else if((ride = FindPartnerCarWithSeat(player)) != nil){
 				// No seat in player 1's, but another player is driving a car that
 				// has one: the party's cars are all part of it.
+				pos = ride->GetPosition();
+			}else if(vehicle->IsBoat() && ReferencesToSpare(20) &&
+			         (ride = CCoopModes::EscortBoat(player, vehicle)) != nil){
+				// Player 1 is at sea on a smuggling run, and a boat has no seat to
+				// give: the run makes this partner a boat of their own to drive.
+				atWheel = true;
 				pos = ride->GetPosition();
 			}else{
 				// No seat.  Beside it if it is standing still, and otherwise not
@@ -1323,24 +1341,24 @@ SpawnPartner(CPlayerPed *lead, int player)
 	// against the last ped to hold this slot.
 	ForgetSharedAmmo(player);
 	// The party shares its heat: a partner who arrives while player 1 is
-	// wanted is wanted too, and the mirror starts from there.  With the option
-	// off they arrive clean and keep their own.
-	if(CoopSharedWanted)
-		partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
+	// wanted is wanted too, and the mirror starts from there.
+	partner->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel());
 	s_wanted[LEAD] = lead->m_pWanted->GetWantedLevel();
 	s_wanted[player] = partner->m_pWanted->GetWantedLevel();
 	s_wantSlotUntil[player] = CTimer::GetTimeInMilliseconds() + 4000;
 
-	if(ride != nil && !SeatPartner(partner, ride)){
+	if(ride != nil && !(atWheel ? SeatPartnerAsDriver(partner, ride) : SeatPartner(partner, ride))){
 		// CanRideAlong found a seat a moment ago, so this cannot happen; if it
 		// ever does, a player standing inside a car is not the way to find out.
+		// (An escort boat was empty a moment ago too, and is the same.)
 		RemovePartner(player, "no seat after all", false);
 		return false;
 	}
 
 	s_aim[player].facing = false;
 	s_aim[player].assistHandle = -1;
-	COOP_LOG("WII coop: player %d in%s\n", player + 1, ride != nil ? " (riding along)" : "");
+	COOP_LOG("WII coop: player %d in%s\n", player + 1,
+	         atWheel ? " (escort boat)" : ride != nil ? " (riding along)" : "");
 	s_waitSince[player] = 0;
 	s_waitTold[player] = false;
 	if(s_announceJoin[player]){

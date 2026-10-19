@@ -32,12 +32,10 @@ class CVector2D;
 //   slot 0 is player 1.
 //
 // The co-op options that are not pad settings: whether a player's shots can
-// hurt another, and whether the party shares one wanted level.  With sharing
-// off each player keeps their own record, but a partner's crime is still the
-// party's problem.  Set from the co-op page and saved in the INI under "Wii".
+// hurt another.  Set from the co-op page and saved in the INI under "Wii".
+// (The wanted level is not an option: the party always shares one.)
 extern int8_t CoopFriendlyFire;
-extern int8_t CoopSharedWanted;
-// The minigames switch, same page and same INI as the other two.  With it off
+// The minigames switch, same page and same INI as friendly fire.  With it off
 // the engine-side modes cannot start; a mode already running is left to
 // finish, because the switch is the off switch for the offer, not a trapdoor.
 extern int8_t CoopMinigames;

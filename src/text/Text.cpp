@@ -176,7 +176,6 @@ WiiFallbackText(const char *key)
 		{ "WII_SK10", "HILARY" },
 		{ "WII_SK11", "GONZALEZ" },
 		{ "WII_FF", "FRIENDLY FIRE" },
-		{ "WII_SHW", "SHARED WANTED" },
 		{ "WII_MG", "MINIGAMES" },
 		{ "WII_CSH", "COP SHIFT" },
 		{ "WII_CSR", "SMUGGLING RUN" },

@@ -35,11 +35,23 @@ the cops & robbers bust lockout, the cop shift's streak and result, readable dan
 slower beat, lane tags and cells, first-time explainers, the derby's "ramming only" announced.
 Open, and not for code alone:
 - Design calls left to the owner: friendly fire defaults on; every partner defaults to player 1's
-  skin; Shared Wanted barely changes anything (both settings put a partner's crime on player 1 and
-  follow player 1's drops); co-op is reachable only from the pause menu; the smuggling run can never
-  start (`FindCrewBoat(2)` needs two players in one boat and partners cannot board boats).
-- Minigame arming has no guard against an accident (a wanted-level check, a held press for cops &
-  robbers); a glued pair can still trade busts for about 7.5 s a round.
+  skin; co-op is reachable only from the pause menu; the smuggling run can never start
+  (`FindCrewBoat(2)` needs two players in one boat and partners cannot board boats). Settled since:
+  the Shared Wanted toggle did almost nothing (both settings put a partner's crime on player 1 and
+  followed player 1's drops), so it is gone and the party always shares one wanted level, the one
+  player 1 holds (design doc, "Smaller rules"). The menu row, its ini key and its text are removed;
+  a stale `SharedWanted` line in an existing `reVC.ini` is never read.
+- Minigame arming had no guard against an accident, and a glued pair could trade busts for about
+  7.5 s a round. Settled since (code only, nothing run): the toy race, the dance-off and cops &
+  robbers do not arm while anyone in the party is wanted; cops & robbers needs the nod held 0.6 s
+  (a tap, or a press with a car in reach, starts nothing); whoever picks the case up cannot be
+  busted for 2 s, beside the 2 s lockout on the busted player.
+- The smuggling run, settled since the same way (code only, nothing run): it arms on player 1 at
+  the wheel of a boat and the horn, and the rest of the party are given boats to drive beside the
+  lead (`CCoopModes::EscortBoat`, seated by `SeatPartnerAsDriver` in `SpawnPartner`), because a boat
+  has one passenger seat at most, drawn on top of the driver's, and a boat passenger has no exit.
+  Unverified on a console: the seating, the regroup keeping passive escorts near a fast lead boat,
+  and the hand-back at the end (`CCoop::Suspend`). Design doc, "Minigames".
 - The GameCube chord's first button still fires its own action for a frame or two.
 - The battery flag is the remote's own status flag and may lag; nobody has watched it.
 - The explainer flags reset whenever the session pauses (a mission, a cutscene), so one returns
@@ -250,7 +262,8 @@ The reviewers found no unguarded camera, renderer or shadow change. These are th
 35. **Pips vanish in vehicles.** `Hud.cpp` `DrawCoopMarks` skips any player with `bInVehicle`, so a
     driving partner's health and ammo are shown nowhere (the HUD is player 1's).
 36. **Restore Defaults is half-done.** `Frontend.cpp:5038` resets the pointer toggles and partner
-    skins but not Friendly Fire, Shared Wanted, Minigames or the co-op toggle.
+    skins but not Friendly Fire, Minigames or the co-op toggle (it also missed the Shared Wanted
+    toggle, which has since been removed).
 37. **One help box for every notice.** Join, leave, down, revived, framing and tether messages all use
     `CHud::SetHelpMessage`; simultaneous events overwrite each other.
 38. Text: all 106 `WII_*` keys used by the co-op code resolve (fallback table or GXT). Only 10 are in

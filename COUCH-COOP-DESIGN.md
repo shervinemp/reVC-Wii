@@ -182,9 +182,9 @@ back at once line up along the road instead of piling onto one node.
   on foot, in a full car, or in a boat -- the same button takes the nearest car
   or bike within 10 m that another player is not driving and enters it as its
   **driver**. It is the same enter-car path player 1 uses, carjacking an
-  occupied car if that is the nearest. Boats are deliberately left alone (see
-  "Not done"); a bike is not, because its controls and drive-by come off the
-  rider's own pad now. The camera turns with the car the partner is driving when
+  occupied car if that is the nearest. A boat is offered the same way, as an
+  unattended one only, and so is a bike, because their controls and drive-by
+  come off the driver's own pad now. The camera turns with the car the partner is driving when
   player 1 is not in one, so it can be driven rather than felt for. This is
   what a coupe with a full party comes to: its one seat carries one partner
   and the rest drive their own cars, which the regroup then keeps in convoy.
@@ -213,10 +213,12 @@ back at once line up along the road instead of piling onto one node.
   as a passenger seat rather than a carjack, and a partner's button never picks
   a car another player is driving, so nobody can take anybody else's wheel.
 
-A boat is the one vehicle a partner is only ever a passenger in: the engine
-makes any player who boards one its driver whatever seat they asked for, so
-rather than hand the wheel over by surprise, no partner is ever offered one
-(see "Not done"). A partner is never allowed to finish dragging someone out of
+A boat is the one vehicle nobody rides along in: the engine makes any player who
+boards one its driver whatever seat they asked for, and the game gives every
+boat a single passenger seat at most (none of the boat models has a door frame),
+drawn on top of the driver's, so a boat is never offered as a seat. A partner
+drives a boat of their own, or one the smuggling run makes for them (see
+"Minigames"). A partner is never allowed to finish dragging someone out of
 a seat either (`CPed::PedSetInCarCB` makes whoever did the dragging the
 driver).
 
@@ -428,15 +430,18 @@ nothing.
   red or snap; it is treated as pointing past them.
 - **What they do to each other is not a crime** and not a statistic: no wanted
   level for hitting another player, and a dead partner is not a rampage kill.
-- **The heat is shared** for everything else, and the **Shared Wanted** toggle
-  (on by default) is what "shared" means. With it on, a crime by anyone raises
-  everyone to the highest level. A drop is followed only on player 1, the level
-  the police read: stars above one do not wear off on their own in this game, so
-  without that a Pay'n'Spray would leave the partners wanted and the next small
-  crime would put everyone back. With it off each
-  player keeps their own record — but a partner's rise is still put on player
-  1, because every cop in the city reads player 1's wanted level and nobody
-  else's; without that a partner's crime would call nobody.
+- **The heat is shared** for everything else, always; there is no option for
+  it. The wanted level is the party's, and the level the cops read is player 1's
+  (every cop in the city reads player 1's and nobody else's). A crime by anyone
+  raises everyone to the highest level: most crimes are registered on player 1's
+  record to begin with, and the rise carries across the few that land on a
+  partner's own, such as a cop seeing one of them point a gun. A drop is
+  followed only on player 1, the level the police read: stars above one do not
+  wear off on their own in this game, so without that a Pay'n'Spray would leave
+  the partners wanted and the next small crime would put everyone back. When
+  player 1 falls, every partner above that level comes down to it; a partner
+  already lower is left alone, and nobody reads theirs. A partner who joins, or
+  comes back, starts at player 1's level.
 - **What counts as a player's.** One profile: a partner's kills count toward
   the rampage (and the victim blames the actual killer) and into the stats,
   havoc and media attention are the party's, a script-set "only damaged by
@@ -482,16 +487,22 @@ cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
 
 - the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
   while a case is open the takedown is not a crime),
-- the **smuggling run** (horn in a crewed boat: three coastal drops, stars and
-  Predators for heat, an Uzi for the last drop),
+- the **smuggling run** (player 1 at the wheel of a boat and the horn: the
+  rest of the party are given boats of their own beside it; three coastal
+  drops, stars and Predators for heat, an Uzi for the last drop),
 - the **Bloodring derby** (park a knot of cars and honk: last car running,
   first to two rounds, weapons off),
 - the **RC race** (jump together on foot: a toy grid, four gates in order,
   three laps, each driver's next gate in their colour),
 - the **dance-off** (everyone ducks together: prompts on a climbing beat; the
   dancing is the players' own bodies), and
-- **cops & robbers** (a press of the nod while gathered: grab the case, deliver or bust,
-  first to three).
+- **cops & robbers** (the nod held for 0.6 s while gathered: grab the case,
+  deliver or bust, first to three).
+
+The toy race, the dance-off and cops & robbers start from a jump, a duck and a
+press of the nod, which a party with the police after it does anyway, so none of
+the three arms while anyone in the party is wanted. The cop shift and the
+smuggling run are about the police and are not held back.
 
 The first time a mode arms in a session, one line under the headline says how it
 is played and how it ends, for 4.5 s (`DrawExplainer`); it comes back after a
@@ -500,10 +511,37 @@ every player, not only those in it, so that nobody shoots a driver mid-match;
 its headline says "ramming only" each round. Every lane has its player's name,
 and its bar is cut into one cell for each round, point or lap. The cop shift
 shows its streak and the seconds left on the open case, then what the case came
-to (caught with the pay, got away, siren off). In cops & robbers a bust keeps
-the busted player off the case for two seconds, so the buster does not score
-again at once, and the screen says who busted whom. The dance-off's beat runs
-from 1000 ms to 650 ms, and each chip shows the action as well as the button.
+to (caught with the pay, got away, siren off). In cops & robbers the nod is held
+(a tap, or a press with a car in reach, which is somebody getting in, starts
+nothing); a bust keeps the busted player off the case for two seconds, so the
+buster does not score again at once, and whoever picks the case up cannot be
+busted for two seconds ("SAFE" on the headline), so a pair glued together
+cannot trade busts at the speed of the hold; the screen says who busted whom.
+The dance-off's beat runs from 1000 ms to 650 ms, and each chip shows the
+action as well as the button.
+
+The smuggling run is player 1's: they are the skipper, because the world is
+streamed round player 1 and the whole party is held to them. A boat cannot carry
+the party -- no boat model has door frames, so the game gives every boat one
+passenger seat at most, drawn on top of the driver's, and a boat passenger has
+no button to get off -- so the rest of the party are each given a boat of their
+own. When a partner comes into the world with the run on and player 1 at sea,
+the run makes a boat of the lead's own model on the water to the side of it and a
+little astern, and the partner is put at its wheel (the way a script warps the
+player into a car); it is a mission boat, locked, and the save leaves it out. The
+partners then drive from their own pads, and the regroup that holds any driven
+boat to player 1 holds them. The crew is the lead boat and the boats a player is
+driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
+each boat of the crew adds $50 to a drop's $100. A drop is unloaded by the lead
+boat alone, in its ring and slow for two seconds; the Predators chase the lead
+boat; the party's boats can ram or shoot them like any other boat. The run ends
+when the lead boat is lost or wrecked, when player 1 is out of it for five
+seconds, or after the third drop, and then the boats are handed back: partners
+at their wheels are taken out of the world (as a change of clothes does), the
+boats become any other boat on the water, and the partners come back by the usual
+rules -- beside player 1 on foot, or after the boat ride if they are still
+sailing. A partner who cannot be put anywhere (no clear water, no room in the
+pools) waits for a boat ride as they always have.
 
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
 and twitchy cars would whip the shared view around), and the wall and leash
@@ -541,16 +579,12 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
-- **No partner ever takes a boat.** Cars and bikes they can steal and drive
-  (see "Riding along, and driving"); a boat is deliberately left alone, so
-  nobody finishes climbing on one and gets made its driver by surprise. A boat
-  a player boards and drives on purpose is theirs -- the smuggling run is built
-  on it -- and it is the automatic seat that never takes one. A
-  boat's passenger rides without a drive-by, and so does a bike's pillion:
-  their drive-bys are the driver's alone.
-- **Boats and trains**: a partner waits out of the world. They can still be a
-  passenger in another player's car, pillion on their bike, or riding in a
-  boat.
+- **No partner is ever a passenger in a boat.** The automatic seat never takes
+  one, for the reasons under "Riding along, and driving"; a bike's pillion rides
+  without a drive-by, and a boat has no seat to ride in.
+- **Boats and trains**: a partner waits out of the world, except on a smuggling
+  run, where the run gives them a boat to drive. They can still be a passenger
+  in another player's car or pillion on their bike.
 - **The wallet and the arsenal are player 1's.** Everyone collects pickups now,
   but weapons and ammo, money, packages and property are credited to player 1
   -- a partner gets the weapon back through the usual mirror -- so a money
