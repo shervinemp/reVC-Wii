@@ -580,13 +580,21 @@ the escort: the run treats either the same. The
 partners then drive from their own pads, and the regroup that holds any driven
 boat to player 1 holds them. The crew is the lead boat and the boats a player is
 driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
-each boat of the crew adds $50 to a drop's $100. Under it the screen shows the
-distance to the drop and, for each escort, its distance to the lead boat in
-amber once it is outside crew range, so player 2 has an objective even when the
-drop is off the edge of the shared radar. The lead boat also carries a green
-radar blip the escorts can follow. A drop is unloaded by the lead boat alone, in
-its ring and slow for two seconds; the Predators chase the lead boat; the
-party's boats can ram or shoot them like any other boat. The run ends
+each boat of the crew adds $50 to a drop's $100.
+
+Each leg has a crate on the water about ninety metres before the drop, placed
+on the line from the middle of the two boats: both boats race for it, and
+whoever reaches it first carries it. The screen gives each boat its distance to
+the crate ("CARGO  P1 120m  P2 125m"), so the race is legible from the sofa.
+The carrier's boat gets a green radar blip and must stop in the drop ring for
+two seconds; the other boat gets the "COVER" distance and keeps the Predators
+off. A Predator is sent out from the first leg, and the police switch to
+chasing whichever boat has the crate, so the escort has a real job on every leg.
+If the carrier's boat is wrecked or left, the crate floats where it was and the
+other boat can take it. Player 1 is still the
+skipper -- the run ends when their lead boat is lost or they leave it -- but the
+main job changes hands each leg depending on who wins the crate. The party's
+boats can ram or shoot the police like any other boat. The run ends
 when the lead boat is lost or wrecked, when player 1 is out of it for five
 seconds, or after the third drop, and then the boats are handed back: partners
 at their wheels are taken out of the world (as a change of clothes does), the
@@ -697,4 +705,6 @@ Recorded because each was stated as a verified fact.
 | shot follows the reticle within | `kAimArc`, `Coop.cpp` | 50° of the gun |
 | view height may trail by | `kCoopHeightLag`, `Cam.cpp` | 6 m |
 | assist cone | `kAssistMinCone` / `kAssistMaxCone` | 2.5° / 8° |
+| run cargo before the drop / pickup radius | `kCargoDistance` / `kCargoRadius`, `CoopModes.cpp` | 90 m / 10 m |
+| run drop ring / unload hold | `kDropRadius` / `kUnloadMs`, `CoopModes.cpp` | 35 m / 2 s |
 | player colours | `kCoopColours`, `Hud.cpp` | cyan / pink / green / amber |

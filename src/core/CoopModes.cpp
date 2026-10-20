@@ -105,6 +105,9 @@ const float kLegDistance = 320.0f;	// water between drops
 const float kDropSearch = 300.0f;	// how far a leg may look for water
 const float kDropRadius = 35.0f;	// in the ring...
 const float kDropSpeed = 3.0f * METERS_PER_SECOND_TO_GAME_SPEED;	// ...and this slow (3 m/s) to unload
+const float kCargoDistance = 90.0f;	// the crate waits this far before the drop...
+const float kCargoSearch = 120.0f;	// ...on water near there
+const float kCargoRadius = 10.0f;	// either boat this close picks it up
 // Three drops that planned out within this much of the boat, or of each other,
 // would pay out where the boat already is: a drop that near is not a drop.
 const float kMinDropSeparation = 150.0f;
@@ -161,9 +164,16 @@ struct RunState
 	uint32 rearmAt;
 	int leg;
 	CVector dropPos[kDrops];
+	CVector cargoPos[kDrops];	// where this leg's cargo is waiting
 	CVector drop;
 	int32 blip;
-	int32 leadBlip;		// the lead boat, for the escort boats to follow
+	int32 cargoBlip;		// cargo waiting: the yellow coordinate blip
+	int32 objectiveBlip;	// cargo picked: the carrier's boat, in green
+	int32 objectiveHandle;
+	bool cargoPlanned;		// this leg's crate spot has been worked out
+	bool firstHeat;			// the first Predator has been sent out
+	int carrier;			// player whose boat is carrying the cargo, or -1
+	int32 unloadBoat;	// pool index of the boat the timer belongs to
 	uint32 unloadSince;
 	uint32 crewLostAt;
 	uint32 nextRetargetAt;
@@ -1112,6 +1122,23 @@ PartnerBoat(int player, CVehicle *lead)
 	return veh;
 }
 
+CVehicle *
+BoatOfPlayer(int player, CVehicle *lead)
+{
+	if(player == 0)
+		return lead;
+	return PartnerBoat(player, lead);
+}
+
+bool
+BoatInDropRing(CVehicle *boat)
+{
+	if(boat == nil)
+		return false;
+	return (boat->GetPosition() - s_run.drop).Magnitude2D() < kDropRadius &&
+	       boat->GetMoveSpeed().Magnitude() < kDropSpeed;
+}
+
 // The crew apart from the skipper: boats a partner is driving, near the lead
 // boat.
 int
@@ -1228,26 +1255,67 @@ PlaceDropMarker(void)
 	CRadar::ChangeBlipColour(s_run.blip, RADAR_TRACE_RED);
 }
 
-// The lead boat on the radar, in the game's green.  Player 1 sees the drop; a
-// partner in an escort boat needs to see the boat they are escorting, which may
-// be the only thing on their screen that says where the run is going.
+// The boat carrying the crate, on the radar in the game's green.  Before a
+// pickup the crate itself is the yellow coordinate marker; once it is aboard,
+// this is the boat the other one has to stay with.
 void
-ClearLeadMarker(void)
+ClearObjectiveMarker(void)
 {
-	if(s_run.leadBlip >= 0){
-		CRadar::ClearBlip(s_run.leadBlip);
-		s_run.leadBlip = -1;
+	if(s_run.objectiveBlip >= 0){
+		CRadar::ClearBlip(s_run.objectiveBlip);
+		s_run.objectiveBlip = -1;
+	}
+	s_run.objectiveHandle = -1;
+}
+
+void
+UpdateObjectiveMarker(CVehicle *boat)
+{
+	const int32 handle = boat != nil ? CPools::GetVehiclePool()->GetIndex(boat) : -1;
+	if(handle == s_run.objectiveHandle && s_run.objectiveBlip >= 0)
+		return;
+	ClearObjectiveMarker();
+	if(handle < 0)
+		return;
+	s_run.objectiveBlip = CRadar::SetEntityBlip(BLIP_CAR, handle,
+		RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
+	CRadar::ChangeBlipColour(s_run.objectiveBlip, RADAR_TRACE_GREEN);
+	s_run.objectiveHandle = handle;
+}
+
+// The crate, before either boat has it.  A coordinate blip is enough on the
+// radar; the corona is what makes it findable in the water ahead.
+void
+ClearCargoMarker(void)
+{
+	if(s_run.cargoBlip >= 0){
+		CRadar::ClearBlip(s_run.cargoBlip);
+		s_run.cargoBlip = -1;
 	}
 }
 
 void
-PlaceLeadMarker(CVehicle *boat)
+UpdateCargoMarker(bool show)
 {
-	if(boat == nil)
+	if(!show){
+		ClearCargoMarker();
 		return;
-	s_run.leadBlip = CRadar::SetEntityBlip(BLIP_CAR,
-		CPools::GetVehiclePool()->GetIndex(boat), RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
-	CRadar::ChangeBlipColour(s_run.leadBlip, RADAR_TRACE_GREEN);
+	}
+	if(s_run.cargoBlip < 0){
+		s_run.cargoBlip = CRadar::SetCoordBlip(BLIP_COORD, s_run.cargoPos[s_run.leg],
+			RADAR_TRACE_YELLOW, BLIP_DISPLAY_BOTH);
+		CRadar::ChangeBlipColour(s_run.cargoBlip, RADAR_TRACE_YELLOW);
+	}
+}
+
+void
+RegisterCargoCorona(void)
+{
+	CCoronas::RegisterCorona((uintptr)&s_run + 2,
+		255, 220, 90, 255,
+		s_run.cargoPos[s_run.leg], 4.0f, 500.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+		CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
+		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 }
 
 void
@@ -1426,13 +1494,43 @@ UpdatePursuers(uint32 now, CVehicle *boat)
 
 void ReleaseLoaner(int player);
 
+// The crate waits about ninety metres short of the drop, on the line from the
+// middle of the two boats: neither starts with it in their lap, and both can
+// steer for it.  It is planned when a leg actually begins, because on the menu
+// start the escort boats do not exist yet when the run arms.
+void
+PlanCargoForLeg(CVehicle *boat)
+{
+	CVector start = boat->GetPosition();
+	int partners = 0;
+	for(int player = 1; player < NUMPLAYERS; player++){
+		CVehicle *escort = PartnerBoat(player, boat);
+		if(escort != nil){
+			start += escort->GetPosition();
+			partners++;
+		}
+	}
+	if(partners > 0)
+		start /= (float)(partners + 1);
+
+	CVector dir = s_run.dropPos[s_run.leg] - start;
+	dir.z = 0.0f;
+	if(dir.Magnitude() < 1.0f)
+		dir = CVector(1.0f, 0.0f, 0.0f);
+	dir.Normalise();
+	if(!FindWaterNodeNear(s_run.dropPos[s_run.leg] - dir*kCargoDistance, kCargoSearch,
+	                      s_run.cargoPos[s_run.leg]))
+		s_run.cargoPos[s_run.leg] = s_run.dropPos[s_run.leg];
+}
+
 bool
 StartRunAt(uint32 now, CVehicle *boat)
 {
 	if(boat == nil || !PlanRoute(boat))
 		return false;
 
-	ClearLeadMarker();
+	ClearObjectiveMarker();
+	ClearCargoMarker();
 	CStreaming::RequestModel(MI_PREDATOR, 0);
 	CStreaming::RequestModel(MI_COP, 0);
 
@@ -1440,8 +1538,12 @@ StartRunAt(uint32 now, CVehicle *boat)
 	s_run.boat = boat;
 	s_run.active = true;
 	s_run.leg = 0;
+	s_run.cargoPlanned = false;
+	s_run.firstHeat = false;
+	s_run.carrier = -1;
 	s_run.drop = s_run.dropPos[0];
 	s_run.unloadSince = 0;
+	s_run.unloadBoat = -1;
 	s_run.crewLostAt = 0;
 	s_run.nextRetargetAt = now;
 	PlaceDropMarker();
@@ -1476,7 +1578,8 @@ void
 EndRun(uint32 now, const char *why)
 {
 	ClearDropMarker();
-	ClearLeadMarker();
+	ClearObjectiveMarker();
+	ClearCargoMarker();
 	ReleasePursuers();
 	ReleaseEscorts();
 	if(s_run.boat != nil){
@@ -1498,11 +1601,16 @@ CompleteDrop(uint32 now, CVehicle *boat)
 {
 	// The pay is the party's, and the boats that kept up are what earn it.
 	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDropPay + kEscortPay*CountEscorts(boat);
+	s_run.carrier = -1;
+	s_run.unloadBoat = -1;
+	ClearObjectiveMarker();
+	ClearCargoMarker();
 	CPlayerPed *lead = FindPlayerPed();
 	if(lead != nil && lead->m_pWanted != nil && lead->m_pWanted->GetWantedLevel() < 3)
 		lead->m_pWanted->SetWantedLevel(lead->m_pWanted->GetWantedLevel() + 1);
 
 	s_run.leg++;
+	s_run.cargoPlanned = false;
 	COOP_LOG("WII coop: drop %d of %d\n", s_run.leg, kDrops);
 	if(s_run.leg >= kDrops){
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 300;
@@ -1550,19 +1658,6 @@ UpdateRun(uint32 now)
 		return;
 	}
 
-	// A partner in a boat is following a boat that may be off their radar; the
-	// lead blip stays on even while they fall behind.  It is put up as soon as
-	// there is an escort -- the run's or one the partner brought -- and taken
-	// down when the last one goes.
-	bool escort = false;
-	for(int i = 1; i < NUMPLAYERS; i++)
-		if(PartnerBoat(i, boat) != nil)
-			escort = true;
-	if(escort && s_run.leadBlip < 0)
-		PlaceLeadMarker(boat);
-	else if(!escort && s_run.leadBlip >= 0)
-		ClearLeadMarker();
-
 	CPlayerPed *skipper = CCoop::GetPlayerPed(0);
 	if(skipper == nil || !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
 		if(s_run.crewLostAt == 0){
@@ -1579,21 +1674,90 @@ UpdateRun(uint32 now)
 	}
 	s_run.crewLostAt = 0;
 
-	// Hold the boat in the ring, slow, and it unloads.
-	const float dist = (boat->GetPosition() - s_run.drop).Magnitude2D();
-	const float speed = boat->GetMoveSpeed().Magnitude();
-	if(dist < kDropRadius && speed < kDropSpeed){
-		if(s_run.unloadSince == 0)
-			s_run.unloadSince = now;
-		else if(now - s_run.unloadSince >= kUnloadMs){
-			CompleteDrop(now, boat);
-			return;
+	// One Predator from the first leg: player 1 has heat on the way to the
+	// crate, so player 2 has something to cover from the start.  After this the
+	// drops bring the rest of the heat.
+	if(!s_run.firstHeat && s_run.leg == 0){
+		SpawnPursuer(now, boat, 0);
+		if(s_run.pursuer[0] != nil)
+			s_run.firstHeat = true;
+	}
+
+	if(!s_run.cargoPlanned){
+		PlanCargoForLeg(boat);
+		s_run.cargoPlanned = true;
+		ClearCargoMarker();
+	}
+
+	// The cargo: both boats race for the crate; the first within reach carries
+	// it, and the cops chase that boat.  If it is lost -- the carrier's boat is
+	// wrecked or left -- it floats where it was and the other boat can take it.
+	CVehicle *carrierBoat = nil;
+	if(s_run.carrier >= 0){
+		carrierBoat = BoatOfPlayer(s_run.carrier, boat);
+		if(carrierBoat == nil){
+			s_run.carrier = -1;
+			s_run.unloadSince = 0;
+			s_run.unloadBoat = -1;
+			ClearObjectiveMarker();
+			ClearCargoMarker();
+		}else{
+			// Remember where it would be dropped if this boat goes.
+			s_run.cargoPos[s_run.leg] = carrierBoat->GetPosition();
+		}
+	}
+	if(s_run.carrier < 0){
+		int bestPlayer = -1;
+		float bestDist = kCargoRadius;
+		for(int player = 0; player < NUMPLAYERS; player++){
+			CVehicle *candidate = BoatOfPlayer(player, boat);
+			if(candidate == nil)
+				continue;
+			const float dist = (candidate->GetPosition() - s_run.cargoPos[s_run.leg]).Magnitude2D();
+			if(dist < bestDist){
+				bestDist = dist;
+				bestPlayer = player;
+			}
+		}
+		if(bestPlayer >= 0){
+			s_run.carrier = bestPlayer;
+			carrierBoat = BoatOfPlayer(bestPlayer, boat);
+			s_run.unloadSince = 0;
+			s_run.unloadBoat = -1;
+			ClearCargoMarker();
+			COOP_LOG("WII coop: player %d has the cargo\n", bestPlayer + 1);
+		}
+	}
+
+	UpdateObjectiveMarker(carrierBoat);
+	UpdateCargoMarker(s_run.carrier < 0);
+	if(s_run.carrier < 0)
+		RegisterCargoCorona();
+
+	// Only the boat carrying the crate unloads it, and it has to hold still in
+	// the ring.  The other boat's job is to keep the police off it.
+	if(carrierBoat != nil){
+		const int32 handle = CPools::GetVehiclePool()->GetIndex(carrierBoat);
+		if(handle != s_run.unloadBoat){
+			s_run.unloadBoat = handle;
+			s_run.unloadSince = 0;
+		}
+		if(BoatInDropRing(carrierBoat)){
+			if(s_run.unloadSince == 0)
+				s_run.unloadSince = now;
+			else if(now - s_run.unloadSince >= kUnloadMs){
+				CompleteDrop(now, boat);
+				return;
+			}
+		}else{
+			s_run.unloadSince = 0;
 		}
 	}else{
+		s_run.unloadBoat = -1;
 		s_run.unloadSince = 0;
 	}
 
-	UpdatePursuers(now, boat);
+	UpdatePursuers(now, carrierBoat != nil ? carrierBoat : boat);
 	RegisterDropCorona();
 }
 
@@ -4171,7 +4335,7 @@ DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
 		"CHASE THE RADAR BLIP. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
-		"P1 STOPS IN EACH DROP RING. P2 FOLLOWS P1'S BOAT CLOSE FOR CREW PAY. 3 DROPS. P1 LEAVES BOAT TO QUIT",
+		"RACE FOR THE CARGO. WHOEVER GRABS IT RUNS IT TO THE RING; THE OTHER COVERS. 3 DROPS. P1 LEAVES BOAT TO QUIT",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"BOTH PLAYERS RACE THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
@@ -4282,7 +4446,7 @@ DrawShiftMarks(uint32 now)
 void
 DrawModeMarks(uint32 now)
 {
-	char line[32];
+	char line[64];
 	const CRGBA white(255, 255, 255, 255);
 
 	// The cop shift: the streak, the case's clock, and what the last case came to.
@@ -4292,30 +4456,50 @@ DrawModeMarks(uint32 now)
 	// boats are keeping up -- each of them pays at the drop.
 	if(s_run.active){
 		const int crew = 1 + (s_run.boat != nil ? CountEscorts(s_run.boat) : 0);
+		CVehicle *carrierBoat = nil;
+		if(s_run.carrier >= 0 && s_run.boat != nil)
+			carrierBoat = BoatOfPlayer(s_run.carrier, s_run.boat);
 		if(s_run.unloadSince != 0)
 			sprintf(line, "UNLOADING %d/%d  CREW %d", s_run.leg + 1, kDrops, crew);
+		else if(carrierBoat != nil)
+			sprintf(line, "DROP %d/%d  P%d HAS CARGO  CREW %d",
+				s_run.leg + 1, kDrops, s_run.carrier + 1, crew);
 		else
-			sprintf(line, "DROP %d/%d  CREW %d", s_run.leg + 1, kDrops, crew);
+			sprintf(line, "DROP %d/%d  RACE FOR CARGO  CREW %d", s_run.leg + 1, kDrops, crew);
 		DrawStatus(line, s_run.unloadSince != 0 ? CRGBA(255, 200, 90, 255) : white);
 
-		// The drop's distance is the objective player 1 is steering for; each
-		// escort's distance to the lead boat is the job player 2 has.  The
-		// radar has one origin, so without this an escort can be following a
-		// blip that has gone off the edge of it.
+		// The carrier has the drop to steer for and the other boat has to stay
+		// with it.  Before the pickup the same line gives both boats their
+		// distance to the crate, because the race for it is the job.
 		if(s_run.boat != nil){
 			char sub[96];
-			const float dropDist = (s_run.boat->GetPosition() - s_run.drop).Magnitude2D();
-			sprintf(sub, "DROP IN %dm", (int)dropDist);
 			bool away = false;
-			for(int i = 1; i < NUMPLAYERS; i++){
-				CVehicle *escort = PartnerBoat(i, s_run.boat);
-				if(escort == nil)
-					continue;
-				const float dist = (escort->GetPosition() - s_run.boat->GetPosition()).Magnitude2D();
-				char part[24];
-				sprintf(part, "  P%d FOLLOW %dm", i + 1, (int)dist);
-				strcat(sub, part);
-				away = away || dist > kEscortRange;
+			if(carrierBoat != nil){
+				const float dropDist = (carrierBoat->GetPosition() - s_run.drop).Magnitude2D();
+				sprintf(sub, "DROP IN %dm", (int)dropDist);
+				for(int i = 0; i < NUMPLAYERS; i++){
+					if(i == s_run.carrier)
+						continue;
+					CVehicle *escort = BoatOfPlayer(i, s_run.boat);
+					if(escort == nil)
+						continue;
+					const float dist = (escort->GetPosition() - carrierBoat->GetPosition()).Magnitude2D();
+					char part[24];
+					sprintf(part, "  P%d COVER %dm", i + 1, (int)dist);
+					strcat(sub, part);
+					away = away || dist > kEscortRange;
+				}
+			}else{
+				sprintf(sub, "CARGO");
+				for(int i = 0; i < NUMPLAYERS; i++){
+					CVehicle *boat = BoatOfPlayer(i, s_run.boat);
+					if(boat == nil)
+						continue;
+					const float dist = (boat->GetPosition() - s_run.cargoPos[s_run.leg]).Magnitude2D();
+					char part[24];
+					sprintf(part, "  P%d %dm", i + 1, (int)dist);
+					strcat(sub, part);
+				}
 			}
 			PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(58.0f), sub,
 				away ? CRGBA(255, 200, 90, 255) : white, 0.45f, 0.7f);
@@ -4845,7 +5029,13 @@ CCoopModes::Init(void)
 	memset(&s_run, 0, sizeof(s_run));
 	// A cleared blip has to read as "none": id 0 is a real blip.
 	s_run.blip = -1;
-	s_run.leadBlip = -1;
+	s_run.cargoBlip = -1;
+	s_run.objectiveBlip = -1;
+	s_run.objectiveHandle = -1;
+	s_run.cargoPlanned = false;
+	s_run.firstHeat = false;
+	s_run.carrier = -1;
+	s_run.unloadBoat = -1;
 
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(s_derby.loaner[i] != nil)
