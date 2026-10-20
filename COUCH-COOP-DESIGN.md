@@ -85,9 +85,9 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
 - **Input** is a pad slot of its own per partner, `PAD_COOP`..`PAD_COOP3`
   (indices 2..4). Not pads 1..3: outside `MASTER` builds pad 1 is the engine's
   debug pad - Circle (the fire button) toggles the debug camera, Start hides
-  the HUD, and so on. While a pair is active the HUD toggle is off: pad 1 is
-  then player 2, and Start must not turn off the radar, the help box and a
-  minigame's objective.
+  the HUD, and so on. While a pair is active the HUD toggle is off and the HUD
+  is forced back on: pad 1 is then player 2, and Start must not turn off the
+  radar, the help box and a minigame's objective.
   `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that
   reads a pad on a player's behalf while processing a ped uses it.
 - **Controller**: player 1 is the GameCube pad in port 1, else the first
@@ -585,8 +585,9 @@ each boat of the crew adds $50 to a drop's $100.
 
 Each leg has a crate on the water about ninety metres before the drop and sixty
 metres to the partner's side of the line, so it is not simply on player 1's
-nose: both boats race for it, and whoever reaches it first carries it. The screen gives each boat its distance to
-the crate ("CARGO  P1 120m  P2 125m"), so the race is legible from the sofa.
+nose: both boats race for it, and whoever reaches it first carries it. The
+screen gives each boat its distance to the crate ("CARGO  P1 120m  P2 125m"),
+so the race is legible from the sofa.
 The carrier's boat gets a green radar blip and must stop in the drop ring for
 two seconds; the other boat gets the "COVER" distance and keeps the Predators
 off. A Predator is sent out from the first leg, and the police switch to
@@ -599,19 +600,22 @@ boats can ram or shoot the police like any other boat. The run ends
 when the lead boat is lost or wrecked, when player 1 is out of it for five
 seconds, or after the third drop, and then the boats are handed back: partners
 at their wheels are taken out of the world (as a change of clothes does), the
-boats become any other boat on the water, and the partners come back by the usual
-rules -- beside player 1 on foot, or after the boat ride if they are still
-sailing. A partner who cannot be put anywhere (no clear water, no room in the
+boats become any other boat on the water, and the partners come back by the
+usual rules -- beside player 1 on foot, or after the boat ride if they are
+still sailing. A partner who cannot be put anywhere (no clear water, no room in the
 pools) waits for a boat ride as they always have.
 
 Cover is from the boat: the driver has the SMG drive-by and can ram, and getting
 out at sea would abandon the cargo and the escort. The run and the cop shift
 hand each player a small cover kit once when they start: an Uzi with 60 rounds
-if they have no SMG, or enough to bring an existing SMG back to one 30-round
-clip. It is not taken away afterwards. That is how the game treats mission
-weapons -- a gift that stays -- and the top-up only restores one clip, so
-starting a run repeatedly is not an ammo farm. In the cop shift one player
-drives and the other shoots from the passenger seat.
+if nobody has an SMG (or a partner's SMG kind with at least their count, so the
+shared pool is not cut down), or enough to bring an existing SMG back to a
+30-round clip or up to a partner's larger count of the same kind. It is not
+taken away afterwards. That is how the game treats mission weapons -- a gift
+that stays -- and the kit does not hand out a fresh two clips on every repeat
+run. The cover SMG is put in hand in a car or boat (or an empty hand), so COVER
+works immediately instead of leaving them holding fists. In the cop shift one
+player drives and the other shoots from the passenger seat.
 
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
 and twitchy cars would whip the shared view around), and the wall and leash

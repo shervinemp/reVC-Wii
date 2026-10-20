@@ -108,6 +108,7 @@ const float kDropSpeed = 3.0f * METERS_PER_SECOND_TO_GAME_SPEED;	// ...and this 
 const float kCargoDistance = 90.0f;	// the crate waits this far before the drop...
 const float kCargoSide = 60.0f;		// ...and this far to the partner's side
 const float kCargoSearch = 120.0f;	// ...on water near there
+const float kCargoMinFromDrop = 40.0f;	// not on top of the ring if the side is land
 const float kCargoRadius = 10.0f;	// either boat this close picks it up
 // Three drops that planned out within this much of the boat, or of each other,
 // would pay out where the boat already is: a drop that near is not a drop.
@@ -590,15 +591,19 @@ CountPlayersIn(CVehicle *vehicle)
 	return count;
 }
 
-// A car or boat passenger can only fight with a submachine gun, and a partner
-// who arrives with none -- or with an empty one -- would have nothing to do in
-// the gunner seat.  The modes that use one hand out a small kit once:
-//   * no SMG at all: an Uzi with two clips;
-//   * an SMG below one clip: enough ammo to fill the clip back up.
+// A car or boat gunner can only fight with a submachine gun, and a partner who
+// arrives with none -- or with an empty one -- would have nothing to do in the
+// passenger or escort seat.  The modes that use one hand out a small kit once:
+//   * no SMG at all: an Uzi with two clips, or a partner's SMG kind if they
+//     have one, so the shared pool is not handed a different weapon;
+//   * an SMG below one clip: enough ammo to fill the clip back up, or to the
+//     count a partner already has of that same SMG.  The shared pool follows
+//     player 1, and this keeps a larger partner count from being cut down.
 // Nothing is taken away afterwards.  This is how the game itself hands out
 // mission weapons -- a gift that stays in the inventory -- and it avoids
-// tracking a "before" weapon to restore.  Repeated runs cannot farm much: the
-// top-up only ever brings an existing SMG back to one clip.
+// tracking a "before" weapon to restore.  The first kit can add a gun; a repeat
+// run only brings an existing SMG back up to the floor or a partner's own
+// count, so it does not hand out a fresh two clips every time.
 const int kCoverGunAmmo = 60;
 const int kCoverGunFloor = 30;
 void
@@ -608,12 +613,60 @@ EnsureCoverGun(CPlayerPed *ped)
 		return;
 	const uint8 slot = WEAPONSLOT_SUBMACHINEGUN;
 	if(!ped->HasWeaponSlot(slot)){
-		ped->GiveWeapon(WEAPONTYPE_UZI, kCoverGunAmmo, true);
+		// If a partner already has an SMG, issue the same kind with at least
+		// their count: the co-op ammo pool follows player 1, and a smaller new
+		// pool would quietly cut the partner's ammo down to it.  With no SMG in
+		// the party, an Uzi and two clips.
+		eWeaponType type = WEAPONTYPE_UZI;
+		uint32 ammo = kCoverGunAmmo;
+		bool found = false;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *other = CCoop::GetPlayerPed(i);
+			if(other == nil || other == ped || !other->HasWeaponSlot(slot))
+				continue;
+			CWeapon &theirs = other->GetWeapon(slot);
+			// Keep the kind a partner already has even when it is nearly empty:
+			// the arsenal passes player 1's new gun on to everyone, and a
+			// different kind in the same slot would replace theirs.
+			if(!found || theirs.m_nAmmoTotal > ammo){
+				type = theirs.m_eWeaponType;
+				ammo = Max(ammo, (uint32)theirs.m_nAmmoTotal);
+				found = true;
+			}
+		}
+		const CWeaponInfo *info = CWeaponInfo::GetWeaponInfo(type);
+		if(info != nil && info->m_nModelId != -1)
+			CStreaming::RequestModel(info->m_nModelId, STREAMFLAGS_DEPENDENCY);
+		if(info != nil && info->m_nModel2Id != -1)
+			CStreaming::RequestModel(info->m_nModel2Id, STREAMFLAGS_DEPENDENCY);
+		const int added = ped->GiveWeapon(type, ammo, true);
+		// In a car or boat the new gun is the job; put it in hand rather than
+		// leaving the player holding fists and wondering why COVER does
+		// nothing.  On foot, only take over an empty hand.
+		if(added == slot && (ped->bInVehicle ||
+		   ped->m_nSelectedWepSlot == ped->GetWeaponSlot(WEAPONTYPE_UNARMED)))
+			ped->m_nSelectedWepSlot = added;
 		return;
 	}
 	CWeapon &weapon = ped->GetWeapon(slot);
-	if(weapon.m_nAmmoTotal < kCoverGunFloor)
-		ped->GrantAmmo(weapon.m_eWeaponType, kCoverGunFloor - weapon.m_nAmmoTotal);
+	uint32 target = kCoverGunFloor;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *other = CCoop::GetPlayerPed(i);
+		if(other == nil || other == ped || !other->HasWeaponSlot(slot))
+			continue;
+		CWeapon &theirs = other->GetWeapon(slot);
+		if(theirs.m_eWeaponType == weapon.m_eWeaponType &&
+		   theirs.m_nAmmoTotal > (int32)target)
+			target = theirs.m_nAmmoTotal;
+	}
+	if(weapon.m_nAmmoTotal < (int32)target)
+		ped->GrantAmmo(weapon.m_eWeaponType, target - weapon.m_nAmmoTotal);
+	// The same rule for an SMG they already had: in a car or boat it is the
+	// cover gun, so draw it rather than leaving a pistol or fists selected.
+	if((ped->bInVehicle ||
+	    ped->m_nSelectedWepSlot == ped->GetWeaponSlot(WEAPONTYPE_UNARMED)) &&
+	   ped->m_nSelectedWepSlot != slot)
+		ped->m_nSelectedWepSlot = slot;
 }
 
 void
@@ -1159,7 +1212,8 @@ CVehicle *
 PartnerBoat(int player, CVehicle *lead)
 {
 	CPlayerPed *ped = CCoop::GetPlayerPed(player);
-	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil || ped->m_pMyVehicle == lead)
+	if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED ||
+	   !ped->bInVehicle || ped->m_pMyVehicle == nil || ped->m_pMyVehicle == lead)
 		return nil;
 	CVehicle *veh = ped->m_pMyVehicle;
 	if(!veh->IsBoat() || veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED)
@@ -1582,8 +1636,23 @@ PlanCargoForLeg(CVehicle *boat)
 		}
 	}
 
-	if(!FindWaterNodeNear(candidate, kCargoSearch, s_run.cargoPos[s_run.leg]))
-		s_run.cargoPos[s_run.leg] = s_run.dropPos[s_run.leg];
+	// The side offset can be dry near a coast.  Falling back to the nearest
+	// water would then find the drop itself, so the crate would sit in the
+	// unload ring and the race would be over before it began.  Try the same
+	// line without the offset first; the drop is the last resort.
+	const CVector drop = s_run.dropPos[s_run.leg];
+	CVector planned;
+	if(FindWaterNodeNear(candidate, kCargoSearch, planned) &&
+	   (planned - drop).Magnitude2D() >= kCargoMinFromDrop){
+		s_run.cargoPos[s_run.leg] = planned;
+		return;
+	}
+	if(FindWaterNodeNear(drop - dir*kCargoDistance, kCargoSearch, planned) &&
+	   (planned - drop).Magnitude2D() >= kCargoMinFromDrop){
+		s_run.cargoPos[s_run.leg] = planned;
+		return;
+	}
+	s_run.cargoPos[s_run.leg] = drop;
 }
 
 bool
@@ -1724,7 +1793,8 @@ UpdateRun(uint32 now)
 	}
 
 	CPlayerPed *skipper = CCoop::GetPlayerPed(0);
-	if(skipper == nil || !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
+	if(skipper == nil || skipper->DyingOrDead() || skipper->m_nPedState == PED_ARRESTED ||
+	   !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
 		if(s_run.crewLostAt == 0){
 			s_run.crewLostAt = now;
 		}else if(now - s_run.crewLostAt >= kCrewGraceMs){
@@ -4400,7 +4470,7 @@ DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
 		"CHASE THE RADAR BLIP. ONE DRIVES, ONE SHOOTS; STOP OR WRECK IT. SIREN OFF TO QUIT",
-		"RACE FOR THE CARGO. FIRST THERE LOADS IT AT THE RING; THE OTHER COVERS WITH SMG OR RAM. 3 DROPS. P1 LEAVES BOAT TO QUIT",
+		"RACE FOR THE CARGO. FIRST TO THE CRATE CARRIES IT TO THE RING; THE OTHER COVERS WITH SMG/RAM. 3 DROPS. P1 ASHORE QUITS",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"BOTH PLAYERS RACE THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
@@ -5154,7 +5224,7 @@ CCoopModes::Update(void)
 	// the menu has closed that can stream the destination and move anybody.
 	UpdateMenuPending(now);
 
-	// A car or boat passenger needs a submachine gun to join the fight.  One kit
+	// A car or boat gunner needs a submachine gun to join the fight.  One kit
 	// per mode, per player; a partner who joins late is armed on their first
 	// frame in the world.
 	if(s_shift.active)

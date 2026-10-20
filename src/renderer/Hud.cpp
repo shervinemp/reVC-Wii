@@ -533,8 +533,12 @@ void CHud::Draw()
 
 	// Disable hud via second controller.  That is the stock single-player
 	// shortcut; with a partner in the room pad 1 is a player, and Start hiding
-	// the radar, the help box and a mode's objective is not a pause.
-	if (!CCoop::PairActive() && CPad::GetPad(1)->GetStartJustDown())
+	// the radar, the help box and a mode's objective is not a pause.  It also
+	// puts the HUD back on if it was hidden before the partner joined: a mode
+	// with no radar is a mode with no objective.
+	if (CCoop::PairActive())
+		m_Wants_To_Draw_Hud = true;
+	else if (CPad::GetPad(1)->GetStartJustDown())
 		m_Wants_To_Draw_Hud = !m_Wants_To_Draw_Hud;
 
 	if (CReplay::IsPlayingBack())
