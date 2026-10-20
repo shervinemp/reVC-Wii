@@ -883,6 +883,31 @@ VehicleSafeForPartner(CVehicle *vehicle)
 	return found && pos.z - ground <= 5.0f;
 }
 
+// Where a revived partner should stand.  On foot that is where they fell.  In
+// a vehicle it is beside the vehicle while it is safe, and well clear of it
+// when it is burning, bombed, wrecked or still in the air; player 1 is the last
+// resort.  False only when even player 1 is down, so the caller can try again
+// rather than dropping the partner into the blast.
+bool
+FindReviveSpot(CPlayerPed *partner, CVector &at)
+{
+	at = partner->GetPosition();
+	if(!partner->bInVehicle || partner->m_pMyVehicle == nil)
+		return true;
+	CVehicle *vehicle = partner->m_pMyVehicle;
+	if(!vehicle->bIsInWater && VehicleSafeForPartner(vehicle) &&
+	   FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
+		return true;
+	if(FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 6.0f, at))
+		return true;
+	CPlayerPed *safe = CWorld::Players[LEAD].m_pPed;
+	if(safe == nil || safe->DyingOrDead())
+		return false;
+	if(FindSpotBeside(safe->GetPosition(), safe->GetRight(), safe->GetForward(), 3.0f, at))
+		return true;
+	return FindSpotBeside(safe->GetPosition(), safe->GetRight(), safe->GetForward(), 1.6f, at);
+}
+
 // Whether a player can sit in this vehicle while another player drives it.
 // Only ever a vehicle a player is driving: the engine makes any player who
 // gets onto a bike or into a boat its driver whatever seat they asked for,
@@ -2340,17 +2365,13 @@ CCoop::Update(void)
 				else if(now - s_reviveTime[player] >= kReviveHoldMs){
 					s_reviveTime[player] = 0;
 					if(partner->DyingOrDead()){
-						if(partner->bInVehicle && partner->m_pMyVehicle != nil){
-							// Dead in a vehicle -- a car that drowned, a bike that
-							// threw them.  Nowhere to stand them up, so this is the
-							// ordinary return, beside player 1.
-							RemovePartner(player, "revived", false);
-						}else{
-							// Dead on the ground: a fresh partner where the body is,
-							// through the same machinery as every other arrival, and
-							// with the party's set -- a partner's death is not a reset.
-							const CVector at = partner->GetPosition();
-							RemovePartner(player, "revived", false);
+						// A fresh partner where the body is -- or beside the car,
+						// and clear of one that is burning or wrecked.  Player 1 is
+						// the fallback, not the place a partner is dropped into fire.
+						CVector at;
+						const bool hasSpot = FindReviveSpot(partner, at);
+						RemovePartner(player, "revived", false);
+						if(hasSpot){
 							s_reviveAt[player] = at;
 							s_reviveValid[player] = true;
 						}
@@ -2821,25 +2842,12 @@ CCoop::ReviveDownedPlayer(int player)
 	if(partner == nil || !(partner->DyingOrDead() || partner->m_nPedState == PED_ARRESTED))
 		return false;
 
-	// Back where the body is.  A body in a car gets a clear spot beside the
-	// car instead of the roof; a body on foot gets the pavement it fell on.
-	CVector at = partner->GetPosition();
-	if(partner->bInVehicle && partner->m_pMyVehicle != nil){
-		CVehicle *vehicle = partner->m_pMyVehicle;
-		// A burning, bombed or still-airborne car is not a revive spot.  Move
-		// clear of it instead of refusing the revive: King of the Hill calls
-		// this on a timer, and a wrecked car used to leave the partner down
-		// for the rest of the round.
-		if(!VehicleSafeForPartner(vehicle) ||
-		   !FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at)){
-			if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 6.0f, at)){
-				CPlayerPed *safe = CWorld::Players[LEAD].m_pPed;
-				if(safe == nil || safe->DyingOrDead() ||
-				   !FindSpotBeside(safe->GetPosition(), safe->GetRight(), safe->GetForward(), 3.0f, at))
-					return false;
-			}
-		}
-	}
+	// Back where the body is, or clear of a car that is burning, bombed or
+	// wrecked.  King of the Hill calls this on a timer, so refusing because the
+	// body is in a wreck used to leave the partner down for the round.
+	CVector at;
+	if(!FindReviveSpot(partner, at))
+		return false;
 
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	RemovePartner(player, "king of the hill", false);

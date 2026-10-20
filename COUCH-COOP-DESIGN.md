@@ -212,8 +212,9 @@ back at once line up along the road instead of piling onto one node.
   exactly as it treats player 1: nobody is pulled out or healed automatically.
   They can leave with their own exit button, and if they stay they burn, are
   killed, or go down like anyone else. A partner killed in a car is revived
-  beside player 1 rather than in the wreck; King of the Hill's forced revive
-  moves clear of a burning or wrecked car instead of leaving them down. If an
+  beside it when it is safe, or well clear of it when it is burning or wrecked,
+  with player 1 as the fallback; King of the Hill's forced revive uses the same
+  spot instead of leaving them down. If an
   NPC takes the wheel, the partner is brought back to player 1; a car any
   player is driving is part of the party and the leash keeps it near. Player 1's own enter button treats a car a partner is driving
   as a passenger seat rather than a carjack, and a partner's button never picks
