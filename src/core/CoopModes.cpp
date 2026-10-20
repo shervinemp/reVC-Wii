@@ -1097,21 +1097,30 @@ FindLeadBoat(void)
 	return veh;
 }
 
+// The boat a partner is driving beside the lead, or nil.  Whether it is one the
+// run made for them or one of their own makes no difference: the run starts
+// when player 1 honks, and a partner may already be at the wheel.
+CVehicle *
+PartnerBoat(int player, CVehicle *lead)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil || ped->m_pMyVehicle == lead)
+		return nil;
+	CVehicle *veh = ped->m_pMyVehicle;
+	if(!veh->IsBoat() || veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED)
+		return nil;
+	return veh;
+}
+
 // The crew apart from the skipper: boats a partner is driving, near the lead
-// boat.  Whether the boat is one the run made for them or one of their own
-// makes no difference.
+// boat.
 int
 CountEscorts(CVehicle *lead)
 {
 	int count = 0;
 	for(int player = 1; player < NUMPLAYERS; player++){
-		CPlayerPed *ped = CCoop::GetPlayerPed(player);
-		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil || ped->m_pMyVehicle == lead)
-			continue;
-		CVehicle *veh = ped->m_pMyVehicle;
-		if(!veh->IsBoat() || veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED)
-			continue;
-		if((veh->GetPosition() - lead->GetPosition()).Magnitude() <= kEscortRange)
+		CVehicle *veh = PartnerBoat(player, lead);
+		if(veh != nil && (veh->GetPosition() - lead->GetPosition()).Magnitude() <= kEscortRange)
 			count++;
 	}
 	return count;
@@ -1541,12 +1550,13 @@ UpdateRun(uint32 now)
 		return;
 	}
 
-	// A partner in an escort boat is following a boat that may be off their
-	// radar; the lead blip stays on even while they fall behind.  It is put up
-	// as soon as there is an escort and taken down when the last one goes.
+	// A partner in a boat is following a boat that may be off their radar; the
+	// lead blip stays on even while they fall behind.  It is put up as soon as
+	// there is an escort -- the run's or one the partner brought -- and taken
+	// down when the last one goes.
 	bool escort = false;
 	for(int i = 1; i < NUMPLAYERS; i++)
-		if(s_run.escort[i] != nil)
+		if(PartnerBoat(i, boat) != nil)
 			escort = true;
 	if(escort && s_run.leadBlip < 0)
 		PlaceLeadMarker(boat);
@@ -4298,9 +4308,10 @@ DrawModeMarks(uint32 now)
 			sprintf(sub, "DROP IN %dm", (int)dropDist);
 			bool away = false;
 			for(int i = 1; i < NUMPLAYERS; i++){
-				if(s_run.escort[i] == nil)
+				CVehicle *escort = PartnerBoat(i, s_run.boat);
+				if(escort == nil)
 					continue;
-				const float dist = (s_run.escort[i]->GetPosition() - s_run.boat->GetPosition()).Magnitude2D();
+				const float dist = (escort->GetPosition() - s_run.boat->GetPosition()).Magnitude2D();
 				char part[24];
 				sprintf(part, "  P%d FOLLOW %dm", i + 1, (int)dist);
 				strcat(sub, part);

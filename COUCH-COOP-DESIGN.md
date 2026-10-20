@@ -574,7 +574,9 @@ no button to get off -- so the rest of the party are each given a boat of their
 own. When a partner comes into the world with the run on and player 1 at sea,
 the run makes a boat of the lead's own model on the water to the side of it and a
 little astern, and the partner is put at its wheel (the way a script warps the
-player into a car); it is a mission boat, locked, and the save leaves it out. The
+player into a car); it is a mission boat, locked, and the save leaves it out. A
+partner who is already driving a boat of their own keeps it, and that boat is
+the escort: the run treats either the same. The
 partners then drive from their own pads, and the regroup that holds any driven
 boat to player 1 holds them. The crew is the lead boat and the boats a player is
 driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
