@@ -196,6 +196,58 @@ struct DerbyState
 };
 DerbyState s_derby;
 
+// --- Caddy football's numbers ------------------------------------------------
+
+const float kPitchGatherRange = 24.0f;	// all cars this close to the middle
+const float kPitchParkedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;
+const float kPitchRadius = 14.0f;	// two-goal pitch: each goal this far out
+const float kPitchTriangleRadius = 13.0f;	// three-goal pitch: vertex radius
+const float kPitchGoalRadius = 4.5f;
+const float kPitchTouchRange = 5.0f;	// last touch is the nearest car this close
+const float kPitchClearance = 4.0f;	// ball spot clear of the cars
+const float kPitchLeash = 35.0f;	// a Caddy hit this far off the pitch comes back
+const uint32 kPitchHoldMs = 500;	// the nod is held this long to start
+const uint32 kPitchCountdownMs = 3000;
+const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
+const uint32 kPitchGoalNoteMs = 1500;
+const uint32 kPitchFinishMs = 5000;
+const uint32 kPitchRearmMs = 10000;
+const int kPitchGoalsToWin = 3;
+
+// Caddy football: two goals and 1v1 or 2v2, or three goals in a triangle and
+// every player for themselves.  The ball is a Caddy with nobody in it; the
+// players' own cars push it.  The pitch is built wherever the party stops, so
+// there is no venue to find and no asset to add.
+struct PitchState
+{
+	bool active;
+	bool counting;
+	bool finished;
+	uint32 countdownAt;
+	uint32 resetAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	uint32 nodSince[NUMPLAYERS];
+	bool nodSpent[NUMPLAYERS];
+	CVector centre;
+	CVector forward;
+	CVector goal[3];
+	int goalOwner[3];	// three-goal pitch: which player defends it
+	int goalTeam[3];	// two-goal pitch: which team defends it
+	int players;		// 2, 3 or 4
+	int team[NUMPLAYERS];	// two-goal pitch only
+	int score[NUMPLAYERS];	// three-goal pitch only
+	int teamScore[2];	// two-goal pitch only
+	int lastTouch;
+	int lastGoalBy;
+	bool lastGoalOwn;
+	uint32 lastGoalAt;
+	int winner;
+	int winnerTeam;
+	CVehicle *ball;
+};
+PitchState s_pitch;
+
 // --- the RC race's numbers ---------------------------------------------------
 
 const int kRcGates = 4;
@@ -370,6 +422,7 @@ enum eExplainer
 	EXPLAIN_RC,
 	EXPLAIN_DANCE,
 	EXPLAIN_CNR,
+	EXPLAIN_PITCH,
 	EXPLAIN_COUNT
 };
 
@@ -399,7 +452,7 @@ ShowExplainer(int mode, uint32 now)
 bool
 ModeActive(void)
 {
-	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active || s_cnr.active;
+	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active || s_cnr.active || s_pitch.active;
 }
 
 // Where a player is for these purposes: their car while they are in one, so a
@@ -1729,6 +1782,450 @@ UpdateDerby(uint32 now)
 	s_derby.countdownAt = now + kDerbyIntermissionMs;
 }
 
+// --- Caddy football ----------------------------------------------------------
+
+// A player's own car, driven by them, that is not a law car and not one of the
+// heavy things that would turn the Caddy into a pancake.
+bool
+PlayerInPitchCar(int player, CVehicle **out)
+{
+	if(!PlayerInDerbyCar(player, out))
+		return false;
+	switch((*out)->GetModelIndex()){
+	case MI_RHINO:
+	case MI_FIRETRUCK:
+	case MI_AMBULAN:
+	case MI_ENFORCER:
+	case MI_BARRACKS:
+		return false;
+	default:
+		return true;
+	}
+}
+
+// A spot near the middle that is not inside a player's car.  The party arms
+// from a loose group, so the middle is usually clear; this only matters when
+// they stop almost on top of each other.
+CVector
+PitchBallSpot(void)
+{
+	const CVector right(s_pitch.forward.y, -s_pitch.forward.x, 0.0f);
+	CVector spot = s_pitch.centre;
+	for(int attempt = 0; attempt < 9; attempt++){
+		if(attempt != 0){
+			const int step = (attempt + 1)/2;
+			const float offset = (attempt & 1 ? 1.0f : -1.0f)*(float)step*(kPitchClearance + 1.0f);
+			spot = s_pitch.centre + right*offset;
+		}
+		bool clear = true;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil)
+				continue;
+			if((PlayerCoors(i) - spot).Magnitude2D() < kPitchClearance){
+				clear = false;
+				break;
+			}
+		}
+		if(clear)
+			break;
+	}
+	return spot;
+}
+
+void
+ReleasePitchBall(void)
+{
+	if(s_pitch.ball != nil){
+		CTheScripts::CleanUpThisVehicle(s_pitch.ball);
+		s_pitch.ball->CleanUpOldReference((CEntity**)&s_pitch.ball);
+		s_pitch.ball = nil;
+	}
+}
+
+// The Caddy: a mission vehicle with nobody in it, locked so the world leaves
+// it alone, bulletproof and fireproof so a stray shot or a hot exhaust does
+// not end the match, and handbrake off so it rolls when it is hit.
+bool
+SpawnPitchBall(void)
+{
+	if(s_pitch.ball != nil)
+		return true;
+	if(!CStreaming::HasModelLoaded(MI_CADDY))
+		return false;
+
+	CVector pos = PitchBallSpot();
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	if(found)
+		pos.z = ground;
+
+	CAutomobile *ball = new CAutomobile(MI_CADDY, MISSION_VEHICLE);
+	if(ball == nil)
+		return false;
+	pos.z += ball->GetDistanceFromCentreOfMassToBaseOfModel();
+	ball->SetPosition(pos);
+	ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
+	ball->SetStatus(STATUS_ABANDONED);
+	ball->bIsLocked = true;
+	ball->m_nDoorLock = CARLOCK_LOCKED;
+	ball->bEngineOn = false;
+	ball->bIsHandbrakeOn = false;
+	ball->bBulletProof = true;
+	ball->bFireProof = true;
+	ball->m_fHealth = 1000.0f;
+	ball->AutoPilot.m_nCarMission = MISSION_NONE;
+	ball->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	ball->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
+	CWorld::Add(ball);
+	ball->RegisterReference((CEntity**)&s_pitch.ball);
+	s_pitch.ball = ball;
+	return true;
+}
+
+void
+ResetPitchBall(void)
+{
+	if(s_pitch.ball == nil || s_pitch.ball->GetStatus() == STATUS_WRECKED){
+		ReleasePitchBall();
+		SpawnPitchBall();
+		return;
+	}
+	CVector pos = PitchBallSpot();
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	if(found)
+		pos.z = ground;
+	s_pitch.ball->SetPosition(pos);
+	s_pitch.ball->SetMoveSpeed(0.0f, 0.0f, 0.0f);
+	s_pitch.ball->SetTurnSpeed(0.0f, 0.0f, 0.0f);
+	s_pitch.ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
+	s_pitch.ball->SetStatus(STATUS_ABANDONED);
+	s_pitch.ball->bIsHandbrakeOn = false;
+	s_pitch.ball->bEngineOn = false;
+}
+
+void
+RegisterPitchCoronas(void)
+{
+	const int goals = s_pitch.players == 3 ? 3 : 2;
+	for(int g = 0; g < goals; g++){
+		CRGBA colour(255, 255, 255, 255);
+		if(s_pitch.players == 3 && s_pitch.goalOwner[g] >= 0)
+			colour = kCoopColours[s_pitch.goalOwner[g]];
+		else if(s_pitch.players != 3 && g < 2)
+			colour = kCoopColours[g];
+		CCoronas::RegisterCorona((uintptr)&s_pitch + g, colour.r, colour.g, colour.b, 255,
+			s_pitch.goal[g], kPitchGoalRadius, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	}
+}
+
+void
+FinishPitch(uint32 now, int winner, int winnerTeam)
+{
+	s_pitch.finished = true;
+	s_pitch.finishAt = now + kPitchFinishMs;
+	s_pitch.winner = winner;
+	s_pitch.winnerTeam = winnerTeam;
+	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+	COOP_LOG("WII coop: caddy football to %s %d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1);
+}
+
+void
+StartPitch(uint32 now, const CVector &centre, const CVector &forward, int players)
+{
+	if(s_pitch.ball != nil)
+		ReleasePitchBall();
+
+	s_pitch.active = true;
+	s_pitch.counting = true;
+	s_pitch.finished = false;
+	s_pitch.countdownAt = now + kPitchCountdownMs;
+	s_pitch.resetAt = 0;
+	s_pitch.finishAt = 0;
+	s_pitch.rearmAt = 0;
+	s_pitch.centre = centre;
+	s_pitch.forward = forward;
+	s_pitch.players = players;
+	s_pitch.lastTouch = -1;
+	s_pitch.lastGoalBy = -1;
+	s_pitch.lastGoalOwn = false;
+	s_pitch.lastGoalAt = 0;
+	s_pitch.winner = -1;
+	s_pitch.winnerTeam = -1;
+	s_pitch.teamScore[0] = 0;
+	s_pitch.teamScore[1] = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_pitch.nodSince[i] = 0;
+		s_pitch.nodSpent[i] = false;
+		s_pitch.team[i] = players == 3 ? i : i % 2;
+		s_pitch.score[i] = 0;
+	}
+	for(int g = 0; g < 3; g++){
+		s_pitch.goalOwner[g] = -1;
+		s_pitch.goalTeam[g] = -1;
+	}
+
+	if(players == 3){
+		// Three goals on a triangle, each player defending the one nearest
+		// where they stopped.  Nearest-first, so a loose start still gives
+		// everyone one goal and no one two.
+		const float heading = forward.Heading();
+		for(int g = 0; g < 3; g++){
+			const float angle = heading + 2.0f*PI*(float)g/3.0f;
+			CVector goal = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kPitchTriangleRadius;
+			bool found = false;
+			const float ground = CWorld::FindGroundZFor3DCoord(goal.x, goal.y, goal.z + 2.0f, &found);
+			goal.z = (found ? ground : centre.z) + 1.0f;
+			s_pitch.goal[g] = goal;
+		}
+		bool assigned[NUMPLAYERS] = { false };
+		for(int g = 0; g < 3; g++){
+			int best = -1;
+			float bestDist = 1000000.0f;
+			for(int i = 0; i < NUMPLAYERS; i++){
+				if(CCoop::GetPlayerPed(i) == nil || assigned[i])
+					continue;
+				const float dist = (PlayerCoors(i) - s_pitch.goal[g]).Magnitude2D();
+				if(dist < bestDist){
+					bestDist = dist;
+					best = i;
+				}
+			}
+			if(best >= 0){
+				s_pitch.goalOwner[g] = best;
+				assigned[best] = true;
+			}
+		}
+	}else{
+		// Two goals: team 0 defends the one behind the middle, team 1 the one
+		// ahead.
+		for(int g = 0; g < 2; g++){
+			CVector goal = centre + (g == 0 ? forward*-1.0f : forward)*kPitchRadius;
+			bool found = false;
+			const float ground = CWorld::FindGroundZFor3DCoord(goal.x, goal.y, goal.z + 2.0f, &found);
+			goal.z = (found ? ground : centre.z) + 1.0f;
+			s_pitch.goal[g] = goal;
+			s_pitch.goalTeam[g] = g;
+		}
+	}
+
+	CStreaming::RequestModel(MI_CADDY, 0);
+	COOP_LOG("WII coop: caddy football on (%d players)\n", players);
+	CCoop::Notify("WII_CSP");
+	ShowExplainer(EXPLAIN_PITCH, now);
+}
+
+void
+TryStartPitch(uint32 now, bool held)
+{
+	if(!held)
+		return;
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(ModeActive())
+		return;
+	if(now < s_pitch.rearmAt)
+		return;
+	if(PartyWanted())
+		return;
+
+	CVehicle *car[NUMPLAYERS];
+	CVector sum(0.0f, 0.0f, 0.0f);
+	CVector forward(0.0f, 0.0f, 0.0f);
+	int count = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		car[i] = nil;
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(!PlayerInPitchCar(i, &car[i]))
+			return;
+		sum += car[i]->GetPosition();
+		forward += car[i]->GetForward();
+		count++;
+	}
+	if(count < 2)
+		return;
+
+	const CVector centre = sum / (float)count;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(car[i] == nil)
+			continue;
+		if(car[i]->GetMoveSpeed().Magnitude() > kPitchParkedSpeed)
+			return;
+		if((car[i]->GetPosition() - centre).Magnitude2D() > kPitchGatherRange)
+			return;
+	}
+
+	forward.z = 0.0f;
+	if(forward.Magnitude() < 0.1f)
+		forward = CVector(1.0f, 0.0f, 0.0f);
+	forward.Normalise();
+	StartPitch(now, centre, forward, count);
+}
+
+void
+EndPitch(uint32 now, const char *why)
+{
+	ReleasePitchBall();
+	s_pitch.active = false;
+	s_pitch.counting = false;
+	s_pitch.finished = false;
+	s_pitch.rearmAt = now + kPitchRearmMs;
+	COOP_LOG("WII coop: caddy football off (%s)\n", why);
+}
+
+void
+UpdatePitch(uint32 now)
+{
+	// The nod in a car starts it.  It is tracked press by press, and a press
+	// that began on foot or during another mode counts for nothing until it is
+	// let go -- the nod is also the enter-vehicle button.
+	bool held = false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil){
+			s_pitch.nodSince[i] = 0;
+			s_pitch.nodSpent[i] = false;
+			continue;
+		}
+		CPad *pad = GetPadFromPlayer(ped);
+		if(pad->NewState.Triangle == 0){
+			s_pitch.nodSince[i] = 0;
+			s_pitch.nodSpent[i] = false;
+			continue;
+		}
+		if(s_pitch.nodSpent[i])
+			continue;
+		if(s_pitch.nodSince[i] == 0){
+			if(s_pitch.active || ModeActive() || now < s_pitch.rearmAt || !ped->bInVehicle)
+				s_pitch.nodSpent[i] = true;
+			else
+				s_pitch.nodSince[i] = now;
+		}else if(now - s_pitch.nodSince[i] >= kPitchHoldMs){
+			held = true;
+			s_pitch.nodSince[i] = 0;
+			s_pitch.nodSpent[i] = true;
+		}
+	}
+
+	if(!s_pitch.active){
+		TryStartPitch(now, held);
+		return;
+	}
+	if(!CCoop::PairActive()){
+		EndPitch(now, "session");
+		return;
+	}
+	if(s_pitch.finished){
+		if(now >= s_pitch.finishAt)
+			EndPitch(now, "over");
+		return;
+	}
+
+	// Ramming only, as in the derby: the fire button belongs to the match,
+	// countdown included.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil)
+			SuppressFire(GetPadFromPlayer(ped));
+	}
+
+	if(s_pitch.counting){
+		// Hold the lights until the Caddy is actually in the world: the
+		// countdown is not worth starting with an empty pitch.
+		if(s_pitch.ball == nil){
+			SpawnPitchBall();
+			s_pitch.countdownAt = now + kPitchCountdownMs;
+			return;
+		}
+		if(now >= s_pitch.countdownAt)
+			s_pitch.counting = false;
+		return;
+	}
+
+	if(s_pitch.ball == nil){
+		SpawnPitchBall();
+		return;
+	}
+	if(s_pitch.ball->GetStatus() == STATUS_WRECKED || s_pitch.ball->GetUp().z < 0.3f ||
+	   (s_pitch.ball->GetPosition() - s_pitch.centre).Magnitude2D() > kPitchLeash){
+		ResetPitchBall();
+		s_pitch.lastTouch = -1;
+		return;
+	}
+
+	// Last touch: the nearest player car within reach of the Caddy.  It is a
+	// proximity credit, not a collision callback -- a few lines, and exact
+	// enough for who gets the goal.
+	CVehicle *ball = s_pitch.ball;
+	int best = -1;
+	float bestDist = kPitchTouchRange;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+			continue;
+		const float dist = (ped->m_pMyVehicle->GetPosition() - ball->GetPosition()).Magnitude2D();
+		if(dist < bestDist){
+			bestDist = dist;
+			best = i;
+		}
+	}
+	if(best >= 0)
+		s_pitch.lastTouch = best;
+
+	if(now < s_pitch.resetAt){
+		RegisterPitchCoronas();
+		return;
+	}
+
+	const int goals = s_pitch.players == 3 ? 3 : 2;
+	for(int g = 0; g < goals; g++){
+		if((ball->GetPosition() - s_pitch.goal[g]).Magnitude2D() >= kPitchGoalRadius)
+			continue;
+
+		const int shooter = s_pitch.lastTouch;
+		s_pitch.lastGoalAt = now;
+		s_pitch.lastGoalBy = shooter;
+		if(s_pitch.players == 3){
+			const bool own = shooter == s_pitch.goalOwner[g];
+			s_pitch.lastGoalOwn = own;
+			if(shooter >= 0 && !own){
+				s_pitch.score[shooter]++;
+				COOP_LOG("WII coop: pitch goal to player %d\n", shooter + 1);
+				if(s_pitch.score[shooter] >= kPitchGoalsToWin){
+					FinishPitch(now, shooter, -1);
+					return;
+				}
+			}
+		}else{
+			const int scoringTeam = 1 - s_pitch.goalTeam[g];
+			s_pitch.lastGoalOwn = shooter >= 0 && s_pitch.team[shooter] == s_pitch.goalTeam[g];
+			s_pitch.teamScore[scoringTeam]++;
+			COOP_LOG("WII coop: pitch goal to team %d\n", scoringTeam + 1);
+			if(s_pitch.teamScore[scoringTeam] >= kPitchGoalsToWin){
+				int winner = -1;
+				for(int i = 0; i < NUMPLAYERS; i++)
+					if(CCoop::GetPlayerPed(i) != nil && s_pitch.team[i] == scoringTeam){
+						winner = i;
+						break;
+					}
+				FinishPitch(now, winner, scoringTeam);
+				return;
+			}
+		}
+
+		ResetPitchBall();
+		s_pitch.resetAt = now + kPitchResetMs;
+		s_pitch.lastTouch = -1;
+		return;
+	}
+
+	RegisterPitchCoronas();
+}
+
 // --- the RC race -------------------------------------------------------------
 
 bool
@@ -2796,7 +3293,8 @@ DrawExplainer(uint32 now)
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
-		"HOLD NOD TO START. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3"
+		"HOLD NOD TO START. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
+		"EACH IN A CAR, HOLD NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -2808,7 +3306,8 @@ DrawExplainer(uint32 now)
 	case EXPLAIN_DERBY: live = s_derby.active; break;
 	case EXPLAIN_RC: live = s_rc.active; break;
 	case EXPLAIN_DANCE: live = s_dance.active; break;
-	default: live = s_cnr.active; break;
+	case EXPLAIN_CNR: live = s_cnr.active; break;
+	default: live = s_pitch.active; break;
 	}
 	if(!live)
 		return;
@@ -2940,6 +3439,55 @@ DrawModeMarks(uint32 now)
 				DrawLaneBar(i, (float)s_derby.roundWins[i]/(float)kDerbyWinsNeeded, kDerbyWinsNeeded);
 	}
 
+	// Caddy football: the score, the lights, and the last goal.  The bar is a
+	// cell a goal: in the three-goal game it is the player's own, in the team
+	// games both members of a team carry the team's.
+	if(s_pitch.active){
+		if(s_pitch.finished){
+			if(s_pitch.players == 3){
+				DrawWinner(s_pitch.winner);
+			}else{
+				sprintf(line, "TEAM %d WINS", s_pitch.winnerTeam + 1);
+				DrawStatus(line, s_pitch.winner >= 0 ? kCoopColours[s_pitch.winner] : white);
+			}
+		}else if(s_pitch.counting){
+			DrawStatus("CADDY FOOTBALL", white);
+			DrawCountdown(now, s_pitch.countdownAt);
+		}else{
+			if(s_pitch.players == 3){
+				line[0] = '\0';
+				for(int i = 0; i < NUMPLAYERS; i++){
+					if(CCoop::GetPlayerPed(i) == nil)
+						continue;
+					char part[16];
+					sprintf(part, "P%d %d  ", i + 1, s_pitch.score[i]);
+					strcat(line, part);
+				}
+			}else
+				sprintf(line, "TEAM 1 %d  TEAM 2 %d", s_pitch.teamScore[0], s_pitch.teamScore[1]);
+			DrawStatus(line, white);
+
+			if(s_pitch.lastGoalAt != 0 && now - s_pitch.lastGoalAt < kPitchGoalNoteMs){
+				if(s_pitch.lastGoalBy >= 0){
+					if(s_pitch.lastGoalOwn)
+						sprintf(line, "OWN GOAL P%d", s_pitch.lastGoalBy + 1);
+					else
+						sprintf(line, "GOAL P%d", s_pitch.lastGoalBy + 1);
+					PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), line,
+						s_pitch.lastGoalOwn ? CRGBA(255, 200, 90, 255) : kCoopColours[s_pitch.lastGoalBy],
+						1.0f, 1.5f);
+				}else
+					PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), "GOAL", white, 1.0f, 1.5f);
+			}
+		}
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil)
+				continue;
+			const int score = s_pitch.players == 3 ? s_pitch.score[i] : s_pitch.teamScore[s_pitch.team[i]];
+			DrawLaneBar(i, (float)score/(float)kPitchGoalsToWin, kPitchGoalsToWin);
+		}
+	}
+
 	// The race: the lights, then a bar per racer for how far round they are,
 	// a cell to a lap, and which lap they are on.
 	if(s_rc.active){
@@ -3059,6 +3607,14 @@ CCoopModes::Init(void)
 	s_cnr.noteBuster = -1;
 	s_cnr.noteBusted = -1;
 
+	if(s_pitch.ball != nil)
+		s_pitch.ball->CleanUpOldReference((CEntity**)&s_pitch.ball);
+	memset(&s_pitch, 0, sizeof(s_pitch));
+	s_pitch.lastTouch = -1;
+	s_pitch.lastGoalBy = -1;
+	s_pitch.winner = -1;
+	s_pitch.winnerTeam = -1;
+
 	memset(&s_explain, 0, sizeof(s_explain));
 }
 
@@ -3076,6 +3632,7 @@ CCoopModes::Update(void)
 
 	// The modes are independent; all ride the same session state.
 	UpdateRun(now);
+	UpdatePitch(now);
 	UpdateDerby(now);
 	UpdateRc(now);
 	UpdateDance(now);
@@ -3196,10 +3753,11 @@ CCoopModes::EscortBoat(int player, CVehicle *lead)
 bool
 CCoopModes::SteadyView(void)
 {
-	// The derby, where every car is spinning, and the toy race, where every
-	// car is a twitchy little thing that would whip the view around.  See
-	// CCam::Process_WiiCoop.
-	return s_derby.active || s_rc.active;
+	// The derby, where every car is spinning, the toy race, where every car is
+	// a twitchy little thing that would whip the view around, and Caddy
+	// football, where the pitch should hold still while four cars fight over
+	// one golf cart.  See CCam::Process_WiiCoop.
+	return s_derby.active || s_rc.active || s_pitch.active;
 }
 
 bool
@@ -3222,7 +3780,7 @@ CCoopModes::IsModeVehicle(const CVehicle *vehicle)
 		if(vehicle == s_derby.loaner[i] || vehicle == s_rc.car[i] || vehicle == s_run.escort[i])
 			return true;
 	}
-	return vehicle == s_run.pursuer[0] || vehicle == s_run.pursuer[1];
+	return vehicle == s_run.pursuer[0] || vehicle == s_run.pursuer[1] || vehicle == s_pitch.ball;
 }
 
 void

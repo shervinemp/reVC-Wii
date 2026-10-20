@@ -117,7 +117,7 @@ public:
 	static CVehicle *EscortBoat(int player, CVehicle *lead);
 
 	// Whether a mode is running that wants the camera to hold still rather
-	// than turn with a car's nose: the derby and the toy race.
+	// than turn with a car's nose: the derby, the toy race and Caddy football.
 	static bool SteadyView(void);
 
 	// Whether a mode is running that needs the party able to separate: cops &
