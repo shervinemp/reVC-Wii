@@ -5,7 +5,7 @@ class CVehicle;
 
 // Couch co-op's minigames: engine-side modes the party starts in the world,
 // as opposed to the game's own scripted missions.  The design is in
-// COOP-4-PLAN.md, "Minigames".  Each mode arms from something the players
+// COUCH-COOP-DESIGN.md, "Minigames".  Each mode arms from something the players
 // deliberately do in the world, and the co-op page's MINIGAMES row
 // (CoopMinigames, in Coop.h) switches them off entirely -- it gates arming
 // only, so a mode already running is left to finish.  The cop shift has no
@@ -88,14 +88,17 @@ class CVehicle;
 // The seventh is Caddy football.  A Caddy with nobody in it is the ball; the
 // party's own cars push it.  Two players get two goals and a 1v1, four get
 // 2v2, and three get three goals in a triangle, each player defending the
-// nearest one.  One player holds the nod in a car to start; ramming only;
-// first to three.  The camera holds still and the pitch is built wherever the
-// party stopped.
+// nearest one.  One player holds the brake in a car to start; ramming only;
+// first to three.  The brake, not the nod or the horn: the nod is the
+// exit-vehicle button in a car, and the horn already starts the derby.  The
+// camera holds still and the pitch is built wherever the party stopped.
 //
-// The eighth is King of the Hill.  Every present player holds the nod, and a
-// ring is drawn where they stand.  Exactly one player inside scores time; two
-// or more contest it and nobody scores.  It works on foot, in cars and in
-// Rhinos.  Player-on-player damage is forced on for the round whatever the
+// The eighth is King of the Hill.  Every present player holds aim, and a ring
+// is drawn where they stand.  Aim, not the nod: the nod is the exit-vehicle
+// button in a car, so a group holding it would bail out of the cars the hill
+// is meant to allow.  Exactly one player inside scores time; two or more
+// contest it and nobody scores.  It works on foot, in cars and in Rhinos.
+// Player-on-player damage is forced on for the round whatever the
 // friendly-fire toggle says, because a hill nobody can take from anybody is
 // not a hill.  A downed or arrested partner is brought back at the body after
 // four seconds, so a fight does not thin the party out; the ordinary revive is

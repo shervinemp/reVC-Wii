@@ -121,7 +121,7 @@ const uint32 kRetryMs = 400;
 //
 // kCoopMaxDistance in Cam.cpp is sized to keep two players on screen out to
 // the wall, in the direction the camera sees least far; with more players the
-// tether is the lever, not the zoom (see COOP-4-PLAN.md).
+// tether is the lever, not the zoom (see COUCH-COOP-DESIGN.md).
 const float kTetherStart = 18.0f;
 const float kTetherMax = 24.0f;
 const float kLeash = 28.0f;

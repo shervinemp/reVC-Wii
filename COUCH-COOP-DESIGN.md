@@ -17,8 +17,8 @@ gets re-believed.
 The two-player build has been through hardware testing. The four-player work is
 staged: the session, the pads, the arsenal, the wanted level and the peds are
 four-player now; the camera and the HUD still speak the pair's shape and are
-the next stages (see `COOP-4-PLAN.md`). Four controllers in one room have not
-been tried yet.
+the next stages (see "Not done"). Four controllers in one room have not been
+tried yet.
 
 ## The rules, and why each one
 
@@ -142,8 +142,8 @@ player 1 is held to each partner the same way, one wall after another, so no
 one can leave the others behind. Walking back, or sideways along the edge, is
 untouched. It is sized so that at the wall two players are still on screen; with
 more than two, the wall is the lever to tighten if the spread ever runs off the
-screen (see `COOP-4-PLAN.md`). The help box says so the first time someone
-reaches it.
+screen (see "Not done"). The help box says so the first time someone reaches
+it.
 
 **The wall only works on someone walking**, so behind it there is a leash at
 28 m for everything that gets past: a car driving off, a fall, the blast from an
@@ -479,11 +479,12 @@ nothing.
 
 ### Minigames
 
-Six engine-side modes the party starts from the world, behind the co-op page's
-MINIGAMES switch (on by default; with it off none arms, and a running one
-finishes). One runs at a time. They live in `CoopModes.cpp`, and each is a thin
-state machine over the script's own machinery -- spawn recipes, locked mission
-cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
+Eight engine-side modes the party starts from the world, behind the co-op
+page's MINIGAMES switch (on by default; with it off none arms, and a running
+one finishes). One runs at a time. They live in `CoopModes.cpp`, and each is a
+thin state machine over the script's own machinery -- spawn recipes, locked
+mission cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new
+assets:
 
 - the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
   while a case is open the takedown is not a crime),
@@ -497,12 +498,21 @@ cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new assets:
 - the **dance-off** (everyone ducks together: prompts on a climbing beat; the
   dancing is the players' own bodies), and
 - **cops & robbers** (the nod held for 0.6 s while gathered: grab the case,
-  deliver or bust, first to three).
+  deliver or bust, first to three),
+- **Caddy football** (everyone in their own car, one player holds the brake: a
+  driverless Caddy is the ball; two goals for 1v1 or 2v2, three goals in a
+  triangle for three players; first to three; not while wanted), and
+- **King of the Hill** (everyone holds aim: a 12 m ring where the party stands;
+  the sole occupant banks time, two or more contest it and nobody scores;
+  player-on-player damage is forced on; 90 seconds, most time wins; a downed or
+  arrested partner is brought back at the body after four seconds).
 
-The toy race, the dance-off and cops & robbers start from a jump, a duck and a
-press of the nod, which a party with the police after it does anyway, so none of
-the three arms while anyone in the party is wanted. The cop shift and the
-smuggling run are about the police and are not held back.
+The toy race, the dance-off, cops & robbers and Caddy football start from a
+jump, a duck, a press of the nod, a horn or a brake, which a party with the
+police after it does anyway, so none of the four arms while anyone in the party
+is wanted.
+The cop shift and the smuggling run are about the police and are not held back.
+King of the Hill is a fight and does not check the wanted level either.
 
 The first time a mode arms in a session, one line under the headline says how it
 is played and how it ends, for 4.5 s (`DrawExplainer`); it comes back after a

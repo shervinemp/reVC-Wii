@@ -203,10 +203,12 @@ const float kPitchParkedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;
 const float kPitchRadius = 14.0f;	// two-goal pitch: each goal this far out
 const float kPitchTriangleRadius = 13.0f;	// three-goal pitch: vertex radius
 const float kPitchGoalRadius = 4.5f;
+const int kPitchRingMarks = 16;		// the mission ring round the pitch
+const float kPitchRingRadius = 19.5f;	// outside both goal layouts
 const float kPitchTouchRange = 4.0f;	// last touch is the nearest car this close
 const float kPitchClearance = 4.0f;	// ball spot clear of the cars
 const float kPitchLeash = 35.0f;	// a Caddy hit this far off the pitch comes back
-const uint32 kPitchHoldMs = 500;	// the nod is held this long to start
+const uint32 kPitchHoldMs = 500;	// the brake is held this long to start
 const uint32 kPitchCountdownMs = 3000;
 const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
 const uint32 kPitchGoalNoteMs = 1500;
@@ -227,11 +229,12 @@ struct PitchState
 	uint32 resetAt;
 	uint32 finishAt;
 	uint32 rearmAt;
-	uint32 nodSince[NUMPLAYERS];
-	bool nodSpent[NUMPLAYERS];
+	uint32 brakeSince[NUMPLAYERS];
+	bool brakeSpent[NUMPLAYERS];
 	CVector centre;
 	CVector forward;
 	CVector goal[3];
+	CVector ring[kPitchRingMarks];
 	int goalOwner[3];	// three-goal pitch: which player defends it
 	int goalTeam[3];	// two-goal pitch: which team defends it
 	int players;		// 2, 3 or 4
@@ -253,7 +256,7 @@ PitchState s_pitch;
 const float kKothRadius = 12.0f;
 const int kKothRingMarks = 12;
 const float kKothGatherRange = 14.0f;	// the ring, plus a couple of metres
-const uint32 kKothHoldMs = 600;		// every present player holds the nod
+const uint32 kKothHoldMs = 600;		// every present player holds aim
 const uint32 kKothCountdownMs = 3000;
 const uint32 kKothRoundMs = 90000;
 const uint32 kKothReviveMs = 4000;	// a downed partner is brought back this soon
@@ -276,9 +279,10 @@ struct KothState
 	uint32 endAt;
 	uint32 finishAt;
 	uint32 rearmAt;
-	uint32 groupSince;	// when every present player began holding the nod
+	uint32 groupSince;	// when every present player began holding aim
 	bool groupSpent;	// that hold already started a round; release to ask again
-	int groupNod;		// how many are holding it now, for the other modes
+	bool groupAll;		// every present player is holding it now
+	int groupHold;		// how many are holding it now, for the other modes
 	CVector centre;
 	CVector ring[kKothRingMarks];
 	uint32 scoreMs[NUMPLAYERS];
@@ -337,6 +341,7 @@ RcState s_rc;
 
 const float kDanceGatherRange = 12.0f;	// the knot that arms it
 const float kDanceFloor = 6.0f;		// the stage ring
+const int kDanceRingMarks = 12;		// three marks to each player's colour
 const float kDanceLeaveRange = 8.0f;	// further out than this and you are out of it
 const uint32 kDanceRoundMs = 60000;
 const uint32 kDanceGestureWindowMs = 1500;	// everyone ducks together
@@ -369,6 +374,7 @@ struct DanceState
 	uint32 rearmAt;
 	uint32 lastDuck[NUMPLAYERS];
 	CVector centre;
+	CVector ring[kDanceRingMarks];
 	int prompt[NUMPLAYERS];
 	bool promptHit[NUMPLAYERS];
 	uint32 hitFlash[NUMPLAYERS];
@@ -387,6 +393,7 @@ const float kCnRGetawayDist = 24.0f;	// the getaway marker from the middle
 const float kCnRGrabRange = 2.5f;	// on foot...
 const float kCnRGrabRangeCar = 4.5f;	// ...and from a car
 const float kCnRDeliverRange = 4.5f;
+const int kCnRRingMarks = 12;		// the green mission ring round the getaway
 const float kCnRBustRange = 5.0f;
 const uint32 kCnRBustHoldMs = 1500;
 const uint32 kCnRBustLockMs = 2000;	// a busted carrier may not take the case back for this long
@@ -413,6 +420,7 @@ struct CnRState
 	uint32 rearmAt;
 	CVector centre;
 	CVector getaway;
+	CVector getawayRing[kCnRRingMarks];
 	CVector casePos;
 	bool carried;
 	int carrier;
@@ -1498,6 +1506,19 @@ SuppressFire(CPad *pad)
 	}
 }
 
+// A mission-style ring on the ground: a circle of coronas marking a pitch,
+// a stage or a drop-off, the way the derby and the hill already mark theirs.
+// The caller owns the key block; ids below it are for the mode's other marks.
+void
+RegisterGroundRing(uintptr key, const CVector *points, int count, CRGBA colour, float size)
+{
+	for(int i = 0; i < count; i++)
+		CCoronas::RegisterCorona(key + i, colour.r, colour.g, colour.b, 255,
+			points[i], size, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+}
+
 // Lets go of a player's loaner: the world takes it back, like the suspect and
 // the Predators.
 void
@@ -1952,6 +1973,9 @@ ResetPitchBall(void)
 void
 RegisterPitchCoronas(void)
 {
+	RegisterGroundRing((uintptr)&s_pitch + 8, s_pitch.ring, kPitchRingMarks,
+		CRGBA(255, 225, 130, 255), 2.2f);
+
 	const int goals = s_pitch.players == 3 ? 3 : 2;
 	for(int g = 0; g < goals; g++){
 		CRGBA colour(255, 255, 255, 255);
@@ -2002,8 +2026,8 @@ StartPitch(uint32 now, const CVector &centre, const CVector &forward, int player
 	s_pitch.teamScore[0] = 0;
 	s_pitch.teamScore[1] = 0;
 	for(int i = 0; i < NUMPLAYERS; i++){
-		s_pitch.nodSince[i] = 0;
-		s_pitch.nodSpent[i] = false;
+		s_pitch.brakeSince[i] = 0;
+		s_pitch.brakeSpent[i] = false;
 		s_pitch.team[i] = players == 3 ? i : i % 2;
 		s_pitch.score[i] = 0;
 	}
@@ -2056,6 +2080,17 @@ StartPitch(uint32 now, const CVector &centre, const CVector &forward, int player
 		}
 	}
 
+	// The pitch's own ring, outside both goal layouts: the goals say where
+	// to score, this says how far the game reaches.
+	for(int i = 0; i < kPitchRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kPitchRingMarks;
+		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kPitchRingRadius;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
+		mark.z = (found ? ground : centre.z) + 1.0f;
+		s_pitch.ring[i] = mark;
+	}
+
 	CStreaming::RequestModel(MI_CADDY, 0);
 	COOP_LOG("WII coop: caddy football on (%d players)\n", players);
 	CCoop::Notify("WII_CSP");
@@ -2067,9 +2102,9 @@ TryStartPitch(uint32 now, bool held)
 {
 	if(!held)
 		return;
-	// A group hold is asking for the hill, not a pitch.  UpdateKoth has
-	// already seen this frame's count.
-	if(s_koth.groupNod >= 2)
+	// Every present player holding aim is asking for the hill, not a pitch.
+	// One player's brake is the football; a partial group is not a hill ask.
+	if(s_koth.groupAll)
 		return;
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
@@ -2131,34 +2166,37 @@ EndPitch(uint32 now, const char *why)
 void
 UpdatePitch(uint32 now)
 {
-	// The nod in a car starts it.  It is tracked press by press, and a press
-	// that began on foot or during another mode counts for nothing until it is
-	// let go -- the nod is also the enter-vehicle button.
+	// The brake in a car starts it.  The nod is the exit-vehicle button and
+	// the horn is the derby's start, so neither can be the football's; the
+	// brake is the car's own "we are parked" signal, and the match only starts
+	// when every car is stopped anyway.  It is tracked press by press, and a
+	// press that began on foot or during another mode counts for nothing
+	// until it is let go.
 	bool held = false;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil){
-			s_pitch.nodSince[i] = 0;
-			s_pitch.nodSpent[i] = false;
+			s_pitch.brakeSince[i] = 0;
+			s_pitch.brakeSpent[i] = false;
 			continue;
 		}
 		CPad *pad = GetPadFromPlayer(ped);
-		if(pad->NewState.Triangle == 0){
-			s_pitch.nodSince[i] = 0;
-			s_pitch.nodSpent[i] = false;
+		if(pad->NewState.RightShoulder1 == 0){
+			s_pitch.brakeSince[i] = 0;
+			s_pitch.brakeSpent[i] = false;
 			continue;
 		}
-		if(s_pitch.nodSpent[i])
+		if(s_pitch.brakeSpent[i])
 			continue;
-		if(s_pitch.nodSince[i] == 0){
+		if(s_pitch.brakeSince[i] == 0){
 			if(s_pitch.active || ModeActive() || now < s_pitch.rearmAt || !ped->bInVehicle)
-				s_pitch.nodSpent[i] = true;
+				s_pitch.brakeSpent[i] = true;
 			else
-				s_pitch.nodSince[i] = now;
-		}else if(now - s_pitch.nodSince[i] >= kPitchHoldMs){
+				s_pitch.brakeSince[i] = now;
+		}else if(now - s_pitch.brakeSince[i] >= kPitchHoldMs){
 			held = true;
-			s_pitch.nodSince[i] = 0;
-			s_pitch.nodSpent[i] = true;
+			s_pitch.brakeSince[i] = 0;
+			s_pitch.brakeSpent[i] = true;
 		}
 	}
 
@@ -2183,6 +2221,8 @@ UpdatePitch(uint32 now)
 		if(ped != nil)
 			SuppressFire(GetPadFromPlayer(ped));
 	}
+	// The pitch reads from the countdown on, not only after the first whistle.
+	RegisterPitchCoronas();
 
 	if(s_pitch.counting){
 		// Hold the lights until the Caddy is actually in the world: the
@@ -2238,6 +2278,12 @@ UpdatePitch(uint32 now)
 			continue;
 
 		const int shooter = s_pitch.lastTouch;
+		if(shooter < 0){
+			// Traffic, a kerb or a stray shove rolled it in.  Nobody touched
+			// it, so nobody scores; a player can still push it out or in.
+			RegisterPitchCoronas();
+			return;
+		}
 		s_pitch.lastGoalAt = now;
 		s_pitch.lastGoalBy = shooter;
 		if(s_pitch.players == 3){
@@ -2316,6 +2362,7 @@ TryStartKoth(uint32 now)
 	s_koth.finishAt = 0;
 	s_koth.rearmAt = 0;
 	s_koth.groupSince = 0;
+	s_koth.groupAll = false;
 	s_koth.groupSpent = true;
 	s_koth.centre = centre;
 	s_koth.lastScoreAt = s_koth.countdownAt;
@@ -2394,6 +2441,7 @@ EndKoth(uint32 now, const char *why)
 	s_koth.counting = false;
 	s_koth.finished = false;
 	s_koth.groupSince = 0;
+	s_koth.groupAll = false;
 	s_koth.aloneSince = 0;
 	s_koth.holder = -1;
 	s_koth.inside = 0;
@@ -2406,9 +2454,11 @@ EndKoth(uint32 now, const char *why)
 void
 UpdateKoth(uint32 now)
 {
-	// Every present player holds the nod: the group gesture.  It is also
-	// counted here so the one-player nod modes wait while a group is clearly
-	// asking for the hill instead.
+	// Every present player holds aim: the group gesture.  The nod in a car is
+	// the exit-vehicle button, so it would empty the cars the hill is meant to
+	// allow; aim means the same thing on foot, in a car and in a Rhino.  It is
+	// also counted here so the one-player nod modes wait while a group is
+	// clearly asking for the hill instead.
 	int present = 0;
 	int holding = 0;
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -2416,10 +2466,11 @@ UpdateKoth(uint32 now)
 		if(ped == nil)
 			continue;
 		present++;
-		if(GetPadFromPlayer(ped)->NewState.Triangle != 0)
+		if(GetPadFromPlayer(ped)->NewState.RightShoulder1 != 0)
 			holding++;
 	}
-	s_koth.groupNod = holding;
+	s_koth.groupHold = holding;
+	s_koth.groupAll = present >= 2 && holding == present;
 
 	if(!s_koth.active){
 		if(holding == 0)
@@ -2501,6 +2552,10 @@ UpdateKoth(uint32 now)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			continue;
+		// The hill starts on foot, in a car or in a Rhino.  A boat or an
+		// aircraft that wanders into the ring is not a contender.
+		if(ped->bInVehicle && (ped->m_pMyVehicle == nil || !ped->m_pMyVehicle->IsCar()))
 			continue;
 		if((PlayerCoors(i) - s_koth.centre).Magnitude2D() <= kKothRadius){
 			inside++;
@@ -2896,16 +2951,12 @@ DanceBeatInterval(uint32 now)
 void
 RegisterDanceCoronas(void)
 {
-	const CVector offsets[4] = {
-		CVector(kDanceFloor, 0.0f, 0.0f), CVector(0.0f, kDanceFloor, 0.0f),
-		CVector(-kDanceFloor, 0.0f, 0.0f), CVector(0.0f, -kDanceFloor, 0.0f)
-	};
-	for(int i = 0; i < 4; i++){
-		CVector pos = s_dance.centre + offsets[i];
-		pos.z += 1.0f;
+	for(int i = 0; i < kDanceRingMarks; i++){
+		const int player = i/(kDanceRingMarks/4);
+		const CRGBA &colour = kCoopColours[player];
 		CCoronas::RegisterCorona((uintptr)&s_dance + i,
-			kCoopColours[i].r, kCoopColours[i].g, kCoopColours[i].b, 255,
-			pos, 3.5f, 150.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			colour.r, colour.g, colour.b, 255,
+			s_dance.ring[i], 2.5f, 150.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
 			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
 			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 	}
@@ -2957,6 +3008,14 @@ StartDance(uint32 now, const CVector &centre)
 	s_dance.beatAt = now + kDanceBeatSlowMs;
 	s_dance.centre = centre;
 	s_dance.winner = -1;
+	for(int i = 0; i < kDanceRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kDanceRingMarks;
+		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kDanceFloor;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
+		mark.z = (found ? ground : centre.z) + 1.0f;
+		s_dance.ring[i] = mark;
+	}
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_dance.prompt[i] = -1;
 		s_dance.promptHit[i] = false;
@@ -3151,6 +3210,8 @@ RegisterCnRCoronas(void)
 		s_cnr.getaway, 4.5f, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
 		CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
 		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	RegisterGroundRing((uintptr)&s_cnr + 8, s_cnr.getawayRing, kCnRRingMarks,
+		CRGBA(120, 255, 130, 255), 2.2f);
 }
 
 void
@@ -3211,6 +3272,15 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	const float ground = CWorld::FindGroundZFor3DCoord(s_cnr.getaway.x, s_cnr.getaway.y, s_cnr.getaway.z + 2.0f, &found);
 	s_cnr.getaway.z = (found ? ground : centre.z) + 1.0f;
 
+	for(int i = 0; i < kCnRRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kCnRRingMarks;
+		CVector mark = s_cnr.getaway + CVector(Cos(angle), Sin(angle), 0.0f)*kCnRDeliverRange;
+		bool ringFound = false;
+		const float ringGround = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &ringFound);
+		mark.z = (ringFound ? ringGround : s_cnr.getaway.z) + 1.0f;
+		s_cnr.getawayRing[i] = mark;
+	}
+
 	s_cnr.getawayBlip = CRadar::SetCoordBlip(BLIP_COORD, s_cnr.getaway, RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
 	CRadar::ChangeBlipColour(s_cnr.getawayBlip, RADAR_TRACE_GREEN);
 	ShowLooseCase();
@@ -3222,8 +3292,8 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 void
 TryStartCnR(uint32 now, bool held)
 {
-	// A group nod is the hill's.  See UpdateKoth.
-	if(s_koth.groupNod >= 2)
+	// Every present player holding aim is the hill's.  See UpdateKoth.
+	if(s_koth.groupAll)
 		return;
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
@@ -3595,8 +3665,8 @@ DrawExplainer(uint32 now)
 		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
 		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
-		"EACH IN A CAR; ONE HOLDS NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
-		"ALL HOLD NOD. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
+		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
+		"ALL HOLD AIM. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -4118,8 +4188,9 @@ CCoopModes::ForceFriendlyFire(void)
 {
 	// King of the Hill is a fight over a ring: the toggle is suspended for
 	// the round, or a party with friendly fire off could stand in the ring
-	// together and nobody could take it from anybody.
-	return s_koth.active;
+	// together and nobody could take it from anybody.  Once the bell has
+	// gone, the round is over and the toggle is the party's again.
+	return s_koth.active && !s_koth.finished;
 }
 
 int
@@ -4127,8 +4198,9 @@ CCoopModes::DownedBleedMs(int normal)
 {
 	// The hill brings a partner back at kKothReviveMs; the HUD's down bar has
 	// to count the same clock, or it would still be showing seconds when they
-	// are already on their feet.
-	return s_koth.active ? (int)kKothReviveMs : normal;
+	// are already on their feet.  After the bell the hill's revive is over,
+	// so the ordinary bar is the honest one again.
+	return s_koth.active && !s_koth.finished ? (int)kKothReviveMs : normal;
 }
 
 bool
