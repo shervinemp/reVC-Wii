@@ -147,6 +147,9 @@ public:
 	// whatever the friendly-fire toggle says: King of the Hill.  Asked by
 	// CCoop::FriendlyFireBlocked.
 	static bool ForceFriendlyFire(void);
+	// How long a downed partner's bar should count, for the HUD.  King of the
+	// Hill brings them back sooner than the ordinary bleed-out.
+	static int DownedBleedMs(int normal);
 
 	// Whether a vehicle is one a mode made for itself and means to hand back: a
 	// toy, a loaner, the suspect's car, a smuggler's pursuer.  They are all

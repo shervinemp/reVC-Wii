@@ -2729,7 +2729,8 @@ CCoop::GetDownedState(int player, float &bleedLeft, float &reviveProgress)
 	if(player <= LEAD || player >= NUMPLAYERS || CWorld::Players[player].m_pPed == nil || s_downTime[player] == 0)
 		return false;
 	const uint32 now = CTimer::GetTimeInMilliseconds();
-	bleedLeft = Clamp(1.0f - (float)(now - s_downTime[player])/(float)kDownedBleedMs, 0.0f, 1.0f);
+	const uint32 bleedMs = (uint32)CCoopModes::DownedBleedMs((int)kDownedBleedMs);
+	bleedLeft = Clamp(1.0f - (float)(now - s_downTime[player])/(float)bleedMs, 0.0f, 1.0f);
 	reviveProgress = s_reviveTime[player] == 0 ? 0.0f :
 		Clamp((float)(now - s_reviveTime[player])/(float)kReviveHoldMs, 0.0f, 1.0f);
 	return true;

@@ -4122,6 +4122,15 @@ CCoopModes::ForceFriendlyFire(void)
 	return s_koth.active;
 }
 
+int
+CCoopModes::DownedBleedMs(int normal)
+{
+	// The hill brings a partner back at kKothReviveMs; the HUD's down bar has
+	// to count the same clock, or it would still be showing seconds when they
+	// are already on their feet.
+	return s_koth.active ? (int)kKothReviveMs : normal;
+}
+
 bool
 CCoopModes::IsModeVehicle(const CVehicle *vehicle)
 {
