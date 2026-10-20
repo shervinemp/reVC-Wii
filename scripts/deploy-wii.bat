@@ -49,14 +49,13 @@ echo [1/3] Creating %APP%
 if not exist "%APP%" mkdir "%APP%" || goto :fail
 if not exist "%DATA%" mkdir "%DATA%" || goto :fail
 
-echo [2/3] Copying boot.dol, meta.xml, icon, fonts
+echo [2/3] Copying boot.dol, meta.xml, icon
 copy /Y "%BUILD_DOL%" "%APP%\boot.dol" >nul || goto :fail
 copy /Y "%REPO%\gamefiles\wii-hbc\meta.xml" "%APP%\meta.xml" >nul || goto :fail
 copy /Y "%REPO%\gamefiles\wii-hbc\icon.png" "%APP%\icon.png" >nul || goto :fail
-if exist "%REPO%\gamefiles\wii-hbc\fonts" (
-    if not exist "%APP%\fonts" mkdir "%APP%\fonts"
-    copy /Y "%REPO%\gamefiles\wii-hbc\fonts\*" "%APP%\fonts\" >nul
-)
+:: The TTF/OTF under gamefiles\wii-hbc\fonts are only used on the PC by
+:: make-wii-icon.ps1 to render icon.png.  The game has no reference to them,
+:: so they are not deployed.
 
 if /I "%ASSETS%"=="assets" (
     echo [3/3] Copying Vice City PC assets from:

@@ -73,7 +73,7 @@ Copy to `sd:/apps/reVC/`:
 - `meta.xml`, `icon.png`
 - GTA VC PC assets (must include `DATA/GTA_VC.DAT`)
 
-Supported paths: `sd:/apps/reVC`, `usb:/apps/reVC`, the folder containing `reVC.dol`, or a dedicated `reVC-data` folder at the stick root (`usb:/reVC-data`). For the separated layout, keep only `boot.dol`, `meta.xml`, `icon.png` and `fonts/` in `apps/reVC`, and put the asset folders (`anim`, `audio`, `data`, `models`, `mp3`, `neo`, `skins`, `TEXT`, `txd`) in `reVC-data`. `scripts\deploy-wii.bat E: root` does that layout.
+Supported paths: `sd:/apps/reVC`, `usb:/apps/reVC`, the folder containing `reVC.dol`, or a dedicated `reVC-data` folder at the stick root (`usb:/reVC-data`). For the separated layout, keep only `boot.dol`, `meta.xml` and `icon.png` in `apps/reVC`, and put the asset folders (`anim`, `audio`, `data`, `models`, `mp3`, `neo`, `skins`, `TEXT`, `txd`) in `reVC-data`. `scripts\deploy-wii.bat E: root` does that layout. The TTF/OTF files under `gamefiles/wii-hbc/fonts` are build-time sources for `scripts/make-wii-icon.ps1`; the game does not load them, so they are not needed on the card.
 
 ## Intro
 
