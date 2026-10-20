@@ -2,6 +2,7 @@
 
 class CEntity;
 class CVehicle;
+class CVector;
 
 // Couch co-op's minigames: engine-side modes the party starts in the world,
 // as opposed to the game's own scripted missions.  The design is in
@@ -145,6 +146,12 @@ public:
 	// Whether a mode is running that needs the party able to separate: cops &
 	// robbers, which the session's wall and leash would otherwise strangle.
 	static bool FreeRoam(void);
+
+	// Where the action is in Cops & Robbers: the case carrier while it is
+	// carried, otherwise the loose case.  Cam.cpp leans the shared target this
+	// way once the party is split, so a pursuit is not framed as a picnic.
+	// False in every other mode.
+	static bool CameraHint(CVector &target);
 
 	// Whether a mode is running that forces player-on-player damage on,
 	// whatever the friendly-fire toggle says: King of the Hill.  Asked by

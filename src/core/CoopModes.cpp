@@ -1968,6 +1968,9 @@ ResetPitchBall(void)
 	s_pitch.ball->SetStatus(STATUS_ABANDONED);
 	s_pitch.ball->bIsHandbrakeOn = false;
 	s_pitch.ball->bEngineOn = false;
+	// A ball that has taken a few hits but is not wrecked comes back whole:
+	// the reset is a fresh ball, not one hit from a wreck.
+	s_pitch.ball->m_fHealth = 1000.0f;
 }
 
 void
@@ -1997,7 +2000,9 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 	s_pitch.finishAt = now + kPitchFinishMs;
 	s_pitch.winner = winner;
 	s_pitch.winnerTeam = winnerTeam;
-	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+	// A team whose last player left before the whistle has no one to pay.
+	if(winner >= 0)
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
 	COOP_LOG("WII coop: caddy football to %s %d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1);
 }
 
@@ -2256,9 +2261,15 @@ UpdatePitch(uint32 now)
 	float bestDist = kPitchTouchRange;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || ped->DyingOrDead() || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
 			continue;
-		const float dist = (ped->m_pMyVehicle->GetPosition() - ball->GetPosition()).Magnitude2D();
+		// The last touch belongs to a driver in an eligible car.  A
+		// passenger in a partner's car, or somebody who has climbed into a
+		// Rhino or a law car after the start, is not playing the football.
+		CVehicle *touchCar = nil;
+		if(!PlayerInPitchCar(i, &touchCar))
+			continue;
+		const float dist = (touchCar->GetPosition() - ball->GetPosition()).Magnitude2D();
 		if(dist < bestDist){
 			bestDist = dist;
 			best = i;
@@ -4181,6 +4192,18 @@ CCoopModes::FreeRoam(void)
 	// to stand aside or nobody can outrun anybody.  See CCoop::LimitSeparation
 	// and NeedsRegroup.
 	return s_cnr.active;
+}
+
+bool
+CCoopModes::CameraHint(CVector &target)
+{
+	if(!s_cnr.active || s_cnr.finished)
+		return false;
+	if(s_cnr.carrier >= 0 && CCoop::GetPlayerPed(s_cnr.carrier) != nil)
+		target = PlayerCoors(s_cnr.carrier);
+	else
+		target = s_cnr.casePos;
+	return true;
 }
 
 bool

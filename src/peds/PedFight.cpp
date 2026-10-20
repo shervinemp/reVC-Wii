@@ -3233,7 +3233,10 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 			return false;
 		}
 		m_fHealth = 0.0f;
-		if (player == this)
+		// Couch co-op: a partner's car is a player's car too.  The stock
+		// check only knew player 1, so a partner who drowned at the wheel
+		// left the car in STATUS_PLAYER and the AI took it.
+		if (this->IsPlayer() && m_pMyVehicle != nil && m_pMyVehicle->pDriver == this)
 			m_pMyVehicle->SetStatus(STATUS_PLAYER_DISABLED);
 
 		SetDie(ANIM_STD_NUM, 4.0f, 0.0f);

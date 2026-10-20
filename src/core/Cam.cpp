@@ -221,6 +221,15 @@ static const float kCoopZoomRate = 2.5f;
 // get.
 static const float kCoopZoomFov = 20.0f;
 static const float kCoopZoomSpan = 18.0f;
+// Cops & Robbers: once the party is split this far, lean the shared target
+// toward the case carrier.  The view direction is left alone: a camera that
+// steered itself would also turn both players' sticks.
+static const float kCoopHintMinSeparation = 10.0f;
+static const float kCoopHintTargetGain = 0.6f;
+// Not all the way to a case forty metres out: the camera must still show the
+// players it is attached to, and a target that jumped the whole distance
+// would trip the "players were moved" snap below.
+static const float kCoopHintMaxOffset = 12.0f;
 static const float kCoopYawRate = 1.6f;
 static const float kCoopUnclipRate = 2.0f;
 // Below this speed (about 3 m/s) a car's heading is not worth following.
@@ -1249,6 +1258,18 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 				if(dist > separation)
 					separation = dist;
 			}
+	}
+
+	// A pursuit is about the case, not the average of the party.  Once the
+	// players are actually apart, move the shared target most of the way to
+	// the carrier or the loose case.  The yaw is deliberately untouched; see
+	// the constants above.
+	CVector hint;
+	if(separation > kCoopHintMinSeparation && CCoopModes::CameraHint(hint)){
+		CVector toHint = hint - target;
+		const float hintDist = toHint.Magnitude();
+		if(hintDist > 0.01f)
+			target += toHint*(Min(hintDist, kCoopHintMaxOffset)/hintDist)*kCoopHintTargetGain;
 	}
 
 	const float dt = CTimer::GetTimeStepInSeconds();
