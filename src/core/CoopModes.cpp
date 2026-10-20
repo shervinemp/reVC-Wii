@@ -1338,6 +1338,9 @@ SpawnPursuer(uint32 now, CVehicle *boat, int index)
 		return;
 	spawnPos.z += predator->GetDistanceFromCentreOfMassToBaseOfModel();
 	predator->SetPosition(spawnPos);
+	predator->SetOrientation(0.0f, 0.0f, boat->GetForward().Heading());
+	predator->GetMatrix().UpdateRW();
+	predator->UpdateRwFrame();
 	CTheScripts::ClearSpaceForMissionEntity(spawnPos, predator);
 	predator->SetStatus(STATUS_ABANDONED);
 	predator->bIsLocked = true;
@@ -4454,6 +4457,8 @@ MenuSpawnBoat(const CVector &at, float heading)
 	pos.z += boat->GetDistanceFromCentreOfMassToBaseOfModel();
 	boat->SetPosition(pos);
 	boat->SetOrientation(0.0f, 0.0f, heading);
+	boat->GetMatrix().UpdateRW();
+	boat->UpdateRwFrame();
 	boat->SetStatus(STATUS_ABANDONED);
 	boat->bIsLocked = true;
 	boat->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -4908,6 +4913,8 @@ CCoopModes::EscortBoat(int player, CVehicle *lead)
 	spot.z += boat->GetDistanceFromCentreOfMassToBaseOfModel();
 	boat->SetPosition(spot);
 	boat->SetOrientation(0.0f, 0.0f, lead->GetForward().Heading());
+	boat->GetMatrix().UpdateRW();
+	boat->UpdateRwFrame();
 	boat->SetStatus(STATUS_ABANDONED);
 	boat->bIsLocked = true;
 	boat->AutoPilot.m_nCarMission = MISSION_NONE;

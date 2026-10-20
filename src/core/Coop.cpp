@@ -158,6 +158,13 @@ const float kRegroupMargin = 10.0f;
 const uint32 kWallHoldMs = 2500;
 const uint32 kWallGapMs = 300;
 const float kWallMoved = 3.0f;
+// A wall regroup is visible and jarring; do not repeat it a second later just
+// because the same partner is still standing in the same place.
+const uint32 kWallRegroupCooldownMs = 8000;
+// A car brought back to a road node can take a moment to settle.  Do not haul
+// it again until that has had a chance; otherwise a moving leash writes the
+// same "brought back" line for the whole drive.
+const uint32 kRegroupCooldownMs = 1500;
 // Below player 1 by this much means they fell through something.
 const float kFallLimit = 25.0f;
 // Player 1 moving further than this in one frame was a teleport, not travel.
@@ -289,7 +296,10 @@ uint32 s_tetherAt;
 // partner may be replaced.
 uint32 s_wallSince[NUMPLAYERS];
 uint32 s_wallLast[NUMPLAYERS];
+uint32 s_wallRegroupAt[NUMPLAYERS];
 CVector s_wallAt[NUMPLAYERS];
+// When the leash last moved this partner, so it can settle before the next test.
+uint32 s_regroupAt[NUMPLAYERS];
 // Since when a partner has been waiting for their skin to stream in, or 0.  A
 // skin that has not come in this long is given up on: they arrive as the
 // ordinary player model rather than not at all.
@@ -994,6 +1004,8 @@ RemovePartner(int player, const char *why, bool carry)
 	// And so does the count of how long they have held player 1 at the wall.
 	s_wallSince[player] = 0;
 	s_wallLast[player] = 0;
+	if(why != nil && strcmp(why, "holding player 1 at the wall") == 0)
+		s_wallRegroupAt[player] = CTimer::GetTimeInMilliseconds();
 	s_aim[player].active = false;
 	s_aim[player].drawReticle = false;
 	// A hop-in that has not spawned yet goes with them too.
@@ -1599,6 +1611,8 @@ HoldingLeadAtWall(int player, CPlayerPed *partner)
 	if(s_wallSince[player] == 0)
 		return false;
 	const uint32 now = CTimer::GetTimeInMilliseconds();
+	if(now - s_wallRegroupAt[player] < kWallRegroupCooldownMs)
+		return false;
 	if(now - s_wallLast[player] > kWallGapMs || partner->bInVehicle ||
 	   (partner->GetPosition() - s_wallAt[player]).Magnitude2D() > kWallMoved){
 		s_wallSince[player] = 0;
@@ -1613,6 +1627,13 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, int player, bool leadTelepor
 {
 	if(leadTeleported)
 		return "player 1 was moved";
+
+	// Give a car or partner just put back a chance to settle before the same
+	// leash test fires again.  Falls and lost controllers are not subject to
+	// this: those are handled before this function.
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	if(now - s_regroupAt[player] < kRegroupCooldownMs)
+		return nil;
 
 	CVehicle *partnerVehicle = partner->bInVehicle ? partner->m_pMyVehicle : nil;
 	// An NPC at the wheel: a partner being driven away by the traffic is
@@ -2469,6 +2490,7 @@ CCoop::Update(void)
 				driven->GetMatrix().UpdateRW();
 				driven->UpdateRwFrame();
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				s_regroupAt[player] = now;
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's boat brought back (%s)\n", player + 1, regroup);
@@ -2482,6 +2504,7 @@ CCoop::Update(void)
 				driven->UpdateRwFrame();
 				driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				s_regroupAt[player] = now;
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's aircraft brought back (%s)\n", player + 1, regroup);
@@ -2508,6 +2531,7 @@ CCoop::Update(void)
 				else
 					driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+				s_regroupAt[player] = now;
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
 					COOP_LOG("WII coop: player %d's car brought back (%s)\n", player + 1, regroup);
@@ -2527,6 +2551,7 @@ CCoop::Update(void)
 				// and carries over the health and the weapon the old one had.
 				RemovePartner(player, regroup, true);
 				s_spawnTime[player] = now;
+				s_regroupAt[player] = now;
 				// Told when they arrive, which may be a moment off: there is a
 				// seat or a skin to wait for.
 				s_announceReturn[player] = true;
