@@ -137,6 +137,18 @@ Call s_call;
 u64 s_callFreeTime = 0;	// when the buffer libogc may still be reading can be freed
 u64 s_wakeUntil = 0;
 
+// Phone lines can follow one another before the previous line's buffer has
+// left libogc's alarm.  The current buffer cannot be overwritten, but the next
+// line can use a fresh one; these keep the old allocations alive only until
+// their stream has finished, then free them.
+constexpr int kRetiredCallBuffers = 4;
+struct RetiredCallBuffer
+{
+	u8 *buffer;
+	u64 freeAt;
+};
+RetiredCallBuffer s_retiredCall[kRetiredCallBuffers];
+
 // White noise in -1..1.
 float
 noise(void)
@@ -258,10 +270,41 @@ powerDown(void)
 	s_call.active = false;
 }
 
+// Frees call buffers whose stream has finished, current or retired.
+void
+releaseRetiredCallBuffers(void)
+{
+	const u64 now = gettime();
+	for(int i = 0; i < kRetiredCallBuffers; i++){
+		if(s_retiredCall[i].buffer != nullptr && now >= s_retiredCall[i].freeAt){
+			std::free(s_retiredCall[i].buffer);
+			s_retiredCall[i].buffer = nullptr;
+			s_retiredCall[i].freeAt = 0;
+		}
+	}
+}
+
+bool
+retireCallBuffer(u8 *buffer, u64 freeAt)
+{
+	if(buffer == nullptr)
+		return true;
+	releaseRetiredCallBuffers();
+	for(int i = 0; i < kRetiredCallBuffers; i++){
+		if(s_retiredCall[i].buffer == nullptr){
+			s_retiredCall[i].buffer = buffer;
+			s_retiredCall[i].freeAt = freeAt;
+			return true;
+		}
+	}
+	return false;
+}
+
 // Frees the call buffer once libogc cannot still be reading it.
 void
 releaseCallBuffer(void)
 {
+	releaseRetiredCallBuffers();
 	if(s_call.buffer != nullptr && !s_call.active && gettime() > s_callFreeTime){
 		std::free(s_call.buffer);
 		s_call.buffer = nullptr;
@@ -420,11 +463,10 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	releaseCallBuffer();
 	const u64 now = gettime();
 	// A warming speaker is allowed: the line is buffered and starts as soon as the
-	// speaker is up.  A line arriving while the previous call's stream is still being
-	// read is not: its buffer would be overwritten under libogc's alarm.  A completed
-	// call's buffer is reused once libogc has let go of it.
-	if(s_call.active || (s_call.buffer != nullptr && now < s_callFreeTime) ||
-	   s_state == STATE_OFF){
+	// speaker is up.  The previous line may still be in libogc's alarm even though
+	// its stream object has closed; keep that buffer alive somewhere else and give
+	// this line a fresh one, rather than refusing the line as busy.
+	if(s_call.active || s_state == STATE_OFF){
 		WiiTraceReport("WII speaker: call busy state=%d active=%d buffer=%p\n",
 			(int)s_state, s_call.active ? 1 : 0, (void*)s_call.buffer);
 		return false;
@@ -433,22 +475,27 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
 		return false;
 
+	if(s_call.buffer != nullptr){
+		if(s_call.started){
+			if(!retireCallBuffer(s_call.buffer, s_callFreeTime)){
+				WiiTraceReport("WII speaker: too many lines in flight\n");
+				return false;
+			}
+		}else{
+			std::free(s_call.buffer);
+		}
+		s_call.buffer = nullptr;
+		s_call.capacity = 0;
+	}
+
 	u32 bytes = lengthMs*kCallBytesPerMs + kCallSlackBytes;
 	if(bytes > kCallMaxBytes)
 		bytes = kCallMaxBytes;
 	bytes = (bytes + kPacketBytes - 1)/kPacketBytes*kPacketBytes;
 
-	u8 *buffer = s_call.buffer;
-	if(buffer == nullptr || s_call.capacity < bytes){
-		if(buffer != nullptr){
-			std::free(buffer);
-			s_call.buffer = nullptr;
-			s_call.capacity = 0;
-		}
-		buffer = (u8*)memalign(32, bytes);
-		if(buffer == nullptr)
-			return false;
-	}
+	u8 *buffer = (u8*)memalign(32, bytes);
+	if(buffer == nullptr)
+		return false;
 	std::memset(buffer, kAdpcmSilence, bytes);
 
 	std::memset(&s_call, 0, sizeof(s_call));

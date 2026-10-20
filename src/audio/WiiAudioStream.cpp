@@ -8,6 +8,7 @@
 
 #include "wii-port/WiiLog.h"
 #include "wii-port/WiiSpeaker.h"
+#include "wii-port/WiiTrace.h"
 #include "WiiAudioDecoder.h"
 #include "WiiAudioStream.h"
 
@@ -187,9 +188,9 @@ WiiAudioStream::StartPrepared()
 	m_routed = m_remoteCall &&
 		WiiSpeakerBeginCall(GetLength(), m_decoder->GetSampleRate());
 	if(m_remoteCall)
-		wiiLog("[WII][AUDIO][STREAM %d] phone route=%s rate=%u length=%ums\n",
-		       m_voice, m_routed ? "remote" : "tv",
-		       m_decoder->GetSampleRate(), GetLength());
+		WiiTraceReport("WII speaker: phone route=%s rate=%u length=%ums\n",
+		               m_routed ? "remote" : "tv",
+		               m_decoder->GetSampleRate(), GetLength());
 	if(!BeginVoice()){
 		wiiLog("[WII][AUDIO][STREAM %d] ASND start failed\n", m_voice);
 		m_playing = false;
