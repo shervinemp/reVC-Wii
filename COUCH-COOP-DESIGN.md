@@ -604,6 +604,15 @@ rules -- beside player 1 on foot, or after the boat ride if they are still
 sailing. A partner who cannot be put anywhere (no clear water, no room in the
 pools) waits for a boat ride as they always have.
 
+Cover is from the boat: the driver has the SMG drive-by and can ram, and getting
+out at sea would abandon the cargo and the escort. The run and the cop shift
+hand each player a small cover kit once when they start: an Uzi with 60 rounds
+if they have no SMG, or enough to bring an existing SMG back to one 30-round
+clip. It is not taken away afterwards. That is how the game treats mission
+weapons -- a gift that stays -- and the top-up only restores one clip, so
+starting a run repeatedly is not an ammo farm. In the cop shift one player
+drives and the other shoots from the passenger seat.
+
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
 and twitchy cars would whip the shared view around), and the wall and leash
 stand aside for cops & robbers (`FreeRoam` -- a pursuit nobody can outrun is
@@ -708,4 +717,5 @@ Recorded because each was stated as a verified fact.
 | assist cone | `kAssistMinCone` / `kAssistMaxCone` | 2.5° / 8° |
 | run cargo before the drop / pickup radius | `kCargoDistance` / `kCargoRadius`, `CoopModes.cpp` | 90 m / 10 m |
 | run drop ring / unload hold | `kDropRadius` / `kUnloadMs`, `CoopModes.cpp` | 35 m / 2 s |
+| cover gun: new / refill to | `kCoverGunAmmo` / `kCoverGunFloor`, `CoopModes.cpp` | 60 / 30 rounds |
 | player colours | `kCoopColours`, `Hud.cpp` | cyan / pink / green / amber |

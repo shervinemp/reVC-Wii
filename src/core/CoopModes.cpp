@@ -128,6 +128,7 @@ const int kEscortPay = 50;		// on top of it, for each boat of the crew at a drop
 struct ShiftState
 {
 	bool active;
+	bool gunGiven[NUMPLAYERS];
 	uint32 streak;
 	uint32 nextCaseAt;
 	uint32 crewLostAt;
@@ -173,6 +174,7 @@ struct RunState
 	int32 objectiveHandle;
 	bool cargoPlanned;		// this leg's crate spot has been worked out
 	bool firstHeat;			// the first Predator has been sent out
+	bool gunGiven[NUMPLAYERS];	// the cover kit has been handed out this run
 	int carrier;			// player whose boat is carrying the cargo, or -1
 	int32 unloadBoat;	// pool index of the boat the timer belongs to
 	uint32 unloadSince;
@@ -586,6 +588,46 @@ CountPlayersIn(CVehicle *vehicle)
 			count++;
 	}
 	return count;
+}
+
+// A car or boat passenger can only fight with a submachine gun, and a partner
+// who arrives with none -- or with an empty one -- would have nothing to do in
+// the gunner seat.  The modes that use one hand out a small kit once:
+//   * no SMG at all: an Uzi with two clips;
+//   * an SMG below one clip: enough ammo to fill the clip back up.
+// Nothing is taken away afterwards.  This is how the game itself hands out
+// mission weapons -- a gift that stays in the inventory -- and it avoids
+// tracking a "before" weapon to restore.  Repeated runs cannot farm much: the
+// top-up only ever brings an existing SMG back to one clip.
+const int kCoverGunAmmo = 60;
+const int kCoverGunFloor = 30;
+void
+EnsureCoverGun(CPlayerPed *ped)
+{
+	if(ped == nil)
+		return;
+	const uint8 slot = WEAPONSLOT_SUBMACHINEGUN;
+	if(!ped->HasWeaponSlot(slot)){
+		ped->GiveWeapon(WEAPONTYPE_UZI, kCoverGunAmmo, true);
+		return;
+	}
+	CWeapon &weapon = ped->GetWeapon(slot);
+	if(weapon.m_nAmmoTotal < kCoverGunFloor)
+		ped->GrantAmmo(weapon.m_eWeaponType, kCoverGunFloor - weapon.m_nAmmoTotal);
+}
+
+void
+ArmModePlayers(bool *given)
+{
+	for(int player = 0; player < NUMPLAYERS; player++){
+		if(given[player])
+			continue;
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped == nil)
+			continue;
+		EnsureCoverGun(ped);
+		given[player] = true;
+	}
 }
 
 // Whether a player is in the vehicle or on the way into it.  Deleting a
@@ -1064,6 +1106,8 @@ TryStartShift(uint32 now)
 		return;
 
 	s_shift.active = true;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_shift.gunGiven[i] = false;
 	s_shift.streak = 0;
 	s_shift.crewLostAt = 0;
 	s_shift.resultAt = 0;
@@ -1557,6 +1601,8 @@ StartRunAt(uint32 now, CVehicle *boat)
 	s_run.boat = boat;
 	s_run.active = true;
 	s_run.leg = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_run.gunGiven[i] = false;
 	s_run.cargoPlanned = false;
 	s_run.firstHeat = false;
 	s_run.carrier = -1;
@@ -4353,8 +4399,8 @@ void
 DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
-		"CHASE THE RADAR BLIP. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
-		"RACE FOR THE CARGO. WHOEVER GRABS IT RUNS IT TO THE RING; THE OTHER COVERS. 3 DROPS. P1 LEAVES BOAT TO QUIT",
+		"CHASE THE RADAR BLIP. ONE DRIVES, ONE SHOOTS; STOP OR WRECK IT. SIREN OFF TO QUIT",
+		"RACE FOR THE CARGO. FIRST THERE LOADS IT AT THE RING; THE OTHER COVERS WITH SMG OR RAM. 3 DROPS. P1 LEAVES BOAT TO QUIT",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"BOTH PLAYERS RACE THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
@@ -5107,6 +5153,14 @@ CCoopModes::Update(void)
 	// A row on the minigame page arms a start; this is the first point after
 	// the menu has closed that can stream the destination and move anybody.
 	UpdateMenuPending(now);
+
+	// A car or boat passenger needs a submachine gun to join the fight.  One kit
+	// per mode, per player; a partner who joins late is armed on their first
+	// frame in the world.
+	if(s_shift.active)
+		ArmModePlayers(s_shift.gunGiven);
+	if(s_run.active)
+		ArmModePlayers(s_run.gunGiven);
 
 	// The explainers are for the first time a mode arms in a session.  The
 	// session is what every mode below asks CCoop::PairActive about, and it is
