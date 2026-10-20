@@ -593,17 +593,30 @@ two seconds; the other boat gets the "COVER" distance and keeps the Predators
 off. A Predator is sent out from the first leg, and the police switch to
 chasing whichever boat has the crate, so the escort has a real job on every leg.
 If the carrier's boat is wrecked or left, the crate floats where it was and the
-other boat can take it. Player 1 is still the
-skipper -- the run ends when their lead boat is lost or they leave it -- but the
-main job changes hands each leg depending on who wins the crate. The party's
-boats can ram or shoot the police like any other boat. The run ends
-when the lead boat is lost or wrecked, when player 1 is out of it for five
-seconds, or after the third drop, and then the boats are handed back: partners
-at their wheels are taken out of the world (as a change of clothes does), the
-boats become any other boat on the water, and the partners come back by the
-usual rules -- beside player 1 on foot, or after the boat ride if they are
-still sailing. A partner who cannot be put anywhere (no clear water, no room in the
-pools) waits for a boat ride as they always have.
+other boat can take it. Player 1 is still the skipper -- the run ends when their
+lead boat is lost or they leave it -- but the main job changes hands each leg
+depending on who wins the crate. The party's boats can ram or shoot the police
+like any other boat. The run ends when the lead boat is lost or wrecked, when
+player 1 is out of it for five seconds, or after the third drop, and then the
+boats are handed back: partners at their wheels are taken out of the world (as a
+change of clothes does), the boats become any other boat on the water, and the
+partners come back by the usual rules -- beside player 1 on foot, or after the
+boat ride if they are still sailing. A partner who cannot be put anywhere (no
+clear water, no room in the pools) waits for a boat ride as they always have.
+
+The Predators are not passive scenery. Inside 70 m, with the carrier in the arc
+ahead of the boat, a Predator fires its twin machine guns at the carrier's hull
+in bursts; the escort's job is to take its blind side, ram it, or put the boat
+down. Both pursuers get light-blue radar blips, a colour the drop,
+the crate and the carrier do not use, and the run's second line names the
+nearest live one inside 120 m ("POLICE 48m"), so the warning is on the same line
+as the cover distance. A run Predator has a 600-point hull instead of
+the stock 1,000, which keeps the one-time SMG kit useful: a concentrated burst
+can finish one, and ramming remains the other answer. Each of the two pursuers
+is sent once: a destroyed Predator is not replaced, so putting one down buys
+the rest of the run. Once a crate is aboard, the carrier is the target; during
+the race for it the lead boat is. The escort can work without being shot at,
+but is not safe from a crossfire.
 
 Cover is from the boat: the driver has the SMG drive-by and can ram, and getting
 out at sea would abandon the cargo and the escort. The run and the cop shift

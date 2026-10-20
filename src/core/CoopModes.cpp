@@ -116,6 +116,11 @@ const float kMinDropSeparation = 150.0f;
 const uint32 kUnloadMs = 2000;
 const float kPursuerDistance = 130.0f;	// heat spawns this far out
 const uint32 kPursuerRetargetMs = 3000;
+const float kPursuerFireRange = 70.0f;	// the Predator's guns reach this far
+const float kPursuerFireCone = 0.5f;		// ...and fire within about sixty degrees of the nose
+const uint32 kPursuerFireMs = 600;		// a burst every this often while lined up
+const int kPursuerFireDamage = 7;		// per round; two rounds per burst
+const float kPursuerWarnRange = 120.0f;	// the HUD names a police boat this near
 const uint32 kCrewGraceMs = 5000;	// the skipper may be out of the boat this long
 const float kEscortRange = 80.0f;	// a partner's boat this near the lead's is the crew
 const float kEscortGap = 14.0f;		// an escort appears this far to the side of the lead boat...
@@ -175,12 +180,15 @@ struct RunState
 	int32 objectiveHandle;
 	bool cargoPlanned;		// this leg's crate spot has been worked out
 	bool firstHeat;			// the first Predator has been sent out
+	bool pursuerSent[2];		// this slot has had its one Predator
 	bool gunGiven[NUMPLAYERS];	// the cover kit has been handed out this run
 	int carrier;			// player whose boat is carrying the cargo, or -1
 	int32 unloadBoat;	// pool index of the boat the timer belongs to
 	uint32 unloadSince;
 	uint32 crewLostAt;
 	uint32 nextRetargetAt;
+	uint32 nextFireAt[2];
+	int32 pursuerBlip[2];
 	CVehicle *boat;
 	CVehicle *escort[NUMPLAYERS];
 	CVehicle *pursuer[2];
@@ -1468,6 +1476,34 @@ PlanRoute(CVehicle *boat)
 	return true;
 }
 
+// The police boats are worth seeing on the radar even when they are behind the
+// cargo boat.  They are light-blue entity blips, a colour the drop, the crate
+// and the carrier do not use, and the only marker on the run that follows a
+// moving thing besides the carrier.
+void
+ClearPursuerBlip(int index)
+{
+	if(s_run.pursuerBlip[index] >= 0){
+		CRadar::ClearBlip(s_run.pursuerBlip[index]);
+		s_run.pursuerBlip[index] = -1;
+	}
+}
+
+void
+PlacePursuerBlip(int index, CVehicle *boat)
+{
+	ClearPursuerBlip(index);
+	if(boat == nil)
+		return;
+	const int32 handle = CPools::GetVehiclePool()->GetIndex(boat);
+	if(handle < 0)
+		return;
+	s_run.pursuerBlip[index] = CRadar::SetEntityBlip(BLIP_CAR, handle,
+		RADAR_TRACE_LIGHT_BLUE, BLIP_DISPLAY_BOTH);
+	if(s_run.pursuerBlip[index] >= 0)
+		CRadar::ChangeBlipColour(s_run.pursuerBlip[index], RADAR_TRACE_LIGHT_BLUE);
+}
+
 // The heat goes the way the suspect does: the world takes the boats back when
 // the run is over, so a Predator drifts off as another boat on the water.
 void
@@ -1476,6 +1512,7 @@ ReleasePursuers(void)
 	for(int i = 0; i < 2; i++){
 		CPed *cop = s_run.pursuerDriver[i];
 		CVehicle *boat = s_run.pursuer[i];
+		ClearPursuerBlip(i);
 		if(cop != nil){
 			CTheScripts::CleanUpThisPed(cop);
 			cop->CleanUpOldReference((CEntity**)&s_run.pursuerDriver[i]);
@@ -1498,7 +1535,7 @@ void
 DrivePursuer(int index, uint32 now, CVehicle *boat)
 {
 	CVehicle *predator = s_run.pursuer[index];
-	if(predator == nil || boat == nil)
+	if(predator == nil || boat == nil || predator->GetStatus() == STATUS_WRECKED)
 		return;
 	CVector dest;
 	if(!FindWaterNodeNear(boat->GetPosition(), 150.0f, dest))
@@ -1511,13 +1548,49 @@ DrivePursuer(int index, uint32 now, CVehicle *boat)
 	predator->AutoPilot.m_nAntiReverseTimer = now;
 }
 
+// A Predator's twin machine guns are its threat, not its decoration.  It only
+// fires when the target is inside the arc ahead of its nose, which leaves the
+// escort a blind side to shoot from or a hull to ram, and it pauses between
+// bursts so the boat can be driven out of range.  The carrier is the target;
+// the other player's job is to break the chase or put the police boat down.
+void
+FirePursuer(int index, uint32 now, CVehicle *target)
+{
+	CVehicle *predator = s_run.pursuer[index];
+	if(predator == nil || target == nil || predator->pDriver == nil)
+		return;
+	if(predator->GetStatus() == STATUS_WRECKED || now < s_run.nextFireAt[index])
+		return;
+
+	const CVector toTarget = target->GetPosition() - predator->GetPosition();
+	if(toTarget.Magnitude2D() > kPursuerFireRange)
+		return;
+	CVector flatTarget(toTarget.x, toTarget.y, 0.0f);
+	if(flatTarget.Magnitude() < 0.1f)
+		return;
+	flatTarget.Normalise();
+	CVector flatForward = predator->GetForward();
+	flatForward.z = 0.0f;
+	if(flatForward.Magnitude() < 0.1f)
+		return;
+	flatForward.Normalise();
+	if(DotProduct(flatForward, flatTarget) < kPursuerFireCone)
+		return;
+
+	CVector aim = target->GetPosition();
+	aim.z += 0.8f;
+	predator->FireFixedMachineGunsAt(aim, kPursuerFireDamage);
+	s_run.nextFireAt[index] = now + kPursuerFireMs;
+}
+
 // One police boat's worth of heat: the Predator is the game's own police
 // boat, a cop drives it, and both halves are requested when the run arms so
-// the first drop finds them in memory.
+// the first drop finds them in memory.  Each slot is sent once; a wrecked
+// Predator does not come back, so putting one down is a real win for cover.
 void
 SpawnPursuer(uint32 now, CVehicle *boat, int index)
 {
-	if(s_run.pursuer[index] != nil || boat == nil)
+	if(s_run.pursuerSent[index] || s_run.pursuer[index] != nil || boat == nil)
 		return;
 	if(!CStreaming::HasModelLoaded(MI_PREDATOR) || !CStreaming::HasModelLoaded(MI_COP))
 		return;
@@ -1543,6 +1616,12 @@ SpawnPursuer(uint32 now, CVehicle *boat, int index)
 	CTheScripts::ClearSpaceForMissionEntity(spawnPos, predator);
 	predator->SetStatus(STATUS_ABANDONED);
 	predator->bIsLocked = true;
+	// A stock Predator is a 1,000-point hull.  This one has to be a threat the
+	// one-time cover kit can answer rather than a wall the escort can only ram,
+	// so the run's boats are lighter.  Ramming still works; a concentrated
+	// burst now does too.
+	predator->m_fHealth = 600.0f;
+	predator->m_nAmmoInClip = 20;
 	predator->AutoPilot.m_nCarMission = MISSION_NONE;
 	predator->AutoPilot.m_nTempAction = TEMPACT_NONE;
 	predator->AutoPilot.m_nCruiseSpeed = predator->AutoPilot.m_fMaxTrafficSpeed = 25;
@@ -1575,6 +1654,8 @@ SpawnPursuer(uint32 now, CVehicle *boat, int index)
 	cop->RegisterReference((CEntity**)&s_run.pursuerDriver[index]);
 	s_run.pursuer[index] = predator;
 	s_run.pursuerDriver[index] = cop;
+	s_run.pursuerSent[index] = true;
+	PlacePursuerBlip(index, predator);
 	DrivePursuer(index, now, boat);
 	COOP_LOG("WII coop: heat on the water\n");
 }
@@ -1582,13 +1663,21 @@ SpawnPursuer(uint32 now, CVehicle *boat, int index)
 void
 UpdatePursuers(uint32 now, CVehicle *boat)
 {
-	if(now < s_run.nextRetargetAt)
-		return;
-	s_run.nextRetargetAt = now + kPursuerRetargetMs;
+	const bool retarget = now >= s_run.nextRetargetAt;
+	if(retarget)
+		s_run.nextRetargetAt = now + kPursuerRetargetMs;
 	if(boat == nil)
 		return;
-	for(int i = 0; i < 2; i++)
-		DrivePursuer(i, now, boat);
+	for(int i = 0; i < 2; i++){
+		CVehicle *predator = s_run.pursuer[i];
+		if(predator == nil || predator->GetStatus() == STATUS_WRECKED){
+			ClearPursuerBlip(i);
+			continue;
+		}
+		if(retarget)
+			DrivePursuer(i, now, boat);
+		FirePursuer(i, now, boat);
+	}
 }
 
 void ReleaseLoaner(int player);
@@ -1674,12 +1763,16 @@ StartRunAt(uint32 now, CVehicle *boat)
 		s_run.gunGiven[i] = false;
 	s_run.cargoPlanned = false;
 	s_run.firstHeat = false;
+	s_run.pursuerSent[0] = false;
+	s_run.pursuerSent[1] = false;
 	s_run.carrier = -1;
 	s_run.drop = s_run.dropPos[0];
 	s_run.unloadSince = 0;
 	s_run.unloadBoat = -1;
 	s_run.crewLostAt = 0;
 	s_run.nextRetargetAt = now;
+	s_run.nextFireAt[0] = 0;
+	s_run.nextFireAt[1] = 0;
 	PlaceDropMarker();
 	COOP_LOG("WII coop: smuggling run on\n");
 	CCoop::Notify("WII_CSR");
@@ -1762,7 +1855,9 @@ CompleteDrop(uint32 now, CVehicle *boat)
 	s_run.drop = s_run.dropPos[s_run.leg];
 	s_run.unloadSince = 0;
 	PlaceDropMarker();
-	// The heat steps up with every drop: one police boat, then its partner.
+	// The partner joins on the second drop.  A boat that has already been sent
+	// is not replaced if the escort put it down; the pair is the run's heat,
+	// not an endless supply.
 	SpawnPursuer(now, boat, s_run.leg - 1);
 }
 
@@ -4575,6 +4670,25 @@ DrawShiftMarks(uint32 now)
 	PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), result, colour, 1.0f, 1.5f);
 }
 
+// The nearest live police boat to the thing being chased, for the run's
+// warning line.  A wreck is no longer a threat; neither is a boat whose cop has
+// been thrown out.
+float
+NearestPursuerDistance(const CVector &from)
+{
+	float best = -1.0f;
+	for(int i = 0; i < 2; i++){
+		CVehicle *predator = s_run.pursuer[i];
+		if(predator == nil || predator->pDriver == nil ||
+		   predator->GetStatus() == STATUS_WRECKED)
+			continue;
+		const float dist = (predator->GetPosition() - from).Magnitude2D();
+		if(best < 0.0f || dist < best)
+			best = dist;
+	}
+	return best;
+}
+
 // Everything a mode shows on screen that is not a chip: the headline, the
 // countdown and the bars.  A mode that has ended keeps its marks for the
 // moment it lingers, so the result is on screen and not just in the log.
@@ -4635,6 +4749,16 @@ DrawModeMarks(uint32 now)
 					sprintf(part, "  P%d %dm", i + 1, (int)dist);
 					strcat(sub, part);
 				}
+			}
+			// The chase is only a cover job if the crew can see it coming.
+			const CVector chased = carrierBoat != nil ? carrierBoat->GetPosition() :
+				s_run.boat->GetPosition();
+			const float policeDist = NearestPursuerDistance(chased);
+			if(policeDist >= 0.0f && policeDist <= kPursuerWarnRange){
+				char part[24];
+				sprintf(part, "  POLICE %dm", (int)policeDist);
+				strcat(sub, part);
+				away = away || policeDist <= kPursuerFireRange;
 			}
 			PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(58.0f), sub,
 				away ? CRGBA(255, 200, 90, 255) : white, 0.45f, 0.7f);
@@ -5167,6 +5291,8 @@ CCoopModes::Init(void)
 	s_run.cargoBlip = -1;
 	s_run.objectiveBlip = -1;
 	s_run.objectiveHandle = -1;
+	s_run.pursuerBlip[0] = -1;
+	s_run.pursuerBlip[1] = -1;
 	s_run.cargoPlanned = false;
 	s_run.firstHeat = false;
 	s_run.carrier = -1;

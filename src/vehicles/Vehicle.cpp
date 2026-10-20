@@ -1462,6 +1462,39 @@ CVehicle::FireFixedMachineGuns(void)
 	}
 }
 
+// FireFixedMachineGuns aims along the boat's nose because a player is looking
+// where the camera looks.  An AI Predator has no camera, and driving at a boat
+// that is turning means its nose is often close but not exact; this fires the
+// same pair of guns at the point instead.  The caller owns the cadence and the
+// firing cone; this only puts the rounds on the point.
+void
+CVehicle::FireFixedMachineGunsAt(const CVector &target, int32 damage)
+{
+	if (pDriver == nil || bGunSwitchedOff)
+		return;
+	if (CTimer::GetTimeInMilliseconds() <= m_nGunFiringTime + 150)
+		return;
+	m_nGunFiringTime = CTimer::GetTimeInMilliseconds();
+
+	for (int side = -1; side <= 1; side += 2) {
+		CVector source = GetMatrix() * CVector(2.0f*(float)side, 2.5f, 1.0f);
+		CVector aim = target;
+		aim.x += ((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.010f;
+		aim.y += ((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.010f;
+		aim.z += ((CGeneral::GetRandomNumber() & 0xFF) - 128) * 0.015f;
+		CWeapon::DoTankDoomAiming(this, pDriver, &source, &aim);
+		FireOneInstantHitRound(this, &source, &aim, damage);
+	}
+
+	DMAudio.PlayOneShot(m_audioEntityId, SOUND_WEAPON_SHOT_FIRED, 0.0f);
+
+	m_nAmmoInClip--;
+	if (m_nAmmoInClip == 0) {
+		m_nAmmoInClip = 20;
+		m_nGunFiringTime = CTimer::GetTimeInMilliseconds() + 1400;
+	}
+}
+
 void
 CVehicle::ActivateBomb(void)
 {

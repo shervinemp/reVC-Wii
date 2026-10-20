@@ -381,6 +381,10 @@ public:
 	void InflictDamage(CEntity *damagedBy, eWeaponType weaponType, float damage, CVector pos = CVector(0.0f, 0.0f, 0.0f));
 	void DoFixedMachineGuns(void);
 	void FireFixedMachineGuns(void);
+	// The same twin guns, aimed at a point instead of straight ahead.  The
+	// smuggling run's Predators use it: their cop driver is AI, so there is no
+	// camera or pad to point the fixed guns, and the chase must still bite.
+	void FireFixedMachineGunsAt(const CVector &target, int32 damage);
 	void ActivateBomb(void);
 	void ActivateBombWhenEntered(void);
 	// culprit is whoever set the wreck off, when the caller knows: couch co-op
