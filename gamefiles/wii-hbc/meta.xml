@@ -8,7 +8,7 @@
   <long_description>
 reVC Wii port (reverse-engineered Vice City) running on libogc.
 
-Assets: stock PC Vice City data on USB (NTFS ok) or SD at {device}:/apps/reVC.
+Assets: stock PC Vice City data on USB (NTFS ok) at {device}:/apps/reVC or {device}:/reVC-data, or on SD at {device}:/apps/reVC.
 Character roster, radio and scripted audio open straight from the PC install; no
 conversion step.
 
