@@ -247,6 +247,10 @@ bool s_joined[kNumPartners];
 bool s_joinTold[kNumPartners];
 const uint32 kJoinHintMs = 20000;
 uint32 s_joinHintAt[kNumPartners];
+// A pressed during the short presence debounce.  Without this, switching a
+// controller on and pressing A at once joins nothing: padPresent is still
+// false for the first 400 ms and the next Update never sees the press.
+bool s_joinPressed[kNumPartners];
 bool s_batteryTold[kNumPartners];
 // A controller that has not been seen this long counts as lost, for the HUD.
 // Longer than the pad layer's own grace for a dropped report (twenty scans, a
@@ -1939,6 +1943,7 @@ CCoop::Init(void)
 		s_joined[partner] = false;
 		s_joinTold[partner] = false;
 		s_joinHintAt[partner] = 0;
+		s_joinPressed[partner] = false;
 		s_batteryTold[partner] = false;
 		s_padSince[partner] = 0;
 		s_padLast[partner] = 0;
@@ -2208,11 +2213,18 @@ CCoop::Update(void)
 	for(int partner = 0; partner < kNumPartners; partner++){
 		const int player = partner + 1;
 		CPad *pad = CPad::GetPad(PAD_COOP + partner);
+		// Latch A while the pad is still inside the presence debounce.  Clear
+		// it when the pad is gone, so a stale press cannot join a later one.
+		if(!s_padHere[partner])
+			s_joinPressed[partner] = false;
+		else if(pad->NewState.Cross)
+			s_joinPressed[partner] = true;
 		padPresent[player] = s_padHere[partner] && now - s_padSince[partner] >= kJoinAfterMs;
 		padGone[player] = !s_padHere[partner] && (!s_padEver[partner] || now - s_padLast[partner] > kDropAfterMs);
 		if(padGone[player]){
 			s_joined[partner] = false;
 			s_joinTold[partner] = false;
+			s_joinPressed[partner] = false;
 			s_batteryTold[partner] = false;
 			s_announceReturn[player] = false;
 			// A camera focus was that partner's choice for their drive.  Their
@@ -2227,8 +2239,9 @@ CCoop::Update(void)
 			// The autotest path may still join the first controllers without a
 			// press, but ordinary play does not.
 			const CControllerState &held = pad->NewState;
-			if(held.Cross || partner < ms_nAutoJoinPartners){
+			if(held.Cross || s_joinPressed[partner] || partner < ms_nAutoJoinPartners){
 				s_joined[partner] = true;
+				s_joinPressed[partner] = false;
 				COOP_LOG("WII coop: partner %d joined\n", player + 1);
 #ifdef NINTENDO_WII
 				WiiPadJoinPulse(player);
