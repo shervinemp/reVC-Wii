@@ -74,6 +74,14 @@ void WiiPadCaptureMouse(CMouseControllerState &state);
 // game; and a controller that stops being a player's is told to stop once.
 void WiiPadUpdateRumble(void);
 
+// The WPAD channel of player 1's Wii Remote, or -1 when player 1 is on a
+// GameCube pad.  Player 1 is the first remote to connect, not channel 0.
+s32 WiiPadLeadChannel(void);
+
+// The remote the speaker should drive: player 1's, or the first partner remote
+// when player 1 is on a GameCube pad.  -1 when there is no Wii Remote at all.
+s32 WiiPadSpeakerChannel(void);
+
 // Which controller currently owns pad 0 (GameCube preferred).
 WiiConnectedPad WiiPadQueryPrimary(void);
 const char *WiiPadPrimaryName(WiiConnectedPad pad);

@@ -272,11 +272,6 @@ uint32 s_regroupLogTime;
 // an order to die on the pavement -- or 0.  Arrested counts too: that is the
 // one of the three nobody can be brought back from.  Per partner.
 uint32 s_downTime[NUMPLAYERS];
-// A vehicle that is on fire, bombed or below the fire threshold.  A partner
-// inside one gets a moment to use the exit, then is pulled out rather than
-// waiting for the blast.
-uint32 s_burnSince[NUMPLAYERS];
-const uint32 kBurnEjectMs = 1500;
 // Since when another player has been close enough to revive them, or 0.  A
 // revive needs the hold, so walking past a body does not do it.
 uint32 s_reviveTime[NUMPLAYERS];
@@ -888,20 +883,6 @@ VehicleSafeForPartner(CVehicle *vehicle)
 	return found && pos.z - ground <= 5.0f;
 }
 
-// A car about to catch fire or explode is not a place to wait.  The fire
-// manager tells NPC occupants to leave, and players get the same order, but a
-// player at the wheel is deliberately left to their own controls.  Co-op uses
-// this to give a partner in that seat the exit order too, and ultimately to
-// pull them out before the blast.
-bool
-VehicleAboutToBurn(CVehicle *vehicle)
-{
-	if(vehicle == nil || vehicle->GetStatus() == STATUS_WRECKED)
-		return false;
-	return vehicle->m_pCarFire != nil || vehicle->m_nBombTimer > 0 ||
-	       vehicle->m_fHealth < 250.0f;
-}
-
 // Whether a player can sit in this vehicle while another player drives it.
 // Only ever a vehicle a player is driving: the engine makes any player who
 // gets onto a bike or into a boat its driver whatever seat they asked for,
@@ -1023,7 +1004,6 @@ RemovePartner(int player, const char *why, bool carry)
 	// And so does the count of how long they have held player 1 at the wall.
 	s_wallSince[player] = 0;
 	s_wallLast[player] = 0;
-	s_burnSince[player] = 0;
 	if(why != nil && strcmp(why, "holding player 1 at the wall") == 0)
 		s_wallRegroupAt[player] = CTimer::GetTimeInMilliseconds();
 	s_aim[player].active = false;
@@ -1955,7 +1935,6 @@ CCoop::Init(void)
 		s_downTime[i] = 0;
 		s_reviveTime[i] = 0;
 		s_reviveValid[i] = false;
-		s_burnSince[i] = 0;
 		s_wallSince[i] = 0;
 		s_wallLast[i] = 0;
 		s_skinWaitSince[i] = 0;
@@ -2334,28 +2313,21 @@ CCoop::Update(void)
 			continue;
 		CPad *partnerPad = CPad::GetPad(PAD_COOP + player - 1);
 		const char *regroup;
-		CVehicle *burning = (partner->bInVehicle && partner->m_pMyVehicle != nil &&
-		                     VehicleAboutToBurn(partner->m_pMyVehicle)) ? partner->m_pMyVehicle : nil;
-		if(burning == nil)
-			s_burnSince[player] = 0;
 		if(padGone[player]){
 			RemovePartner(player, "controller gone", false);
 			s_spawnTime[player] = now;
 			s_announceJoin[player] = true;
 			Tell(kLeftKeys[player - 1]);
-		}else if(partner->DyingOrDead() || partner->m_nPedState == PED_ARRESTED ||
-		         (partner->bInVehicle && partner->m_fHealth <= 1.0f)){
+		}else if(partner->DyingOrDead() || partner->m_nPedState == PED_ARRESTED){
 			// Nothing in the engine brings a player back except CGameLogic, and
 			// CGameLogic only knows the player in focus.  So this is the whole of
 			// a partner's wasted-and-busted: down where they fell, and then
 			// either brought back by another player reaching them or, when the
 			// bleed-out runs out, back beside player 1 as before.
 			//
-			// The last test is someone killed in a car.  CPed::InflictDamage does
-			// not let them die there: it leaves them one point of health and an
-			// order to get out and die on the pavement -- which a passenger cannot
-			// carry out while the car is moving, so they would ride along at one
-			// health for as long as player 1 kept driving.
+			// A partner at one point of health in a car is not downed here.  The
+			// engine gives every player the same leave-and-die order, and healing
+			// them would be a rescue player 1 does not get.
 			const bool busted = partner->m_nPedState == PED_ARRESTED;
 			if(s_downTime[player] == 0){
 				s_downTime[player] = now;
@@ -2383,15 +2355,6 @@ CCoop::Update(void)
 							s_reviveValid[player] = true;
 						}
 						s_spawnTime[player] = now;
-					}else{
-						// Not dead yet: one point of health in a car, waiting to get
-						// out and die.  Healed where they sit, and the order to die
-						// taken off them.
-						partner->m_fHealth = CWorld::Players[LEAD].m_nMaxHealth;
-						if(partner->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE)
-							partner->SetObjective(OBJECTIVE_NONE);
-						partner->m_leaveCarTimer = 0;
-						s_downTime[player] = 0;
 					}
 					Tell(kBackKeys[player - 1]);
 				}
@@ -2404,29 +2367,6 @@ CCoop::Update(void)
 					// where from: the arrival is told when it happens.
 					s_announceReturn[player] = true;
 				}
-			}
-		}else if(burning != nil){
-			// A partner at the wheel is deliberately left out of
-			// CCarAI::TellOccupantsToFleeCar so the player keeps control of
-			// their own car.  That does not mean sitting in it until it blows:
-			// ask them out, and if the car is moving too fast to obey, pull
-			// them out before the blast.  Passengers take the same route,
-			// because a player-driven car leaves them waiting five seconds for
-			// an exit that the fire will not grant.
-			if(s_burnSince[player] == 0)
-				s_burnSince[player] = now;
-			if(partner->m_objective != OBJECTIVE_LEAVE_CAR){
-				partner->m_leaveCarTimer = 0;
-				partner->bFleeAfterExitingCar = true;
-				partner->SetObjective(OBJECTIVE_LEAVE_CAR, burning);
-			}
-			const bool bombAboutToGo = burning->m_nBombTimer > 0 &&
-				burning->m_nBombTimer < 1500;
-			if(bombAboutToGo || now - s_burnSince[player] >= kBurnEjectMs){
-				RemovePartner(player, "burning car", true);
-				s_spawnTime[player] = now;
-				s_announceReturn[player] = true;
-				s_burnSince[player] = 0;
 			}
 		}else if((regroup = NeedsRegroup(lead, partner, player, leadTeleported)) != nil){
 			// A partner who is driving their own car is moved with it.  The
@@ -2886,11 +2826,19 @@ CCoop::ReviveDownedPlayer(int player)
 	CVector at = partner->GetPosition();
 	if(partner->bInVehicle && partner->m_pMyVehicle != nil){
 		CVehicle *vehicle = partner->m_pMyVehicle;
-		// A burning, bombed or still-airborne car is not a revive spot.  Wait
-		// for it to be safe rather than dropping the partner into the blast.
+		// A burning, bombed or still-airborne car is not a revive spot.  Move
+		// clear of it instead of refusing the revive: King of the Hill calls
+		// this on a timer, and a wrecked car used to leave the partner down
+		// for the rest of the round.
 		if(!VehicleSafeForPartner(vehicle) ||
-		   !FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
-			return false;
+		   !FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at)){
+			if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 6.0f, at)){
+				CPlayerPed *safe = CWorld::Players[LEAD].m_pPed;
+				if(safe == nil || safe->DyingOrDead() ||
+				   !FindSpotBeside(safe->GetPosition(), safe->GetRight(), safe->GetForward(), 3.0f, at))
+					return false;
+			}
+		}
 	}
 
 	const uint32 now = CTimer::GetTimeInMilliseconds();

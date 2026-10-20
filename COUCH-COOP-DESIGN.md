@@ -88,10 +88,13 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
   the HUD, and so on.
   `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that
   reads a pad on a player's behalf while processing a ped uses it.
-- **Controller**: player 1 is what it always was (a GameCube pad in port 1,
-  else Wii Remote 1). The partners are the remaining controllers in order —
-  GameCube pads in port order first, then Wii Remotes with a Nunchuk or Classic
-  Controller, the same rule player 1 is held to.
+- **Controller**: player 1 is the GameCube pad in port 1, else the first
+  playable Wii Remote to connect in this session - not whichever remote
+  happens to be on WPAD channel 0 from the last play. The partners are the
+  remaining controllers in arrival order: GameCube pads in port order first,
+  then Wii Remotes with a Nunchuk or Classic Controller, the same rule player 1
+  is held to. A controller keeps its seat while it stays connected; when every
+  remote has gone, the next one to arrive is player 1 again.
 - **Joining takes a button press.** A controller being connected is not a
   player: the remote that launched the game is still switched on while its
   owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
@@ -205,11 +208,14 @@ back at once line up along the road instead of piling onto one node.
   moment it can. Off the back of a moving bike there is no getting out; the
   engine has no such move. If player 1 gets out and walks off, the partner is
   pulled out to their side at the leash.
-- **When it goes wrong.** A car on fire puts the partner out of it by itself. One
-  killed in the car, or still in it when it explodes, comes back the usual few
-  seconds later. If an NPC takes the wheel, the partner is brought back to
-  player 1; a car any player is driving is part of the party and the leash
-  keeps it near. Player 1's own enter button treats a car a partner is driving
+- **When it goes wrong.** A burning, bombed or exploding car treats a partner
+  exactly as it treats player 1: nobody is pulled out or healed automatically.
+  They can leave with their own exit button, and if they stay they burn, are
+  killed, or go down like anyone else. A partner killed in a car is revived
+  beside player 1 rather than in the wreck; King of the Hill's forced revive
+  moves clear of a burning or wrecked car instead of leaving them down. If an
+  NPC takes the wheel, the partner is brought back to player 1; a car any
+  player is driving is part of the party and the leash keeps it near. Player 1's own enter button treats a car a partner is driving
   as a passenger seat rather than a carjack, and a partner's button never picks
   a car another player is driving, so nobody can take anybody else's wheel.
 

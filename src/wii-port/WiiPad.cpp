@@ -209,6 +209,14 @@ PadDevice s_devices[NUM_PLAYERS];
 constexpr int kDeviceReleaseScans = 20;
 // Per partner: consecutive scans the controller they were given has been missing.
 int s_deviceAbsent[NUM_PLAYERS];
+// Per Wii Remote channel: when it first became playable, as a monotonic sequence
+// number.  Player 1 is the earliest remote, not simply channel 0, so the remote
+// connected first is the one that starts the game.  An order is kept through a
+// bare-remote spell and dropped only when the remote has really gone.
+u32 s_remoteOrder[WPAD_MAX_WIIMOTES];
+u32 s_remoteOrderNext;
+int s_remoteAbsent[WPAD_MAX_WIIMOTES];
+bool s_leadChosen;
 // Per GameCube port: the same, for the connection mask.
 int s_gameCubeAbsent[4];
 // Set from the Wii Remote power button's callback, which runs outside the game's
@@ -1203,13 +1211,68 @@ noteBareRemote(int channel)
 void
 resolveDevices(void)
 {
-	// Player 1 first: the GameCube pad in port 1, or the first Wii Remote.
+	// First note who has arrived and in what order.  A remote that is already
+	// connected on the first scan is ordered there; one connected later goes
+	// behind it.  This is what decides player 1, rather than WPAD channel 0: a
+	// remote left on from the previous play used to own that channel and keep
+	// the first slot even when somebody else connected first this time.
+	bool playable[WPAD_MAX_WIIMOTES] = { false };
+	bool anyRemote = false;
+	for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+		u32 expansion = WPAD_EXP_NONE;
+		const bool ready = wiimoteReady(channel, expansion);
+		if(ready)
+			anyRemote = true;
+		playable[channel] = ready &&
+			(expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC);
+		if(playable[channel]){
+			s_remoteAbsent[channel] = 0;
+			if(s_remoteOrder[channel] == 0)
+				s_remoteOrder[channel] = ++s_remoteOrderNext;
+		}else if(ready){
+			// A bare remote is still connected.  Its order is kept so that
+			// plugging the Nunchuk back in does not make it a new arrival.
+			s_remoteAbsent[channel] = 0;
+		}else if(++s_remoteAbsent[channel] > kDeviceReleaseScans){
+			s_remoteOrder[channel] = 0;
+			s_remoteAbsent[channel] = 0;
+		}
+	}
+	if(!anyRemote){
+		// Everybody has gone.  The next remote to connect is player 1 again,
+		// which is what makes a fresh play start with the controller picked up
+		// first rather than the one that led the last one.
+		for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+			s_remoteOrder[channel] = 0;
+			s_remoteAbsent[channel] = 0;
+		}
+		s_remoteOrderNext = 0;
+		s_leadChosen = false;
+	}
+
+	// Player 1: the GameCube pad in port 1, or the first playable Wii Remote to
+	// arrive.  Once a remote is chosen, player 1 keeps that channel while it is
+	// around, so a partner joining later cannot take their character.
 	if(s_connectedGameCubePads & 1){
 		s_devices[PLAYER_ONE].kind = PadDevice::GAMECUBE;
 		s_devices[PLAYER_ONE].channel = 0;
+		s_leadChosen = false;
 	}else{
-		s_devices[PLAYER_ONE].kind = PadDevice::WIIMOTE;
-		s_devices[PLAYER_ONE].channel = WPAD_CHAN_0;
+		if(!s_leadChosen || s_devices[PLAYER_ONE].kind != PadDevice::WIIMOTE){
+			int first = -1;
+			u32 firstOrder = 0;
+			for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+				if(!playable[channel] || s_remoteOrder[channel] == 0)
+					continue;
+				if(first < 0 || s_remoteOrder[channel] < firstOrder){
+					first = channel;
+					firstOrder = s_remoteOrder[channel];
+				}
+			}
+			s_devices[PLAYER_ONE].kind = PadDevice::WIIMOTE;
+			s_devices[PLAYER_ONE].channel = first >= 0 ? first : WPAD_CHAN_0;
+			s_leadChosen = first >= 0;
+		}
 	}
 	const PadDevice lead = s_devices[PLAYER_ONE];
 
@@ -1239,27 +1302,49 @@ resolveDevices(void)
 	}
 
 	// Then whoever has turned up: the remaining GameCube pads in port order,
-	// then the Wii Remotes player 1 is not holding, each into the first free
-	// slot.  A remote only counts with something to walk with plugged into it --
-	// the same rule the boot screen holds player 1 to -- which also means a
-	// remote left on the table does not put a player in the game.
+	// then the Wii Remotes player 1 is not holding, in the order they arrived,
+	// each into the first free slot.  A remote only counts with something to
+	// walk with plugged into it -- the same rule the boot screen holds player 1
+	// to -- which also means a remote left on the table does not put a player in
+	// the game.
 	for(int port = 1; port < 4; port++){
 		if((s_connectedGameCubePads & (1 << port)) && !partnerHas(PadDevice::GAMECUBE, port))
 			givePartnerDevice(PadDevice::GAMECUBE, port);
 	}
+	bool claimed[WPAD_MAX_WIIMOTES] = { false };
+	if(lead.kind == PadDevice::WIIMOTE && lead.channel >= 0 && lead.channel < WPAD_MAX_WIIMOTES)
+		claimed[lead.channel] = true;
+	for(int slot = 0; slot < WPAD_MAX_WIIMOTES; slot++){
+		int next = -1;
+		u32 nextOrder = 0;
+		for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+			if(!playable[channel] || claimed[channel] || s_remoteOrder[channel] == 0)
+				continue;
+			if(next < 0 || s_remoteOrder[channel] < nextOrder){
+				next = channel;
+				nextOrder = s_remoteOrder[channel];
+			}
+		}
+		if(next < 0)
+			break;
+		claimed[next] = true;
+		s_bareScans[next] = 0;
+		s_bareTold[next] = false;
+		if(!partnerHas(PadDevice::WIIMOTE, next))
+			givePartnerDevice(PadDevice::WIIMOTE, next);
+	}
+	// Bare remotes still get their explanation, including one that is waiting
+	// where player 1's remote would be.
 	for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
-		if(lead.kind == PadDevice::WIIMOTE && channel == lead.channel)
-			continue;
 		u32 expansion = WPAD_EXP_NONE;
 		const bool ready = wiimoteReady(channel, expansion);
-		if(ready && (expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)){
-			s_bareScans[channel] = 0;
-			s_bareTold[channel] = false;
-			if(!partnerHas(PadDevice::WIIMOTE, channel))
-				givePartnerDevice(PadDevice::WIIMOTE, channel);
-		}else if(ready)
-			noteBareRemote(channel);
-		else{
+		if(ready && !playable[channel]){
+			if(lead.kind == PadDevice::WIIMOTE && channel == lead.channel){
+				s_bareScans[channel] = 0;
+				s_bareTold[channel] = false;
+			}else
+				noteBareRemote(channel);
+		}else if(!ready){
 			s_bareScans[channel] = 0;
 			s_bareTold[channel] = false;
 		}
@@ -1439,6 +1524,28 @@ irAimRate(const WPADData &data, float &outCrosshairX, float &outCrosshairY,
 
 } // namespace
 
+s32
+WiiPadLeadChannel(void)
+{
+	const PadDevice &lead = s_devices[PLAYER_ONE];
+	return lead.kind == PadDevice::WIIMOTE ? lead.channel : -1;
+}
+
+s32
+WiiPadSpeakerChannel(void)
+{
+	const PadDevice &lead = s_devices[PLAYER_ONE];
+	if(lead.kind == PadDevice::WIIMOTE)
+		return lead.channel;
+	// Player 1 on a GameCube pad: the only remote available may be a partner's,
+	// and phone audio is allowed to use it.
+	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
+		if(s_devices[player].kind == PadDevice::WIIMOTE)
+			return s_devices[player].channel;
+	}
+	return -1;
+}
+
 int8_t WiiPointerAimEnabled = 1;
 int8_t WiiPointerBox = 0;
 int8_t WiiAimInCar = 1;
@@ -1454,15 +1561,19 @@ static bool s_returnToMenu;
 bool
 WiiPadRemoteIsPartners(void)
 {
-	// The speaker drives the first remote, so player 1's shots are silent
-	// through it while that remote is in a partner's hands.  A partner counts
-	// while the co-op switch is on even if they are out of the world, as they are
-	// for a mission: the remote is still theirs, and it is mission calls that
-	// would otherwise come out of it.
+	// The speaker drives player 1's remote, or the first partner remote when
+	// player 1 is on a GameCube pad.  While that remote is in a partner's hands
+	// clips are silent through it.  A partner counts while the co-op switch is
+	// on even if they are out of the world, as they are for a mission: the
+	// remote is still theirs, and it is mission calls that would otherwise come
+	// out of it.
+	const s32 speaker = WiiPadSpeakerChannel();
+	if(speaker < 0)
+		return false;
 	for(int player = PLAYER_TWO; player < NUM_PLAYERS; player++){
 		if((CCoop::GetPlayerPed(player) != nullptr || CCamera::bWiiCoopCamera) &&
 		   s_devices[player].kind == PadDevice::WIIMOTE &&
-		   s_devices[player].channel == WPAD_CHAN_0)
+		   s_devices[player].channel == speaker)
 			return true;
 	}
 	return false;
@@ -1629,16 +1740,19 @@ WiiNunchukTiltPitch(int padID)
 bool
 WiiPadCanPlay(void)
 {
-	// The same test, in the same order, that WiiPadCapture uses to pick what
-	// drives pad 0.  A GameCube pad owns the slot outright and a Classic
-	// Controller has two sticks of its own; a Wiimote needs the Nunchuk's.
+	// A GameCube pad in port 1 owns player 1 outright, but the first Wii
+	// Remote may be on any WPAD channel: the connection order decides it.
 	if((s_connectedGameCubePads & (1 << PAD_CHAN0)) != 0)
 		return true;
-	WPADData *data = WPAD_Data(WPAD_CHAN_0);
-	if(data == nullptr || data->err != WPAD_ERR_NONE)
-		return false;
-	const u32 expansion = probeExpansion(WPAD_CHAN_0, *data);
-	return expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC;
+	for(int channel = 0; channel < WPAD_MAX_WIIMOTES; channel++){
+		WPADData *data = WPAD_Data(channel);
+		if(data == nullptr || data->err != WPAD_ERR_NONE)
+			continue;
+		const u32 expansion = probeExpansion(channel, *data);
+		if(expansion == WPAD_EXP_NUNCHUK || expansion == WPAD_EXP_CLASSIC)
+			return true;
+	}
+	return false;
 }
 
 bool
@@ -1858,7 +1972,8 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 		return;
 	}
 
-	WPADData *data = WPAD_Data(WPAD_CHAN_0);
+	const s32 leadChannel = s_devices[PLAYER_ONE].channel;
+	WPADData *data = WPAD_Data(leadChannel);
 	if(data == nullptr){
 		stopPointerHold();
 		releaseCrosshair();
@@ -1869,7 +1984,7 @@ WiiPadCaptureMouse(CMouseControllerState &state)
 	// The probe, as WiiPadCapture asks it: this decides whether player 1's stick is
 	// the aim, and exp.type only describes the last data report, so it can disagree
 	// with what capture is reading for a frame at a hot plug (see probeExpansion).
-	s_leadPointerAims = probeExpansion(WPAD_CHAN_0, *data) != WPAD_EXP_CLASSIC;
+	s_leadPointerAims = probeExpansion(leadChannel, *data) != WPAD_EXP_CLASSIC;
 
 	const bool aimWithPointer = !FrontEndMenuManager.m_bMenuActive && pointerAimWanted();
 	if(!aimWithPointer)

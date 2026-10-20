@@ -32,7 +32,9 @@ int8_t WiiPhoneRemoteMode = 2;
 namespace
 {
 
-constexpr s32 kChannel = WPAD_CHAN_0;
+// Player 1's remote, which may be on any WPAD channel.  Re-read every time the
+// speaker is used, and dropped when it changes.
+s32 s_channel = -1;
 
 constexpr u32 kPacketBytes = 20;
 constexpr u32 kPacketMicros = 6667;
@@ -261,13 +263,33 @@ build(Clip clip)
 void
 powerDown(void)
 {
-	WPAD_ControlSpeaker(kChannel, 0);
+	if(s_channel >= 0)
+		WPAD_ControlSpeaker(s_channel, 0);
 	s_state = STATE_OFF;
 	s_pending = CLIP_NONE;
 	s_retryAt = 0;
 	// A call routed to the remote is over with it; the TV takes the rest of the line
 	// (the stream asks WiiSpeakerCallActive every frame).
 	s_call.active = false;
+}
+
+// Follows the remote that player 1 is using.  If the assignment changes -- the
+// first remote connects after the boot gate, or player 1 swaps to another one --
+// let go of the old speaker instead of streaming into the wrong hands.
+s32
+syncChannel(void)
+{
+	const s32 want = WiiPadSpeakerChannel();
+	if(want == s_channel)
+		return s_channel;
+	if(s_channel >= 0)
+		WPAD_ControlSpeaker(s_channel, 0);
+	s_channel = want;
+	s_state = STATE_OFF;
+	s_pending = CLIP_NONE;
+	s_retryAt = 0;
+	s_call.active = false;
+	return s_channel;
 }
 
 // Frees call buffers whose stream has finished, current or retired.
@@ -320,7 +342,9 @@ void
 startCallStream(void)
 {
 	const u64 now = gettime();
-	WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
+	if(s_channel < 0)
+		return;
+	WPAD_SendStreamData(s_channel, s_call.buffer, s_call.capacity);
 	s_call.started = true;
 	s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
 	s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
@@ -399,8 +423,11 @@ request(Clip clip)
 	if(!WiiRemoteSpeakerEnabled || !speakerIsPlayerOnes())
 		return;
 
+	const s32 channel = syncChannel();
+	if(channel < 0)
+		return;
 	u32 expansion;
-	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
+	if(WPAD_Probe(channel, &expansion) != WPAD_ERR_NONE)
 		return;
 
 	if(s_pending == CLIP_NONE || clip >= s_pending){
@@ -408,7 +435,7 @@ request(Clip clip)
 		s_pendingTime = gettime();
 	}
 	if(s_state == STATE_OFF){
-		WPAD_ControlSpeaker(kChannel, 1);
+		WPAD_ControlSpeaker(channel, 1);
 		s_state = STATE_WARMING;
 		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
 		s_retryAt = gettime() + millisecs_to_ticks(500);
@@ -440,12 +467,15 @@ WiiSpeakerWake(void)
 {
 	if(!speakerCanPhone())
 		return;
+	const s32 channel = syncChannel();
+	if(channel < 0)
+		return;
 	u32 expansion;
-	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
+	if(WPAD_Probe(channel, &expansion) != WPAD_ERR_NONE)
 		return;
 	s_wakeUntil = gettime() + millisecs_to_ticks(kWakeLingerMs);
 	if(s_state == STATE_OFF){
-		WPAD_ControlSpeaker(kChannel, 1);
+		WPAD_ControlSpeaker(channel, 1);
 		s_state = STATE_WARMING;
 		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
 		s_retryAt = gettime() + millisecs_to_ticks(500);
@@ -460,6 +490,9 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 			(int)WiiRemoteSpeakerEnabled, (int)WiiPhoneRemoteMode, sampleRate);
 		return false;
 	}
+	const s32 channel = syncChannel();
+	if(channel < 0)
+		return false;
 	releaseCallBuffer();
 	const u64 now = gettime();
 	// A warming speaker is allowed: the line is buffered and starts as soon as the
@@ -472,7 +505,7 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 		return false;
 	}
 	u32 expansion;
-	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
+	if(WPAD_Probe(channel, &expansion) != WPAD_ERR_NONE)
 		return false;
 
 	if(s_call.buffer != nullptr){
@@ -575,10 +608,14 @@ WiiSpeakerCallTvPercent(void)
 void
 WiiSpeakerService(void)
 {
+	syncChannel();
 	releaseCallBuffer();
 	if(s_state == STATE_OFF)
 		return;
 
+	const s32 channel = s_channel;
+	if(channel < 0)
+		return;
 	const u64 now = gettime();
 	// A remote that has been handed to a partner mid-clip or mid-call is let go of the
 	// same way a lost one is: the line goes back to the TV.  A phone line is allowed
@@ -588,7 +625,7 @@ WiiSpeakerService(void)
 	const bool phoning = s_call.active || now < s_wakeUntil;
 	u32 expansion;
 	if(!WiiRemoteSpeakerEnabled || (!speakerIsPlayerOnes() && !phoning) ||
-	   WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE){
+	   WPAD_Probe(channel, &expansion) != WPAD_ERR_NONE){
 		powerDown();
 		return;
 	}
@@ -600,13 +637,13 @@ WiiSpeakerService(void)
 		// returned every frame, so the speaker never left STATE_WARMING -- and the
 		// stream send and both clip and call paths are all gated on STATE_ON.  Every
 		// remote sound was silent because of this one comparison.
-		if(WPAD_IsSpeakerEnabled(kChannel) != WPAD_ERR_NONE){
+		if(WPAD_IsSpeakerEnabled(channel) != WPAD_ERR_NONE){
 			// Asking again is cheap and covers a configuration command that was lost
 			// in the Bluetooth queue; give the first attempt 500 ms before retrying.
 			if(now >= s_retryAt){
 				WiiTraceReport("WII speaker: still warming (code %d)\n",
-					(int)WPAD_IsSpeakerEnabled(kChannel));
-				WPAD_ControlSpeaker(kChannel, 1);
+					(int)WPAD_IsSpeakerEnabled(channel));
+				WPAD_ControlSpeaker(channel, 1);
 				s_retryAt = now + millisecs_to_ticks(750);
 			}
 			if(now > s_deadline){
@@ -641,7 +678,7 @@ WiiSpeakerService(void)
 		const Clip clip = s_pending;
 		if(!s_built[clip])
 			build(clip);
-		WPAD_SendStreamData(kChannel, s_clipData[clip], kClipBytes[clip]);
+		WPAD_SendStreamData(channel, s_clipData[clip], kClipBytes[clip]);
 		s_pending = CLIP_NONE;
 		s_clipEnd = now + microsecs_to_ticks((kClipBytes[clip]/kPacketBytes + kGuardPackets)*kPacketMicros);
 		s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
