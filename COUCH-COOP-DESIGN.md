@@ -84,8 +84,10 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
   back".
 - **Input** is a pad slot of its own per partner, `PAD_COOP`..`PAD_COOP3`
   (indices 2..4). Not pads 1..3: outside `MASTER` builds pad 1 is the engine's
-  debug pad — Circle (the fire button) toggles the debug camera, Start hides
-  the HUD, and so on.
+  debug pad - Circle (the fire button) toggles the debug camera, Start hides
+  the HUD, and so on. While a pair is active the HUD toggle is off: pad 1 is
+  then player 2, and Start must not turn off the radar, the help box and a
+  minigame's objective.
   `GetPadFromPlayer(ped)` returns the right pad for a player ped; code that
   reads a pad on a player's behalf while processing a ped uses it.
 - **Controller**: player 1 is the GameCube pad in port 1, else the first
@@ -504,8 +506,9 @@ assets:
   drops, stars and Predators for heat, an Uzi for the last drop),
 - the **Bloodring derby** (park a knot of cars and honk: last car running,
   first to two rounds, weapons off),
-- the **RC race** (jump together on foot: a toy grid, four gates in order,
-  three laps, each driver's next gate in their colour),
+- the **RC race** (jump together on foot: the racers are seated directly in
+  their toys, four gates in order, three laps, each driver's next gate in
+  their colour),
 - the **dance-off** (everyone ducks together: prompts on a climbing beat; the
   dancing is the players' own bodies), and
 - **cops & robbers** (the nod held for 0.6 s while gathered: grab the case,
@@ -518,6 +521,12 @@ assets:
   player-on-player damage is forced on; 90 seconds, most time wins; a downed or
   arrested partner is brought back at the body after four seconds, and player 1
   comes back on the same clock without the hospital reset).
+
+The toy race seats its racers directly (`WarpPedIntoCar`) instead of asking
+them to walk into a toy: the RC Bandit is a remote-control model with no door
+frames, and the ordinary enter-car path is built for cars that have them. A
+wrecked toy is replaced and its racer seated again the same way; a racer who is
+down or arrested is left where they are.
 
 The toy race, the dance-off, cops & robbers and Caddy football start from a
 jump, a duck, a press of the nod, a horn or a brake, which a party with the
@@ -569,9 +578,13 @@ player into a car); it is a mission boat, locked, and the save leaves it out. Th
 partners then drive from their own pads, and the regroup that holds any driven
 boat to player 1 holds them. The crew is the lead boat and the boats a player is
 driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
-each boat of the crew adds $50 to a drop's $100. A drop is unloaded by the lead
-boat alone, in its ring and slow for two seconds; the Predators chase the lead
-boat; the party's boats can ram or shoot them like any other boat. The run ends
+each boat of the crew adds $50 to a drop's $100. Under it the screen shows the
+distance to the drop and, for each escort, its distance to the lead boat in
+amber once it is outside crew range, so player 2 has an objective even when the
+drop is off the edge of the shared radar. The lead boat also carries a green
+radar blip the escorts can follow. A drop is unloaded by the lead boat alone, in
+its ring and slow for two seconds; the Predators chase the lead boat; the
+party's boats can ram or shoot them like any other boat. The run ends
 when the lead boat is lost or wrecked, when player 1 is out of it for five
 seconds, or after the third drop, and then the boats are handed back: partners
 at their wheels are taken out of the world (as a change of clothes does), the

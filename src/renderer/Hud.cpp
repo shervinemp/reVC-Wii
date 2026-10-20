@@ -531,8 +531,10 @@ void CHud::Draw()
 	RwRenderStateSet(rwRENDERSTATETEXTUREADDRESS, (void*)rwTEXTUREADDRESSCLAMP);
 	RwRenderStateSet(rwRENDERSTATEVERTEXALPHAENABLE, (void*)FALSE);
 
-	// disable hud via second controller
-	if (CPad::GetPad(1)->GetStartJustDown())
+	// Disable hud via second controller.  That is the stock single-player
+	// shortcut; with a partner in the room pad 1 is a player, and Start hiding
+	// the radar, the help box and a mode's objective is not a pause.
+	if (!CCoop::PairActive() && CPad::GetPad(1)->GetStartJustDown())
 		m_Wants_To_Draw_Hud = !m_Wants_To_Draw_Hud;
 
 	if (CReplay::IsPlayingBack())

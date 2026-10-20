@@ -163,6 +163,7 @@ struct RunState
 	CVector dropPos[kDrops];
 	CVector drop;
 	int32 blip;
+	int32 leadBlip;		// the lead boat, for the escort boats to follow
 	uint32 unloadSince;
 	uint32 crewLostAt;
 	uint32 nextRetargetAt;
@@ -1218,12 +1219,34 @@ PlaceDropMarker(void)
 	CRadar::ChangeBlipColour(s_run.blip, RADAR_TRACE_RED);
 }
 
+// The lead boat on the radar, in the game's green.  Player 1 sees the drop; a
+// partner in an escort boat needs to see the boat they are escorting, which may
+// be the only thing on their screen that says where the run is going.
+void
+ClearLeadMarker(void)
+{
+	if(s_run.leadBlip >= 0){
+		CRadar::ClearBlip(s_run.leadBlip);
+		s_run.leadBlip = -1;
+	}
+}
+
+void
+PlaceLeadMarker(CVehicle *boat)
+{
+	if(boat == nil)
+		return;
+	s_run.leadBlip = CRadar::SetEntityBlip(BLIP_CAR,
+		CPools::GetVehiclePool()->GetIndex(boat), RADAR_TRACE_GREEN, BLIP_DISPLAY_BOTH);
+	CRadar::ChangeBlipColour(s_run.leadBlip, RADAR_TRACE_GREEN);
+}
+
 void
 RegisterDropCorona(void)
 {
 	CCoronas::RegisterCorona((uintptr)&s_run,
 		255, 170, 70, 255,
-		s_run.drop, 5.0f, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+		s_run.drop, 5.0f, 500.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
 		CCoronas::FLARE_NONE, CCoronas::REFLECTION_ON,
 		CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
 }
@@ -1400,6 +1423,7 @@ StartRunAt(uint32 now, CVehicle *boat)
 	if(boat == nil || !PlanRoute(boat))
 		return false;
 
+	ClearLeadMarker();
 	CStreaming::RequestModel(MI_PREDATOR, 0);
 	CStreaming::RequestModel(MI_COP, 0);
 
@@ -1443,6 +1467,7 @@ void
 EndRun(uint32 now, const char *why)
 {
 	ClearDropMarker();
+	ClearLeadMarker();
 	ReleasePursuers();
 	ReleaseEscorts();
 	if(s_run.boat != nil){
@@ -1515,6 +1540,19 @@ UpdateRun(uint32 now)
 		EndRun(now, "boat wrecked");
 		return;
 	}
+
+	// A partner in an escort boat is following a boat that may be off their
+	// radar; the lead blip stays on even while they fall behind.  It is put up
+	// as soon as there is an escort and taken down when the last one goes.
+	bool escort = false;
+	for(int i = 1; i < NUMPLAYERS; i++)
+		if(s_run.escort[i] != nil)
+			escort = true;
+	if(escort && s_run.leadBlip < 0)
+		PlaceLeadMarker(boat);
+	else if(!escort && s_run.leadBlip >= 0)
+		ClearLeadMarker();
+
 	CPlayerPed *skipper = CCoop::GetPlayerPed(0);
 	if(skipper == nil || !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
 		if(s_run.crewLostAt == 0){
@@ -1621,11 +1659,11 @@ SpawnLoaner(int player)
 	if(car == nil)
 		return;
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetPosition(pos);
 	car->SetOrientation(0.0f, 0.0f, 0.0f);
 	car->GetMatrix().UpdateRW();
 	car->UpdateRwFrame();
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -2238,9 +2276,9 @@ SpawnPitchBall(void)
 	if(ball == nil)
 		return false;
 	pos.z += ball->GetDistanceFromCentreOfMassToBaseOfModel();
-	CTheScripts::ClearSpaceForMissionEntity(pos, ball);
 	ball->SetPosition(pos);
 	ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
+	CTheScripts::ClearSpaceForMissionEntity(pos, ball);
 	ball->GetMatrix().UpdateRW();
 	ball->UpdateRwFrame();
 	ball->SetStatus(STATUS_ABANDONED);
@@ -3018,6 +3056,28 @@ SuppressRcBody(CPlayerPed *ped)
 	ped->bRenderPedInCar = false;
 }
 
+// Put a racer at the wheel of their toy rather than asking them to open a door
+// the RC Bandit does not have.  Its model has no door components, and the
+// normal walk-in path is for cars that do; the toy race seats the racer the way
+// the game's own remote-control car seats nobody -- directly.
+void
+SeatRcRacer(int player)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	CVehicle *car = s_rc.car[player];
+	if(ped == nil || car == nil || ped->bInVehicle || ped->DyingOrDead() ||
+	   ped->m_nPedState == PED_ARRESTED)
+		return;
+	// WarpPedIntoCar only takes a seat when the objective says which one.
+	ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, car);
+	if(ped->m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER)
+		return;
+	ped->WarpPedIntoCar(car);
+	ped->SetObjective(OBJECTIVE_NONE);
+	if(car->pDriver == ped)
+		COOP_LOG("WII coop: player %d seated in rc car\n", player + 1);
+}
+
 void
 ReleaseRcCars(void)
 {
@@ -3062,7 +3122,10 @@ SpawnRcCar(int player, const CVector &slot, const CVector &forward)
 	if(car == nil)
 		return false;
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
+	// Not ClearSpaceForMissionEntity: it deletes what it finds under the new
+	// entity, and two racers in a knot can drop their toys on the same square.
+	// The second call then deleted the first toy while s_rc.car still held it.
+	// A toy is small and the grid is a few metres of clear apron.
 	car->SetPosition(pos);
 	// A toy is small enough that a matrix left in the constructor's orientation
 	// reads as sideways at this distance.  Set the heading through the entity's
@@ -3107,8 +3170,8 @@ RcSlot(int player, CVector &out)
 
 // A wrecked or lost toy is replaced beside the driver, once they are on their
 // feet: the engine does the leaving itself, so there is no half-in, half-out
-// ped to untangle, and the laps already driven stay.  The driver walks into
-// the replacement like any other car.
+// ped to untangle, and the laps already driven stay.  The replacement seats
+// them directly, for the same reason the grid does.
 void
 RespawnRcCar(int player)
 {
@@ -3122,6 +3185,7 @@ RespawnRcCar(int player)
 		s_rc.car[player] = nil;
 	}
 	SpawnRcCar(player, ped->GetPosition() + ped->GetRight()*4.0f, s_rc.forward);
+	SeatRcRacer(player);
 }
 
 void
@@ -3264,6 +3328,7 @@ UpdateRc(uint32 now)
 				RcSlot(i, slot);
 				SpawnRcCar(i, slot, s_rc.forward);
 			}
+			SeatRcRacer(i);
 			CVehicle *car;
 			if(PlayerInRcCar(i, &car)){
 				seated++;
@@ -3326,9 +3391,11 @@ UpdateRc(uint32 now)
 		if(car == nil){
 			// On foot.  A toy is put beside the racer once -- at once if theirs
 			// is gone or wrecked, after a few seconds of walking if it is not --
-			// and then they walk into it.  Doing this every frame released the
-			// last toy and raised a new one, dozens a second, until the racer
-			// sat in one.  One on its way into a toy is not asking for another.
+			// and then they are seated in it.  Doing this every frame released
+			// the last toy and raised a new one, dozens a second, until the
+			// racer sat in one.  One on its way into a toy is not asking for
+			// another.  The body is drawn again while they are out of it.
+			ped->bRenderPedInCar = true;
 			if(ped->m_nPedState == PED_SEEK_CAR || ped->EnteringCar()){
 				s_rc.footSince[i] = now;
 				continue;
@@ -3975,13 +4042,13 @@ LaneSlot(int player, float &cx, float &cy)
 }
 
 // A few characters, centred on x, in the colour given.  The text is plain
-// ASCII on purpose -- a number, P2, GO -- and short; the same as the chips.
-// AsciiToUnicode does not look at the size of what it writes into, so what
-// goes in here is short enough for the buffer.
+// ASCII on purpose -- a number, P2, GO, or one short status line.  AsciiToUnicode
+// does not look at the size of what it writes into, so the buffer is generous
+// and callers must still keep their line under it.
 void
 PrintCentred(float x, float y, const char *ascii, const CRGBA &colour, float scaleX, float scaleY)
 {
-	wchar text[48];
+	wchar text[128];
 	AsciiToUnicode(ascii, text);
 	CFont::SetPropOn();
 	CFont::SetBackgroundOff();
@@ -4094,9 +4161,9 @@ DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
 		"CHASE THE RADAR BLIP. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
-		"PARTY GETS ESCORT BOATS. STOP IN EACH DROP RING TO UNLOAD. 3 DROPS. P1 LEAVES BOAT TO QUIT",
+		"P1 STOPS IN EACH DROP RING. P2 FOLLOWS P1'S BOAT CLOSE FOR CREW PAY. 3 DROPS. P1 LEAVES BOAT TO QUIT",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
-		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
+		"BOTH PLAYERS RACE THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
 		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
 		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
@@ -4220,6 +4287,28 @@ DrawModeMarks(uint32 now)
 		else
 			sprintf(line, "DROP %d/%d  CREW %d", s_run.leg + 1, kDrops, crew);
 		DrawStatus(line, s_run.unloadSince != 0 ? CRGBA(255, 200, 90, 255) : white);
+
+		// The drop's distance is the objective player 1 is steering for; each
+		// escort's distance to the lead boat is the job player 2 has.  The
+		// radar has one origin, so without this an escort can be following a
+		// blip that has gone off the edge of it.
+		if(s_run.boat != nil){
+			char sub[96];
+			const float dropDist = (s_run.boat->GetPosition() - s_run.drop).Magnitude2D();
+			sprintf(sub, "DROP IN %dm", (int)dropDist);
+			bool away = false;
+			for(int i = 1; i < NUMPLAYERS; i++){
+				if(s_run.escort[i] == nil)
+					continue;
+				const float dist = (s_run.escort[i]->GetPosition() - s_run.boat->GetPosition()).Magnitude2D();
+				char part[24];
+				sprintf(part, "  P%d FOLLOW %dm", i + 1, (int)dist);
+				strcat(sub, part);
+				away = away || dist > kEscortRange;
+			}
+			PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(58.0f), sub,
+				away ? CRGBA(255, 200, 90, 255) : white, 0.45f, 0.7f);
+		}
 	}
 
 	// The derby: the round and the bell, then how many cars are still running;
@@ -4339,7 +4428,7 @@ DrawModeMarks(uint32 now)
 		if(s_rc.finished)
 			DrawWinner(s_rc.winner);
 		else if(s_rc.grid)
-			DrawStatus("GET IN A TOY", white);
+			DrawStatus("RC RACE  GET READY", white);
 		else if(s_rc.counting){
 			DrawStatus("RC RACE", white);
 			DrawCountdown(now, s_rc.countdownAt);
@@ -4422,9 +4511,9 @@ MenuSpawnPolice(const CVector &at, float heading)
 
 	CVector pos = MenuGround(at, 0.0f);
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetPosition(pos);
 	car->SetOrientation(0.0f, 0.0f, heading);
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->GetMatrix().UpdateRW();
 	car->UpdateRwFrame();
 	car->SetStatus(STATUS_ABANDONED);
@@ -4745,6 +4834,7 @@ CCoopModes::Init(void)
 	memset(&s_run, 0, sizeof(s_run));
 	// A cleared blip has to read as "none": id 0 is a real blip.
 	s_run.blip = -1;
+	s_run.leadBlip = -1;
 
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(s_derby.loaner[i] != nil)
