@@ -1618,8 +1618,11 @@ SpawnLoaner(int player)
 	if(car == nil)
 		return;
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetPosition(pos);
 	car->SetOrientation(0.0f, 0.0f, 0.0f);
+	car->GetMatrix().UpdateRW();
+	car->UpdateRwFrame();
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -1696,6 +1699,24 @@ MenuEnsureModel(int model)
 	return CStreaming::HasModelLoaded(model);
 }
 
+bool
+MenuVenueOnLand(const MenuVenue &venue, CVector *out)
+{
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(venue.pos.x, venue.pos.y,
+	                                                  venue.pos.z + 10.0f, &found);
+	if(!found)
+		return false;
+	float water = 0.0f;
+	if(CWaterLevel::GetWaterLevel(venue.pos, &water, true) && ground < water + 0.5f)
+		return false;
+	if(out != nil){
+		*out = venue.pos;
+		out->z = ground;
+	}
+	return true;
+}
+
 CVector
 MenuSlot(const MenuVenue &venue, int player, float gap)
 {
@@ -1753,6 +1774,8 @@ MenuPlaceCar(CVehicle *car, const CVector &at, float heading)
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
 	car->Teleport(pos);
 	car->SetOrientation(0.0f, 0.0f, heading);
+	car->GetMatrix().UpdateRW();
+	car->UpdateRwFrame();
 	car->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 	car->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 	car->bIsHandbrakeOn = true;
@@ -1830,12 +1853,12 @@ MenuPrepareCars(const MenuVenue &venue, bool caddy)
 		CVehicle *car = nil;
 		const bool ready = caddy ? PlayerInPitchCar(i, &car) : PlayerInDerbyCar(i, &car);
 		if(ready && car != nil && car->GetStatus() != STATUS_WRECKED){
-			MenuPlaceCar(car, MenuSlot(venue, i, 9.0f), venue.heading);
+			MenuPlaceCar(car, MenuSlot(venue, i, 8.0f), venue.heading);
 			continue;
 		}
 		if(ped->bInVehicle)
 			MenuLeaveVehicle(ped);
-		MenuPlacePed(ped, MenuSlot(venue, i, 9.0f), venue.heading);
+		MenuPlacePed(ped, MenuSlot(venue, i, 8.0f), venue.heading);
 	}
 
 	bool loanerModelReady = false;
@@ -3031,10 +3054,14 @@ SpawnRcCar(int player, const CVector &slot, const CVector &forward)
 	if(car == nil)
 		return false;
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetPosition(pos);
-	car->GetForward() = forward;
-	car->GetRight() = CVector(forward.y, -forward.x, 0.0f);
-	car->GetUp() = CVector(0.0f, 0.0f, 1.0f);
+	// A toy is small enough that a matrix left in the constructor's orientation
+	// reads as sideways at this distance.  Set the heading through the entity's
+	// orientation and flush the frame after it.
+	car->SetOrientation(0.0f, 0.0f, forward.Heading());
+	car->GetMatrix().UpdateRW();
+	car->UpdateRwFrame();
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -3044,12 +3071,28 @@ SpawnRcCar(int player, const CVector &slot, const CVector &forward)
 	CWorld::Add(car);
 	car->RegisterReference((CEntity**)&s_rc.car[player]);
 	s_rc.car[player] = car;
+	COOP_LOG("WII coop: rc car %d at %.0f %.0f %.0f\n",
+	         player + 1, pos.x, pos.y, pos.z);
 	return true;
 }
 
 void
 RcSlot(int player, CVector &out)
 {
+	// Put the toy just in front of its racer rather than in a line at the centre:
+	// at the airport the line put some cars behind the camera, and a car on the
+	// apron markings looked like it had spawned sideways.  The player is already
+	// on the grid square, so this is both visible and immediately reachable.
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped != nil){
+		CVector forward = ped->GetForward();
+		forward.z = 0.0f;
+		if(forward.Magnitude() < 0.1f)
+			forward = s_rc.forward;
+		forward.Normalise();
+		out = ped->GetPosition() + forward*2.5f;
+		return;
+	}
 	const CVector right(s_rc.forward.y, -s_rc.forward.x, 0.0f);
 	out = s_rc.centre + right*((player - 1.5f) * 5.0f);
 }
@@ -4354,6 +4397,7 @@ MenuRequiredModel(int mode)
 	switch(mode){
 	case MENU_SHIFT: return MI_POLICE;
 	case MENU_RUN: return MI_SQUALO;
+	case MENU_RC: return MI_RCBANDIT;
 	default: return -1;
 	}
 }
@@ -4508,10 +4552,27 @@ StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
 {
 	if(mode != MENU_KOTH && PartyWanted())
 		return false;
-	if(!MenuPrepareFoot(venue))
+
+	// The beach points were picked from the map's empty ground, but the sea is
+	// close enough that a wrong one puts the party in water.  Load the venue
+	// first, then keep it only if there is real ground above the waterline; the
+	// airport apron is the safe fallback for the foot modes.
+	MenuVenue actual = venue;
+	MenuLoadScene(actual.pos);
+	if(!MenuVenueOnLand(actual, nil)){
+		COOP_LOG("WII coop: menu venue is water, using airport\n");
+		actual = kAirportMenu;
+		MenuLoadScene(actual.pos);
+	}
+	if(!MenuPrepareFoot(actual))
+		return false;
+	// The airport scene switch can drop a requested model that has not been
+	// committed yet.  The toy race cannot start without its cars, so make sure
+	// the model is here before the mode reports itself active.
+	if(mode == MENU_RC && !MenuEnsureModel(MI_RCBANDIT))
 		return false;
 	const CVector centre = CrewCentre();
-	const CVector forward(-Sin(venue.heading), Cos(venue.heading), 0.0f);
+	const CVector forward(-Sin(actual.heading), Cos(actual.heading), 0.0f);
 
 	switch(mode){
 	case MENU_RC:
