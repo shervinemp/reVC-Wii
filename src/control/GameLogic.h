@@ -20,7 +20,7 @@ public:
 	static void PassTime(uint32 time);
 	static void SortOutStreamingAndMemory(const CVector &pos);
 	static void Update();
-	static void RestorePlayerStuffDuringResurrection(class CPlayerPed *pPlayerPed, CVector pos, float angle);
+	static void RestorePlayerStuffDuringResurrection(class CPlayerPed *pPlayerPed, CVector pos, float angle, bool clearWorld = true);
 
 	static void ClearShortCut();
 	static void SetUpShortCut(CVector, float, CVector, float);

@@ -505,7 +505,8 @@ assets:
 - **King of the Hill** (everyone holds aim: a 12 m ring where the party stands;
   the sole occupant banks time, two or more contest it and nobody scores;
   player-on-player damage is forced on; 90 seconds, most time wins; a downed or
-  arrested partner is brought back at the body after four seconds).
+  arrested partner is brought back at the body after four seconds, and player 1
+  comes back on the same clock without the hospital reset).
 
 The toy race, the dance-off, cops & robbers and Caddy football start from a
 jump, a duck, a press of the nod, a horn or a brake, which a party with the

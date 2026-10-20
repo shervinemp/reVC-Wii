@@ -10,6 +10,7 @@
 #include "Coop.h"
 #include "CopPed.h"
 #include "Coronas.h"
+#include "GameLogic.h"
 #include "General.h"
 #include "Hud.h"
 #include "maths.h"
@@ -207,7 +208,9 @@ const int kPitchRingMarks = 16;		// the mission ring round the pitch
 const float kPitchRingRadius = 19.5f;	// outside both goal layouts
 const float kPitchTouchRange = 4.0f;	// last touch is the nearest car this close
 const float kPitchClearance = 4.0f;	// ball spot clear of the cars
-const float kPitchLeash = 35.0f;	// a Caddy hit this far off the pitch comes back
+// The ring is not decoration: a ball whose centre crosses it is out, and is
+// put back at the middle.  It is the line the players can see.
+const float kPitchLeash = kPitchRingRadius;
 const uint32 kPitchHoldMs = 500;	// the brake is held this long to start
 const uint32 kPitchCountdownMs = 3000;
 const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
@@ -340,7 +343,7 @@ RcState s_rc;
 // --- the dance-off's numbers -------------------------------------------------
 
 const float kDanceGatherRange = 12.0f;	// the knot that arms it
-const float kDanceFloor = 6.0f;		// the stage ring
+const float kDanceFloor = 8.0f;		// the stage ring, on the leave line
 const int kDanceRingMarks = 12;		// three marks to each player's colour
 const float kDanceLeaveRange = 8.0f;	// further out than this and you are out of it
 const uint32 kDanceRoundMs = 60000;
@@ -1877,7 +1880,10 @@ PitchBallSpot(void)
 {
 	const CVector right(s_pitch.forward.y, -s_pitch.forward.x, 0.0f);
 	CVector spot = s_pitch.centre;
-	for(int attempt = 0; attempt < 9; attempt++){
+	// Seven tries: the middle, then five, ten and fifteen metres either side.
+	// The last is still inside the ring; a twentieth metre would spawn the
+	// ball outside the out-of-play line and reset it forever.
+	for(int attempt = 0; attempt < 7; attempt++){
 		if(attempt != 0){
 			const int step = (attempt + 1)/2;
 			const float offset = (attempt & 1 ? 1.0f : -1.0f)*(float)step*(kPitchClearance + 1.0f);
@@ -2445,6 +2451,55 @@ FinishKoth(uint32 now)
 	s_koth.finishAt = now + kKothFinishMs;
 }
 
+// A spot beside a car the lead died in: the car is left abandoned, so putting
+// the player back on its centre would put them inside the roof or the tank.
+CVector
+KothLeadSpot(const CVector &base, const CVector &right, const CVector &forward)
+{
+	const CVector offsets[4] = {
+		right*4.0f, right*-4.0f, forward*4.0f, forward*-4.0f
+	};
+	for(int i = 0; i < 4; i++){
+		CVector pos = base + offsets[i];
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+		if(found){
+			pos.z = ground;
+			return pos;
+		}
+	}
+	return base;
+}
+
+// Player 1 comes back at the body, not at a hospital.  The engine's own
+// resurrection routine is used with its world-clearing step off: clearing a
+// four-thousand-metre area here would delete the other players' cars and the
+// hill around them.  The vehicle he died in is let go first, as the normal
+// death path does, so it does not keep a dead driver.
+void
+ReviveKothLead(void)
+{
+	CPlayerPed *lead = CWorld::Players[0].m_pPed;
+	if(lead == nil)
+		return;
+
+	CVector at = lead->GetPosition();
+	const float angle = lead->m_fRotationCur;
+	if(lead->bInVehicle && lead->m_pMyVehicle != nil){
+		CVehicle *vehicle = lead->m_pMyVehicle;
+		at = KothLeadSpot(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward());
+		if(vehicle->pDriver == lead){
+			vehicle->pDriver = nil;
+			if(vehicle->GetStatus() != STATUS_WRECKED)
+				vehicle->SetStatus(STATUS_ABANDONED);
+		}else
+			vehicle->RemovePassenger(lead);
+	}
+
+	CGameLogic::RestorePlayerStuffDuringResurrection(lead, at, angle, false);
+	COOP_LOG("WII coop: king of the hill player 1 back\n");
+}
+
 void
 EndKoth(uint32 now, const char *why)
 {
@@ -2522,6 +2577,18 @@ UpdateKoth(uint32 now)
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil){
 			s_koth.downSince[i] = 0;
+			continue;
+		}
+		if(i == 0){
+			if(ped->DyingOrDead()){
+				if(s_koth.downSince[0] == 0)
+					s_koth.downSince[0] = now;
+				else if(now - s_koth.downSince[0] >= kKothReviveMs){
+					ReviveKothLead();
+					s_koth.downSince[0] = 0;
+				}
+			}else
+				s_koth.downSince[0] = 0;
 			continue;
 		}
 		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
@@ -3884,14 +3951,19 @@ DrawModeMarks(uint32 now)
 		}else{
 			char koth[48];
 			const uint32 left = s_koth.endAt > now ? (s_koth.endAt - now + 999)/1000 : 0;
-			if(s_koth.inside >= 2)
+			if(s_koth.downSince[0] != 0 && now - s_koth.downSince[0] < kKothReviveMs){
+				const uint32 wait = (kKothReviveMs - (now - s_koth.downSince[0]) + 999)/1000;
+				sprintf(koth, "KING OF THE HILL  %us  P1 DOWN %us", left, wait);
+				DrawStatus(koth, CRGBA(255, 200, 90, 255));
+			}else if(s_koth.inside >= 2)
 				sprintf(koth, "KING OF THE HILL  %us  CONTESTED", left);
 			else if(s_koth.holder >= 0)
 				sprintf(koth, "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
 			else
 				sprintf(koth, "KING OF THE HILL  %us  GET IN", left);
-			DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
-			           s_koth.inside >= 2 ? CRGBA(255, 120, 120, 255) : white);
+			if(s_koth.downSince[0] == 0 || now - s_koth.downSince[0] >= kKothReviveMs)
+				DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
+				           s_koth.inside >= 2 ? CRGBA(255, 120, 120, 255) : white);
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
 			if(CCoop::GetPlayerPed(i) == nil)
@@ -4204,6 +4276,15 @@ CCoopModes::CameraHint(CVector &target)
 	else
 		target = s_cnr.casePos;
 	return true;
+}
+
+bool
+CCoopModes::KothLeadDown(void)
+{
+	if(!s_koth.active || s_koth.finished)
+		return false;
+	CPlayerPed *lead = CWorld::Players[0].m_pPed;
+	return lead != nil && lead->DyingOrDead();
 }
 
 bool

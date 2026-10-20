@@ -1,6 +1,7 @@
 #include "common.h"
 
 #include "GameLogic.h"
+#include "CoopModes.h"
 #include "Clock.h"
 #include "Stats.h"
 #include "Pickups.h"
@@ -177,7 +178,11 @@ CGameLogic::Update()
 	case WBSTATE_PLAYING:
 		if (pPlayerInfo.m_pPed->m_nPedState == PED_DEAD) {
 			pPlayerInfo.m_pPed->ClearAdrenaline();
-			pPlayerInfo.KillPlayer();
+			// King of the Hill owns player 1's four-second revive.  Let the
+			// mode have the body instead of starting the wasted/hospital
+			// sequence, which would also switch the co-op session off.
+			if (!CCoopModes::KothLeadDown())
+				pPlayerInfo.KillPlayer();
 		}
 		if (pPlayerInfo.m_pPed->m_nPedState == PED_ARRESTED) {
 			pPlayerInfo.m_pPed->ClearAdrenaline();
@@ -411,7 +416,7 @@ CGameLogic::Update()
 }
 
 void
-CGameLogic::RestorePlayerStuffDuringResurrection(CPlayerPed *pPlayerPed, CVector pos, float angle)
+CGameLogic::RestorePlayerStuffDuringResurrection(CPlayerPed *pPlayerPed, CVector pos, float angle, bool clearWorld)
 {
 	ClearShortCut();
 	CPlayerInfo* pPlayerInfo = pPlayerPed->GetPlayerInfoForThisPlayerPed();
@@ -444,16 +449,22 @@ CGameLogic::RestorePlayerStuffDuringResurrection(CPlayerPed *pPlayerPed, CVector
 	pPlayerPed->m_fRotationCur = DEGTORAD(angle);
 	pPlayerPed->m_fRotationDest = pPlayerPed->m_fRotationCur;
 	pPlayerPed->SetHeading(pPlayerPed->m_fRotationCur);
-	CTheScripts::ClearSpaceForMissionEntity(pos, pPlayerPed);
-	CWorld::ClearExcitingStuffFromArea(pos, 4000.0f, true);
+	// The normal hospital respawn clears a wide area and changes the active
+	// area.  A minigame revive must not do either: it would delete the other
+	// players' cars and the pitch around the body.  The mode passes false and
+	// gets only the player's own state restored.
+	if (clearWorld) {
+		CTheScripts::ClearSpaceForMissionEntity(pos, pPlayerPed);
+		CWorld::ClearExcitingStuffFromArea(pos, 4000.0f, true);
+		CGame::currArea = AREA_MAIN_MAP;
+		CStreaming::RemoveBuildingsNotInArea(AREA_MAIN_MAP);
+		CGarages::PlayerArrestedOrDied();
+		CStats::CheckPointReachedUnsuccessfully();
+	}
 	pPlayerPed->RestoreHeadingRate();
-	CGame::currArea = AREA_MAIN_MAP;
-	CStreaming::RemoveBuildingsNotInArea(AREA_MAIN_MAP);
 	TheCamera.SetCameraDirectlyInFrontForFollowPed_CamOnAString();
 	TheCamera.Restore();
 	CReferences::RemoveReferencesToPlayer();
-	CGarages::PlayerArrestedOrDied();
-	CStats::CheckPointReachedUnsuccessfully();
 	CWorld::Remove(pPlayerPed);
 	CWorld::Add(pPlayerPed);
 	CHud::ResetWastedText();

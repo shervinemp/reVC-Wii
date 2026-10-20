@@ -103,8 +103,10 @@ class CVector;
 // friendly-fire toggle says, because a hill nobody can take from anybody is
 // not a hill.  A downed or arrested partner is brought back at the body after
 // four seconds, so a fight does not thin the party out; the ordinary revive is
-// still there for anyone who reaches them sooner.  Ninety seconds; most time
-// held wins.
+// still there for anyone who reaches them sooner.  Player 1 is the mode's too:
+// the wasted/hospital sequence is held off and he comes back at the body on
+// the same clock, with the party still in the session.  Ninety seconds; most
+// time held wins.
 //
 // The toy race, the dance-off, cops & robbers and Caddy football do not arm
 // while anyone in the party is wanted: they start from a jump, a duck or a
@@ -152,6 +154,12 @@ public:
 	// way once the party is split, so a pursuit is not framed as a picnic.
 	// False in every other mode.
 	static bool CameraHint(CVector &target);
+
+	// True while King of the Hill is running and player 1 is dead but the
+	// mode's four-second revive is still owed.  CGameLogic and the co-op
+	// session read this so the ordinary wasted/hospital flow does not take the
+	// party down with him.  False for the arrest path and after the bell.
+	static bool KothLeadDown(void);
 
 	// Whether a mode is running that forces player-on-player damage on,
 	// whatever the friendly-fire toggle says: King of the Hill.  Asked by

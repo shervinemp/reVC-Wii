@@ -1398,8 +1398,11 @@ SessionBlocker(void)
 		return "cutscene";
 	if(CReplay::IsPlayingBack())
 		return "replay";
-	if(CWorld::Players[LEAD].m_WBState != WBSTATE_PLAYING || lead->DyingOrDead() ||
-	   lead->m_nPedState == PED_ARRESTED)
+	// The hill owes player 1 a four-second revive; the session must not shut
+	// down in the meantime and take the partners with it.
+	const bool kothLead = CCoopModes::KothLeadDown();
+	if((CWorld::Players[LEAD].m_WBState != WBSTATE_PLAYING || lead->DyingOrDead() ||
+	    lead->m_nPedState == PED_ARRESTED) && !kothLead)
 		return "player 1 down";
 	return nil;
 }
