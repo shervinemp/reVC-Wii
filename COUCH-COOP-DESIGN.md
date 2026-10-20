@@ -502,7 +502,8 @@ assets:
 - the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
   while a case is open the takedown is not a crime),
 - the **smuggling run** (player 1 at the wheel of a boat and the horn: the
-  rest of the party are given boats of their own beside it; three coastal
+  rest of the party are given boats of their own beside it; a crate each leg,
+  first to it carries it to the drop while the other covers; three coastal
   drops, stars and Predators for heat, an Uzi for the last drop),
 - the **Bloodring derby** (park a knot of cars and honk: last car running,
   first to two rounds, weapons off),
@@ -582,9 +583,9 @@ boat to player 1 holds them. The crew is the lead boat and the boats a player is
 driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
 each boat of the crew adds $50 to a drop's $100.
 
-Each leg has a crate on the water about ninety metres before the drop, placed
-on the line from the middle of the two boats: both boats race for it, and
-whoever reaches it first carries it. The screen gives each boat its distance to
+Each leg has a crate on the water about ninety metres before the drop and sixty
+metres to the partner's side of the line, so it is not simply on player 1's
+nose: both boats race for it, and whoever reaches it first carries it. The screen gives each boat its distance to
 the crate ("CARGO  P1 120m  P2 125m"), so the race is legible from the sofa.
 The carrier's boat gets a green radar blip and must stop in the drop ring for
 two seconds; the other boat gets the "COVER" distance and keeps the Predators

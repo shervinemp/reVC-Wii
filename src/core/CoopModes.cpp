@@ -106,6 +106,7 @@ const float kDropSearch = 300.0f;	// how far a leg may look for water
 const float kDropRadius = 35.0f;	// in the ring...
 const float kDropSpeed = 3.0f * METERS_PER_SECOND_TO_GAME_SPEED;	// ...and this slow (3 m/s) to unload
 const float kCargoDistance = 90.0f;	// the crate waits this far before the drop...
+const float kCargoSide = 60.0f;		// ...and this far to the partner's side
 const float kCargoSearch = 120.0f;	// ...on water near there
 const float kCargoRadius = 10.0f;	// either boat this close picks it up
 // Three drops that planned out within this much of the boat, or of each other,
@@ -1501,25 +1502,43 @@ void ReleaseLoaner(int player);
 void
 PlanCargoForLeg(CVehicle *boat)
 {
-	CVector start = boat->GetPosition();
-	int partners = 0;
+	CVector leadPos = boat->GetPosition();
+	CVector mid = leadPos;
+	CVector partnerPos;
+	CVehicle *partner = nil;
 	for(int player = 1; player < NUMPLAYERS; player++){
-		CVehicle *escort = PartnerBoat(player, boat);
-		if(escort != nil){
-			start += escort->GetPosition();
-			partners++;
+		partner = PartnerBoat(player, boat);
+		if(partner != nil){
+			partnerPos = partner->GetPosition();
+			mid = (leadPos + partnerPos) * 0.5f;
+			break;
 		}
 	}
-	if(partners > 0)
-		start /= (float)(partners + 1);
 
-	CVector dir = s_run.dropPos[s_run.leg] - start;
+	CVector dir = s_run.dropPos[s_run.leg] - mid;
 	dir.z = 0.0f;
 	if(dir.Magnitude() < 1.0f)
 		dir = CVector(1.0f, 0.0f, 0.0f);
 	dir.Normalise();
-	if(!FindWaterNodeNear(s_run.dropPos[s_run.leg] - dir*kCargoDistance, kCargoSearch,
-	                      s_run.cargoPos[s_run.leg]))
+	CVector candidate = s_run.dropPos[s_run.leg] - dir*kCargoDistance;
+
+	// Put the crate to the partner's side of the route.  Player 1's boat starts
+	// at the lead, and a crate straight ahead would simply be theirs every leg;
+	// the offset makes both boats turn for it, and the partner usually has the
+	// shorter line.  Only when the two are near each other: a partner halfway
+	// across the bay should not drag the crate off the route.
+	if(partner != nil){
+		const CVector right(dir.y, -dir.x, 0.0f);
+		const CVector offset = partnerPos - leadPos;
+		if(offset.Magnitude() <= kEscortRange*2.0f){
+			float side = DotProduct(offset, right);
+			if(Abs(side) < 1.0f)
+				side = 1.0f;
+			candidate += right * (side > 0.0f ? kCargoSide : -kCargoSide);
+		}
+	}
+
+	if(!FindWaterNodeNear(candidate, kCargoSearch, s_run.cargoPos[s_run.leg]))
 		s_run.cargoPos[s_run.leg] = s_run.dropPos[s_run.leg];
 }
 
