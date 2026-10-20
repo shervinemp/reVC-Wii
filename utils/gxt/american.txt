@@ -14353,13 +14353,13 @@ POINTER BOX
 COUCH CO-OP
 
 [WII_P2J]
-Player 2: controller connected.
+Player 2: press A to join.
 
 [WII_P2I]
 Player 2 has joined.
 
 [WII_P2O]
-Player 2's controller was lost. Reconnect it to rejoin.
+Player 2's controller was lost. Reconnect it and press A to rejoin.
 
 [WII_CCM]
 Co-op is paused until the mission is over.

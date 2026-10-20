@@ -239,10 +239,14 @@ bool s_padHere[kNumPartners];
 uint32 s_padSince[kNumPartners];
 uint32 s_padLast[kNumPartners];
 bool s_padEver[kNumPartners];
-// Whether somebody has joined with it since it turned up.  Presence is the
-// whole rule now; the batteries of a joined remote are called low once per
-// connection.
+// Whether somebody has joined with it since it turned up.  A fresh controller
+// joins on A; a controller that briefly drops keeps the seat through the
+// six-second pad grace.  The batteries of a joined remote are called low once
+// per connection.
 bool s_joined[kNumPartners];
+bool s_joinTold[kNumPartners];
+const uint32 kJoinHintMs = 20000;
+uint32 s_joinHintAt[kNumPartners];
 bool s_batteryTold[kNumPartners];
 // A controller that has not been seen this long counts as lost, for the HUD.
 // Longer than the pad layer's own grace for a dropped report (twenty scans, a
@@ -447,6 +451,7 @@ TellAbout(int player, const char *key)
 // One help line per partner, so a line about player 3 says player 3.  The
 // words are in Text.cpp's fallback table, since the user's own GXT files are
 // never rewritten.
+const char *const kJoinKeys[kNumPartners] = { "WII_P2J", "WII_P3J", "WII_P4J" };
 const char *const kJoinedKeys[kNumPartners] = { "WII_P2I", "WII_P3I", "WII_P4I" };
 const char *const kLeftKeys[kNumPartners] = { "WII_P2O", "WII_P3O", "WII_P4O" };
 const char *const kDownKeys[kNumPartners] = { "WII_P2D", "WII_P3D", "WII_P4D" };
@@ -1932,6 +1937,8 @@ CCoop::Init(void)
 		s_padHere[partner] = false;
 		s_padEver[partner] = false;
 		s_joined[partner] = false;
+		s_joinTold[partner] = false;
+		s_joinHintAt[partner] = 0;
 		s_batteryTold[partner] = false;
 		s_padSince[partner] = 0;
 		s_padLast[partner] = 0;
@@ -2030,6 +2037,7 @@ CCoop::ReportPartnerPad(int partner, bool present)
 	if(!s_padHere[partner]){
 		s_padHere[partner] = true;
 		s_padSince[partner] = now;
+		COOP_LOG("WII coop: partner %d controller present\n", partner + 2);
 	}
 	s_padLast[partner] = now;
 	s_padEver[partner] = true;
@@ -2199,10 +2207,12 @@ CCoop::Update(void)
 	padGone[LEAD] = false;
 	for(int partner = 0; partner < kNumPartners; partner++){
 		const int player = partner + 1;
+		CPad *pad = CPad::GetPad(PAD_COOP + partner);
 		padPresent[player] = s_padHere[partner] && now - s_padSince[partner] >= kJoinAfterMs;
 		padGone[player] = !s_padHere[partner] && (!s_padEver[partner] || now - s_padLast[partner] > kDropAfterMs);
 		if(padGone[player]){
 			s_joined[partner] = false;
+			s_joinTold[partner] = false;
 			s_batteryTold[partner] = false;
 			s_announceReturn[player] = false;
 			// A camera focus was that partner's choice for their drive.  Their
@@ -2211,13 +2221,29 @@ CCoop::Update(void)
 			if(ms_nCameraFocus == player)
 				ms_nCameraFocus = -1;
 		}else if(padPresent[player] && !s_joined[partner]){
-			// A controller that is present is a player.  There is no button to
-			// press: the four hundred milliseconds in padPresent are the only
-			// debounce, so a hot-plug that is still settling is not a join.
-			s_joined[partner] = true;
+			// A fresh controller joins on A, not by being on the table.  A
+			// controller that was already joined and only dropped briefly never
+			// reaches here: s_joined stays true through the six-second grace.
+			// The autotest path may still join the first controllers without a
+			// press, but ordinary play does not.
+			const CControllerState &held = pad->NewState;
+			if(held.Cross || partner < ms_nAutoJoinPartners){
+				s_joined[partner] = true;
+				COOP_LOG("WII coop: partner %d joined\n", player + 1);
 #ifdef NINTENDO_WII
-			WiiPadJoinPulse(player);
+				WiiPadJoinPulse(player);
 #endif
+			}else{
+				// Say it when the controller appears, then no more often than
+				// kJoinHintMs if the player starts pressing other things.
+				const bool again = s_joinTold[partner] && now - s_joinHintAt[partner] >= kJoinHintMs &&
+					PadTouched(held, pad->OldState);
+				if(!s_joinTold[partner] || again){
+					s_joinTold[partner] = true;
+					s_joinHintAt[partner] = now;
+					Tell(kJoinKeys[partner]);
+				}
+			}
 		}
 #ifdef NINTENDO_WII
 		// A remote that is running out of batteries drops out in the middle of a
