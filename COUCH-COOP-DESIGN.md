@@ -96,7 +96,9 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
   is held to. A controller keeps its seat while it stays connected; when every
   remote has gone, the next one to arrive is player 1 again. Remotes already on
   before the game starts tie-break by WPAD channel (the platform reports no
-  connection time); a remote connected after that follows them.
+  connection time); a remote connected after that follows them. A remote that
+  reconnects on a different WPAD channel is a new arrival: libogc exposes no
+  stable remote identity to follow it with.
 - **Joining takes a button press.** A controller being connected is not a
   player: the remote that launched the game is still switched on while its
   owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
