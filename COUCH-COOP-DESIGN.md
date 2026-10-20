@@ -515,6 +515,21 @@ is wanted.
 The cop shift and the smuggling run are about the police and are not held back.
 King of the Hill is a fight and does not check the wanted level either.
 
+The co-op page also has **START A MINIGAME**, a page of the eight modes for
+players who do not want to remember the in-world gesture. Choosing a row arms
+the mode; once the menu closes, `CCoopModes::MenuStart` takes over and
+`UpdateMenuPending` teleports the party to a clear venue -- the airport apron
+for the derby, Caddy football and the toy race; the beaches for King of the
+Hill, the dance-off and cops & robbers; a road node for the cop shift; and a
+water node off the docks for the smuggling run -- after loading the
+destination's collision. If a mode needs a vehicle, the menu makes one:
+Bloodring loaners for the derby and Caddy football, a police cruiser (and a
+second if the first fills) for the cop shift, and a Squalo with one escort per
+partner for the run. A player already in an eligible car keeps it; anyone else
+is put on foot at the venue, given the loaner, and seated. The mode's normal
+update then starts it from that prepared state, so the gestures still work in
+the world and the menu is only another way in.
+
 The first time a mode arms in a session, one line under the headline says how it
 is played and how it ends, for 4.5 s (`DrawExplainer`); it comes back after a
 mission or a cutscene, not for a rematch. The derby cuts the fire button for

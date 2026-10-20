@@ -15,6 +15,7 @@
 #include "Font.h"
 #include "Camera.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #include "main.h"
 #include "MBlur.h"
 #include "postfx.h"
@@ -298,6 +299,28 @@ void PedDensityChange(float before, float after) {
 void CarDensityChange(float before, float after) {
 	CCarCtrl::MaxNumberOfCarsInUse = DEFAULT_MAX_NUMBER_OF_CARS * after;
 }
+#endif
+
+#ifdef NINTENDO_WII
+// One row per engine-side minigame.  MenuStart only arms the start; the mode
+// itself does the teleport and the vehicle making in its own Update pass once
+// the menu has closed.  The request is what closes the menu, so choosing a row
+// is one press rather than choosing it and then finding Back.
+static void MinigameStart(int mode)
+{
+	if(CCoopModes::MenuStart(mode))
+		FrontEndMenuManager.RequestFrontEndShutDown();
+}
+static void MinigameShift(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_SHIFT); }
+static void MinigameRun(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_RUN); }
+static void MinigameDerby(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_DERBY); }
+static void MinigameRc(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_RC); }
+static void MinigameDance(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_DANCE); }
+static void MinigameCnR(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_CNR); }
+static void MinigamePitch(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_PITCH); }
+static void MinigameKoth(int8 action) { if (action == FEOPTION_ACTION_SELECT) MinigameStart(CCoopModes::MENU_KOTH); }
+#define WII_MINIGAME_ROW(key, fn) \
+	MENUACTION_CFO_DYNAMIC, key, { new CCFODynamic(nil, nil, nil, nil, fn) }, 0, 0, MENUALIGN_LEFT,
 #endif
 
 #ifndef MULTISAMPLING
@@ -1146,6 +1169,7 @@ CMenuScreenCustom aScreens[] = {
 		COOP_SKIN4_SELECT
 		FRIENDLY_FIRE_TOGGLE
 		MINIGAMES_TOGGLE
+		MENUACTION_CHANGEMENU,	"WII_MGP",	{ nil, SAVESLOT_NONE, MENUPAGE_MINIGAMES }, 0, 0, MENUALIGN_LEFT,
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
@@ -1165,6 +1189,26 @@ CMenuScreenCustom aScreens[] = {
 		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
 	},
 
+	// MENUPAGE_MINIGAMES
+	//
+	// Quick starts for the engine-side modes.  The labels are the modes' own
+	// title keys, so the page reads the same as the help box that explains
+	// them.  Choosing a row arms it; the teleport and the vehicle work happen
+	// after the menu closes, when the world can be streamed properly.
+
+	{ "WII_MGP", MENUPAGE_COOP, new CCustomScreenLayout({40, 78, 25, true, true}), nil,
+		WII_MINIGAME_ROW("WII_CSH", MinigameShift)
+		WII_MINIGAME_ROW("WII_CSR", MinigameRun)
+		WII_MINIGAME_ROW("WII_CSD", MinigameDerby)
+		WII_MINIGAME_ROW("WII_CSC", MinigameRc)
+		WII_MINIGAME_ROW("WII_CSF", MinigameDance)
+		WII_MINIGAME_ROW("WII_CSN", MinigameCnR)
+		WII_MINIGAME_ROW("WII_CSP", MinigamePitch)
+		WII_MINIGAME_ROW("WII_CSK", MinigameKoth)
+		MENUACTION_GOBACK,		"FEDS_TB", { nil, SAVESLOT_NONE, MENUPAGE_NONE }, 320, 0, MENUALIGN_CENTER,
+	},
+
+	#undef WII_MINIGAME_ROW
 	#undef WII_CHEAT_ROW
 #endif
 

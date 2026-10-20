@@ -269,6 +269,8 @@ enum eMenuScreen
 	// The cheats that change how a car behaves, split off the vehicle spawns: with
 	// the ten spawns they made a page whose Back row fell off the bottom.
 	MENUPAGE_CHEATS_CAR_EFFECTS,
+	// The menu shortcuts for the engine-side minigames, under the co-op page.
+	MENUPAGE_MINIGAMES,
 #endif
 
 	MENUPAGE_OUTRO, // Originally 34, but CFO needs last screen to be empty to count number of menu pages

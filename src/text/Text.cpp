@@ -177,6 +177,7 @@ WiiFallbackText(const char *key)
 		{ "WII_SK11", "GONZALEZ" },
 		{ "WII_FF", "FRIENDLY FIRE" },
 		{ "WII_MG", "MINIGAMES" },
+		{ "WII_MGP", "START A MINIGAME" },
 		{ "WII_CSH", "COP SHIFT" },
 		{ "WII_CSR", "SMUGGLING RUN" },
 		{ "WII_CSD", "BLOODRING" },

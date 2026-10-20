@@ -53,6 +53,13 @@ public:
 	// themselves once whatever asked for this is over.
 	static void Suspend(const char *why);
 
+	// Tells the session that player 1 was moved by something other than
+	// walking or driving -- a minigame teleport.  Without this the partner
+	// leash reads the jump as the lead leaving them behind and respawns them
+	// beside him, which throws away the car or boat the teleport just put them
+	// in.
+	static void ClearTeleportWatch(void);
+
 	// Whether the shared-view half of the session is on.  The session is on
 	// from the moment the menu row is set -- the pads are watched and the join
 	// is offered -- but until somebody presses a button on a partner's pad

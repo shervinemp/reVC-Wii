@@ -1999,6 +1999,23 @@ CCoop::PairActive(void)
 	return false;
 }
 
+void
+CCoop::ClearTeleportWatch(void)
+{
+	CPlayerPed *lead = CWorld::Players[LEAD].m_pPed;
+	if(lead == nil){
+		s_leadPosValid = false;
+		return;
+	}
+	s_leadPos = (lead->bInVehicle && lead->m_pMyVehicle != nil) ?
+		lead->m_pMyVehicle->GetPosition() : lead->GetPosition();
+	s_leadPosValid = true;
+	for(int player = 1; player < NUMPLAYERS; player++){
+		s_wallSince[player] = 0;
+		s_wallLast[player] = 0;
+	}
+}
+
 int
 CCoop::GetPlayerIndex(const CEntity *entity)
 {

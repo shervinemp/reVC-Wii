@@ -140,6 +140,22 @@ public:
 	// The same boat comes back until it is wrecked, taken, or left behind.
 	static CVehicle *EscortBoat(int player, CVehicle *lead);
 
+	// The menu's shortcuts into the modes.  Each one teleports the party to a
+	// clear piece of the map and puts them in whatever the mode needs -- cars
+	// for the derby and Caddy football, a police car for the shift, boats for
+	// the run -- so the gesture is only the way to start it in the world.
+	enum eMenuMode {
+		MENU_SHIFT,
+		MENU_RUN,
+		MENU_DERBY,
+		MENU_RC,
+		MENU_DANCE,
+		MENU_CNR,
+		MENU_PITCH,
+		MENU_KOTH
+	};
+	static bool MenuStart(int mode);
+
 	// Whether a mode is running that wants the camera to hold still rather
 	// than turn with a car's nose: the derby, the toy race, Caddy football and
 	// King of the Hill.

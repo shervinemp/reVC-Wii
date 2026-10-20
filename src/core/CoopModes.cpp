@@ -10,6 +10,7 @@
 #include "Coop.h"
 #include "CopPed.h"
 #include "Coronas.h"
+#include "Frontend.h"
 #include "GameLogic.h"
 #include "General.h"
 #include "Hud.h"
@@ -18,6 +19,7 @@
 #include "Pad.h"
 #include "PathFind.h"
 #include "Ped.h"
+#include "PedPlacement.h"
 #include "PlayerInfo.h"
 #include "PlayerPed.h"
 #include "Pools.h"
@@ -49,6 +51,18 @@
 
 namespace
 {
+
+enum
+{
+	MENU_SHIFT = CCoopModes::MENU_SHIFT,
+	MENU_RUN = CCoopModes::MENU_RUN,
+	MENU_DERBY = CCoopModes::MENU_DERBY,
+	MENU_RC = CCoopModes::MENU_RC,
+	MENU_DANCE = CCoopModes::MENU_DANCE,
+	MENU_CNR = CCoopModes::MENU_CNR,
+	MENU_PITCH = CCoopModes::MENU_PITCH,
+	MENU_KOTH = CCoopModes::MENU_KOTH
+};
 
 // --- the cop shift's numbers -------------------------------------------------
 
@@ -457,6 +471,32 @@ struct CnRState
 	bool nodSpent[NUMPLAYERS];
 };
 CnRState s_cnr;
+
+// --- menu quick starts -------------------------------------------------------
+// The menu's versions of the modes need a clear, known piece of ground.  The
+// airport apron is the largest flat space on the map and carries the three
+// vehicle modes; the beaches are flat enough for the foot modes, and the two
+// road/water starts are picked from the path graph below.
+struct MenuVenue
+{
+	CVector pos;
+	float heading;
+};
+const MenuVenue kAirportMenu = { CVector(-1540.0f, -1110.0f, 14.0f), 0.0f };
+const MenuVenue kKothMenu = { CVector(700.0f, 1000.0f, 20.0f), 0.0f };
+const MenuVenue kDanceMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f };
+const MenuVenue kCnRMenu = { CVector(650.0f, -1250.0f, 10.0f), 0.0f };
+const CVector kShiftMenuBase(650.0f, -1250.0f, 10.0f);
+const CVector kRunMenuBase(-850.0f, -1250.0f, 0.0f);
+
+struct MenuPending
+{
+	int mode;
+	uint32 requestedAt;
+};
+MenuPending s_menuPending = { -1, 0 };
+
+void ReleaseLoaner(int player);
 
 // --- what a mode tells the party when it arms --------------------------------
 
@@ -991,6 +1031,9 @@ EndShift(uint32 now, const char *why, int result)
 	s_shift.streak = 0;
 	s_shift.crewLostAt = 0;
 	s_shift.stoppedSince = 0;
+	// The menu's police car goes back to the traffic system with the shift.
+	for(int i = 0; i < NUMPLAYERS; i++)
+		ReleaseLoaner(i);
 	COOP_LOG("WII coop: cop shift off (%s)\n", why);
 }
 
@@ -1346,6 +1389,32 @@ UpdatePursuers(uint32 now, CVehicle *boat)
 		DrivePursuer(i, now, boat);
 }
 
+void ReleaseLoaner(int player);
+
+bool
+StartRunAt(uint32 now, CVehicle *boat)
+{
+	if(boat == nil || !PlanRoute(boat))
+		return false;
+
+	CStreaming::RequestModel(MI_PREDATOR, 0);
+	CStreaming::RequestModel(MI_COP, 0);
+
+	boat->RegisterReference((CEntity**)&s_run.boat);
+	s_run.boat = boat;
+	s_run.active = true;
+	s_run.leg = 0;
+	s_run.drop = s_run.dropPos[0];
+	s_run.unloadSince = 0;
+	s_run.crewLostAt = 0;
+	s_run.nextRetargetAt = now;
+	PlaceDropMarker();
+	COOP_LOG("WII coop: smuggling run on\n");
+	CCoop::Notify("WII_CSR");
+	ShowExplainer(EXPLAIN_RUN, now);
+	return true;
+}
+
 void
 TryStartRun(uint32 now)
 {
@@ -1364,24 +1433,7 @@ TryStartRun(uint32 now)
 	CPad *pad = GetPadFromVehicleDriver(boat);
 	if(pad == nil || !pad->GetHorn())
 		return;
-	if(!PlanRoute(boat))
-		return;
-
-	CStreaming::RequestModel(MI_PREDATOR, 0);
-	CStreaming::RequestModel(MI_COP, 0);
-
-	boat->RegisterReference((CEntity**)&s_run.boat);
-	s_run.boat = boat;
-	s_run.active = true;
-	s_run.leg = 0;
-	s_run.drop = s_run.dropPos[0];
-	s_run.unloadSince = 0;
-	s_run.crewLostAt = 0;
-	s_run.nextRetargetAt = now;
-	PlaceDropMarker();
-	COOP_LOG("WII coop: smuggling run on\n");
-	CCoop::Notify("WII_CSR");
-	ShowExplainer(EXPLAIN_RUN, now);
+	StartRunAt(now, boat);
 }
 
 void
@@ -1394,6 +1446,9 @@ EndRun(uint32 now, const char *why)
 		s_run.boat->CleanUpOldReference((CEntity**)&s_run.boat);
 		s_run.boat = nil;
 	}
+	// A lead boat the menu made is a loaner and goes back with the run; a
+	// player's own boat was never in this slot and is left alone.
+	ReleaseLoaner(0);
 	s_run.active = false;
 	s_run.rearmAt = now + kRearmMs;
 	s_run.unloadSince = 0;
@@ -1530,6 +1585,8 @@ ReleaseLoaner(int player)
 	CVehicle *car = s_derby.loaner[player];
 	if(car != nil){
 		CTheScripts::CleanUpThisVehicle(car);
+		if(car->bIsLawEnforcer)
+			car->ChangeLawEnforcerState(false);
 		car->CleanUpOldReference((CEntity**)&s_derby.loaner[player]);
 		s_derby.loaner[player] = nil;
 	}
@@ -1585,6 +1642,226 @@ PlayerInDerbyCar(int player, CVehicle **out)
 		return false;
 	*out = veh;
 	return true;
+}
+
+bool PlayerInPitchCar(int player, CVehicle **out);
+
+// Puts a player at the wheel of a car the menu made.  This is the same order
+// and warp the game's own warp-player-into-car command uses; WarpPedIntoCar
+// only sits them down if the enter objective took first.
+bool
+SeatMenuDriver(CPlayerPed *ped, CVehicle *car)
+{
+	if(ped == nil || car == nil || car->pDriver != nil || ped->bInVehicle)
+		return false;
+	ped->SetPedState(PED_IDLE);
+	ped->SetMoveState(PEDMOVE_STILL);
+	ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+	ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, car);
+	if(ped->m_objective != OBJECTIVE_ENTER_CAR_AS_DRIVER)
+		return false;
+	ped->WarpPedIntoCar(car);
+	ped->SetObjective(OBJECTIVE_NONE);
+	return ped->bInVehicle && car->pDriver == ped;
+}
+
+CVector
+MenuGround(const CVector &point, float lift)
+{
+	CVector out = point;
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(point.x, point.y, point.z + 5.0f, &found);
+	out.z = (found ? ground : point.z) + lift;
+	return out;
+}
+
+// The menu teleports across the map, so the destination's collision has to be
+// there before anybody is put down on it.  This is the blocking pair the
+// shortcut taxi uses; the frame is already past the world update.
+void
+MenuLoadScene(const CVector &at)
+{
+	CStreaming::LoadSceneCollision(at);
+	CStreaming::LoadScene(at);
+}
+
+// The scene switch drops models that are merely requested, so a mode's own
+// car or boat is asked for again after the collision is in place and loaded
+// before anything is made out of it.
+bool
+MenuEnsureModel(int model)
+{
+	CStreaming::RequestModel(model, STREAMFLAGS_DEPENDENCY);
+	CStreaming::LoadAllRequestedModels(false);
+	return CStreaming::HasModelLoaded(model);
+}
+
+CVector
+MenuSlot(const MenuVenue &venue, int player, float gap)
+{
+	const CVector forward(-Sin(venue.heading), Cos(venue.heading), 0.0f);
+	const CVector right(Cos(venue.heading), Sin(venue.heading), 0.0f);
+	const float side = (player & 1) ? gap : -gap;
+	const float ahead = (player & 2) ? gap : -gap;
+	return venue.pos + right*side + forward*ahead;
+}
+
+// Leaves whatever the player is in the way an ordinary exit does, without
+// playing the door animation: the vehicle is not being kept, and the ped is
+// about to be teleported anyway.  PedSetOutCarCB is the engine's own final
+// step; the manual clear afterwards is only because it leaves m_pMyVehicle
+// behind for its caller to nil.
+void
+MenuLeaveVehicle(CPlayerPed *ped)
+{
+	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		return;
+	CVehicle *vehicle = ped->m_pMyVehicle;
+	ped->SetPedState(PED_EXIT_CAR);
+	ped->RemoveInCarAnims();
+	CPed::PedSetOutCarCB(nil, ped);
+	if(ped->m_pMyVehicle != nil){
+		ped->m_pMyVehicle->CleanUpOldReference((CEntity**)&ped->m_pMyVehicle);
+		ped->m_pMyVehicle = nil;
+	}
+	ped->bInVehicle = false;
+	ped->bUsesCollision = true;
+	ped->SetPedState(PED_IDLE);
+	ped->SetMoveState(PEDMOVE_STILL);
+	if(vehicle != nil && vehicle->pDriver == nil && vehicle->GetStatus() != STATUS_WRECKED)
+		vehicle->SetStatus(STATUS_ABANDONED);
+}
+
+void
+MenuPlacePed(CPlayerPed *ped, const CVector &at, float heading)
+{
+	CVector pos = at;
+	if(!CPedPlacement::FindZCoorForPed(&pos))
+		pos = MenuGround(at, 0.0f);
+	ped->Teleport(pos);
+	ped->m_fRotationCur = heading;
+	ped->m_fRotationDest = heading;
+	ped->SetHeading(heading);
+	ped->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+	ped->bIsStanding = true;
+}
+
+void
+MenuPlaceCar(CVehicle *car, const CVector &at, float heading)
+{
+	CVector pos = MenuGround(at, 0.0f);
+	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	car->Teleport(pos);
+	car->SetOrientation(0.0f, 0.0f, heading);
+	car->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+	car->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
+	car->bIsHandbrakeOn = true;
+	car->bEngineOn = true;
+}
+
+bool
+MenuStoreLoaner(CVehicle *vehicle)
+{
+	if(vehicle == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(s_derby.loaner[i] == nil){
+			vehicle->RegisterReference((CEntity**)&s_derby.loaner[i]);
+			s_derby.loaner[i] = vehicle;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool
+MenuSeatPassenger(CPlayerPed *ped, CVehicle *car)
+{
+	if(ped == nil || car == nil || car->pDriver == nil || ped->bInVehicle)
+		return false;
+	ped->SetPedState(PED_IDLE);
+	ped->SetMoveState(PEDMOVE_STILL);
+	for(int i = 0; i < car->m_nNumMaxPassengers; i++){
+		if(car->pPassengers[i] != nil)
+			continue;
+		if(!car->AddPassenger(ped, i))
+			return false;
+		ped->m_pMyVehicle = car;
+		ped->m_pMyVehicle->RegisterReference((CEntity**)&ped->m_pMyVehicle);
+		ped->bInVehicle = true;
+		ped->SetPedState(PED_DRIVING);
+		ped->bUsesCollision = false;
+		ped->AddInCarAnims(car, false);
+		return true;
+	}
+	return false;
+}
+
+// The foot modes start in a loose square.  The beach is wide enough for the
+// rings the modes draw and close enough that the menu's own start checks pass.
+bool
+MenuPrepareFoot(const MenuVenue &venue)
+{
+	MenuLoadScene(venue.pos);
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+		MenuPlacePed(ped, MenuSlot(venue, i, 4.0f), venue.heading);
+	}
+	CCoop::ClearTeleportWatch();
+	return true;
+}
+
+// Caddy football and the derby need everyone at a wheel.  Existing eligible
+// cars are brought along; anyone else leaves what they are in and gets a
+// Bloodring loaner at the venue.  This is the "if they are not in that
+// vehicle, put them in one" half of the menu.
+bool
+MenuPrepareCars(const MenuVenue &venue, bool caddy)
+{
+	MenuLoadScene(venue.pos);
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CVehicle *car = nil;
+		const bool ready = caddy ? PlayerInPitchCar(i, &car) : PlayerInDerbyCar(i, &car);
+		if(ready && car != nil && car->GetStatus() != STATUS_WRECKED){
+			MenuPlaceCar(car, MenuSlot(venue, i, 9.0f), venue.heading);
+			continue;
+		}
+		if(ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+		MenuPlacePed(ped, MenuSlot(venue, i, 9.0f), venue.heading);
+	}
+
+	bool loanerModelReady = false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->bInVehicle)
+			continue;
+		if(!loanerModelReady){
+			if(!MenuEnsureModel(MI_BLOODRA))
+				return false;
+			loanerModelReady = true;
+		}
+		SpawnLoaner(i);
+		CVehicle *car = s_derby.loaner[i];
+		if(car == nil || !SeatMenuDriver(ped, car))
+			return false;
+	}
+	CCoop::ClearTeleportWatch();
+	return true;
+}
+
+void
+ReleaseMenuLoaners(void)
+{
+	for(int i = 0; i < NUMPLAYERS; i++)
+		ReleaseLoaner(i);
 }
 
 void
@@ -2167,6 +2444,9 @@ void
 EndPitch(uint32 now, const char *why)
 {
 	ReleasePitchBall();
+	// Loaners the menu made for the pitch go back to the world with it.
+	for(int i = 0; i < NUMPLAYERS; i++)
+		ReleaseLoaner(i);
 	s_pitch.active = false;
 	s_pitch.counting = false;
 	s_pitch.finished = false;
@@ -4066,11 +4346,303 @@ DrawModeMarks(uint32 now)
 	DrawExplainer(now);
 }
 
+// --- the menu's starts -------------------------------------------------------
+
+int
+MenuRequiredModel(int mode)
+{
+	switch(mode){
+	case MENU_SHIFT: return MI_POLICE;
+	case MENU_RUN: return MI_SQUALO;
+	default: return -1;
+	}
+}
+
+CVehicle *
+MenuSpawnPolice(const CVector &at, float heading)
+{
+	if(!CStreaming::HasModelLoaded(MI_POLICE))
+		return nil;
+	CAutomobile *car = new CAutomobile(MI_POLICE, MISSION_VEHICLE);
+	if(car == nil)
+		return nil;
+
+	CVector pos = MenuGround(at, 0.0f);
+	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	car->SetPosition(pos);
+	car->SetOrientation(0.0f, 0.0f, heading);
+	car->SetStatus(STATUS_ABANDONED);
+	car->bIsLocked = false;
+	car->AutoPilot.m_nCarMission = MISSION_NONE;
+	car->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	car->bEngineOn = true;
+	car->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
+	if(!car->bIsLawEnforcer)
+		car->ChangeLawEnforcerState(true);
+	car->m_bSirenOrAlarm = true;
+	CWorld::Add(car);
+	if(!MenuStoreLoaner(car)){
+		CTheScripts::CleanUpThisVehicle(car);
+		return nil;
+	}
+	return car;
+}
+
+CVehicle *
+MenuSpawnBoat(const CVector &at, float heading)
+{
+	if(!CStreaming::HasModelLoaded(MI_SQUALO))
+		return nil;
+	CBoat *boat = new CBoat(MI_SQUALO, MISSION_VEHICLE);
+	if(boat == nil)
+		return nil;
+
+	CVector pos = at;
+	pos.z += boat->GetDistanceFromCentreOfMassToBaseOfModel();
+	boat->SetPosition(pos);
+	boat->SetOrientation(0.0f, 0.0f, heading);
+	boat->SetStatus(STATUS_ABANDONED);
+	boat->bIsLocked = true;
+	boat->AutoPilot.m_nCarMission = MISSION_NONE;
+	boat->AutoPilot.m_nTempAction = TEMPACT_NONE;
+	boat->bEngineOn = true;
+	boat->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
+	CWorld::Add(boat);
+	if(!MenuStoreLoaner(boat)){
+		CTheScripts::CleanUpThisVehicle(boat);
+		return nil;
+	}
+	return boat;
+}
+
+bool
+StartMenuShift(uint32 now)
+{
+	if(PartyWanted())
+		return false;
+
+	CVector spot;
+	if(!FindCarNodeNear(kShiftMenuBase, 300.0f, spot))
+		spot = kShiftMenuBase;
+	MenuLoadScene(spot);
+	if(!MenuEnsureModel(MI_POLICE))
+		return false;
+	spot = MenuGround(spot, 0.0f);
+
+	CPlayerPed *lead = CCoop::GetPlayerPed(0);
+	if(lead == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+	}
+
+	CVehicle *car = MenuSpawnPolice(spot, 0.0f);
+	if(car == nil || !SeatMenuDriver(lead, car))
+		return false;
+
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(MenuSeatPassenger(ped, car))
+			continue;
+		// A full car is not a reason to leave somebody behind: a second
+		// cruiser is still a crewed law car, and the shift's own check only
+		// needs the largest one.
+		const CVector beside(spot.x + 8.0f, spot.y, spot.z);
+		CVehicle *second = MenuSpawnPolice(beside, 0.0f);
+		if(second == nil || !SeatMenuDriver(ped, second))
+			return false;
+		car = second;
+	}
+
+	CCoop::ClearTeleportWatch();
+	TryStartShift(now);
+	return s_shift.active;
+}
+
+bool
+StartMenuRun(uint32 now)
+{
+	CVector water;
+	if(!FindWaterNodeNear(kRunMenuBase, 500.0f, water))
+		return false;
+	MenuLoadScene(water);
+	if(!MenuEnsureModel(MI_SQUALO))
+		return false;
+
+	CPlayerPed *lead = CCoop::GetPlayerPed(0);
+	if(lead == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+	}
+
+	CVehicle *boat = MenuSpawnBoat(water, 0.0f);
+	if(boat == nil || !SeatMenuDriver(lead, boat))
+		return false;
+	if(!StartRunAt(now, boat))
+		return false;
+
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CVehicle *escort = CCoopModes::EscortBoat(i, boat);
+		if(escort == nil || !SeatMenuDriver(ped, escort)){
+			EndRun(now, "menu start");
+			return false;
+		}
+	}
+
+	CCoop::ClearTeleportWatch();
+	return true;
+}
+
+bool
+StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
+{
+	if(mode != MENU_KOTH && PartyWanted())
+		return false;
+	if(!MenuPrepareFoot(venue))
+		return false;
+	const CVector centre = CrewCentre();
+	const CVector forward(-Sin(venue.heading), Cos(venue.heading), 0.0f);
+
+	switch(mode){
+	case MENU_RC:
+		if(PartyWanted())
+			return false;
+		s_rc.rearmAt = 0;
+		StartRc(now, centre, forward);
+		return s_rc.active;
+	case MENU_DANCE:
+		if(PartyWanted())
+			return false;
+		s_dance.rearmAt = 0;
+		StartDance(now, centre);
+		return s_dance.active;
+	case MENU_CNR:
+		if(PartyWanted())
+			return false;
+		s_cnr.rearmAt = 0;
+		StartCnR(now, centre, forward);
+		return s_cnr.active;
+	case MENU_KOTH:
+		s_koth.rearmAt = 0;
+		TryStartKoth(now);
+		return s_koth.active;
+	default:
+		return false;
+	}
+}
+
+bool
+StartMenuCars(int mode, uint32 now)
+{
+	const bool caddy = mode == MENU_PITCH;
+	if(caddy && PartyWanted())
+		return false;
+	if(!MenuPrepareCars(kAirportMenu, caddy))
+		return false;
+
+	if(caddy){
+		// The gesture check gives King of the Hill first refusal on a group
+		// aim-hold; a menu selection is already that decision.
+		const bool group = s_koth.groupAll;
+		s_koth.groupAll = false;
+		s_pitch.rearmAt = 0;
+		TryStartPitch(now, true);
+		s_koth.groupAll = s_pitch.active ? false : group;
+		return s_pitch.active;
+	}
+
+	s_derby.rearmAt = 0;
+	StartDerby(now, CrewCentre());
+	return s_derby.active;
+}
+
+bool
+StartMenuMode(int mode, uint32 now)
+{
+	ReleaseMenuLoaners();
+
+	int present = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			return false;
+		present++;
+	}
+	if(present < 2)
+		return false;
+
+	switch(mode){
+	case MENU_SHIFT: return StartMenuShift(now);
+	case MENU_RUN: return StartMenuRun(now);
+	case MENU_DERBY: return StartMenuCars(MENU_DERBY, now);
+	case MENU_RC: return StartMenuFoot(MENU_RC, kAirportMenu, now);
+	case MENU_DANCE: return StartMenuFoot(MENU_DANCE, kDanceMenu, now);
+	case MENU_CNR: return StartMenuFoot(MENU_CNR, kCnRMenu, now);
+	case MENU_PITCH: return StartMenuCars(MENU_PITCH, now);
+	case MENU_KOTH: return StartMenuFoot(MENU_KOTH, kKothMenu, now);
+	default: return false;
+	}
+}
+
+// Kept out of CCoopModes::Update: its teleport/start paths are much too large
+// to inline, and GCC 12's CFG cleanup chokes on the merged function.
+__attribute__((noinline)) void
+UpdateMenuPending(uint32 now)
+{
+	if(s_menuPending.mode < 0)
+		return;
+	// The page is still open: the player may be changing their mind or
+	// backing out, and teleporting the world behind it is not a menu's job.
+	// The clock is held too, so a long look at the page does not eat the
+	// model-loading budget.
+	if(FrontEndMenuManager.GetIsMenuActive()){
+		s_menuPending.requestedAt = now;
+		return;
+	}
+	if(!CoopMinigames || !CCoop::PairActive() || ModeActive()){
+		s_menuPending.mode = -1;
+		return;
+	}
+
+	const int model = MenuRequiredModel(s_menuPending.mode);
+	if(model >= 0 && !CStreaming::HasModelLoaded(model)){
+		CStreaming::RequestModel(model, 0);
+		if(now - s_menuPending.requestedAt > 60000){
+			COOP_LOG("WII coop: menu start model %d never arrived\n", model);
+			s_menuPending.mode = -1;
+		}
+		return;
+	}
+
+	const int mode = s_menuPending.mode;
+	if(StartMenuMode(mode, now)){
+		s_menuPending.mode = -1;
+		return;
+	}
+	ReleaseMenuLoaners();
+	COOP_LOG("WII coop: menu start %d failed\n", mode);
+	s_menuPending.mode = -1;
+}
+
 } // namespace
 
 void
 CCoopModes::Init(void)
 {
+	s_menuPending.mode = -1;
+	s_menuPending.requestedAt = 0;
 	if(s_shift.suspectCar != nil)
 		s_shift.suspectCar->CleanUpOldReference((CEntity**)&s_shift.suspectCar);
 	if(s_shift.suspectPed != nil)
@@ -4140,6 +4712,10 @@ void
 CCoopModes::Update(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	// A row on the minigame page arms a start; this is the first point after
+	// the menu has closed that can stream the destination and move anybody.
+	UpdateMenuPending(now);
 
 	// The explainers are for the first time a mode arms in a session.  The
 	// session is what every mode below asks CCoop::PairActive about, and it is
@@ -4280,6 +4856,37 @@ CCoopModes::SteadyView(void)
 	// cart, and King of the Hill, which is one fixed ring.  See
 	// CCam::Process_WiiCoop.
 	return s_derby.active || s_rc.active || s_pitch.active || s_koth.active;
+}
+
+bool
+CCoopModes::MenuStart(int mode)
+{
+	if(!CoopMinigames || !CCoop::PairActive() || ModeActive())
+		return false;
+	if(mode < MENU_SHIFT || mode > MENU_KOTH)
+		return false;
+
+	int present = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			return false;
+		present++;
+	}
+	if(present < 2)
+		return false;
+
+	// Arm it and let Update do the work once the menu is out of the way.  The
+	// scene load can block for a moment, and the menu is still drawing.
+	s_menuPending.mode = mode;
+	s_menuPending.requestedAt = CTimer::GetTimeInMilliseconds();
+	const int model = MenuRequiredModel(mode);
+	if(model >= 0)
+		CStreaming::RequestModel(model, 0);
+	COOP_LOG("WII coop: menu minigame %d armed\n", mode);
+	return true;
 }
 
 bool
