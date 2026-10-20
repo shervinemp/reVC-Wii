@@ -94,7 +94,9 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
   remaining controllers in arrival order: GameCube pads in port order first,
   then Wii Remotes with a Nunchuk or Classic Controller, the same rule player 1
   is held to. A controller keeps its seat while it stays connected; when every
-  remote has gone, the next one to arrive is player 1 again.
+  remote has gone, the next one to arrive is player 1 again. Remotes already on
+  before the game starts tie-break by WPAD channel (the platform reports no
+  connection time); a remote connected after that follows them.
 - **Joining takes a button press.** A controller being connected is not a
   player: the remote that launched the game is still switched on while its
   owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
