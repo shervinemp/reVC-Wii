@@ -1553,6 +1553,11 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 		// speed to bail out from when the next try came round.
 		const bool canLeave = vehicle->CanPedExitCar(false) ||
 			(vehicle->IsBike() ? vehicle->CanPedJumpOffBike() : vehicle->CanPedJumpOutCar());
+		// A player at their last point of health has the engine's leave-and-die
+		// order.  Do not replace it with an ordinary exit: that would let a
+		// partner walk away from a hit player 1 would die from.
+		if(partner->m_objective == OBJECTIVE_LEAVE_CAR_AND_DIE)
+			return false;
 		if(partner->m_objective == OBJECTIVE_LEAVE_CAR){
 			// The same goes for an order that came from somewhere else (a car
 			// on fire gives one) and could not be carried out yet.

@@ -13,9 +13,11 @@
 // The "Remote Speaker" row on the sound page, persisted to the INI.  0 mutes all of it.
 extern int8_t WiiRemoteSpeakerEnabled;
 
-// Each asks for one clip on the first remote.  Safe to call whenever; they are no-ops
-// with the option off or no remote connected, and a request that has waited too long
-// behind another clip (or the speaker powering up) is dropped rather than played late.
+// Each asks for one clip on the speaker's remote (player 1's, or the first
+// partner remote when player 1 is on a GameCube pad).  Safe to call whenever;
+// they are no-ops with the option off or no remote connected, and a request
+// that has waited too long behind another clip (or the speaker powering up) is
+// dropped rather than played late.
 void WiiSpeakerPlayTuneStatic(void);
 void WiiSpeakerPlayShot(void);
 void WiiSpeakerPlayRing(void);

@@ -96,8 +96,9 @@ bool WiiPadCanPlay(void);
 // the SYS_ResetSystem call there.
 bool WiiPadReturnToMenuRequested(void);
 
-// True while the Wiimote on channel 0 is in the hands of couch co-op's second
-// player.  The remote speaker is that remote's, and its sounds are player 1's.
+// True while the remote the speaker drives is in the hands of couch co-op's
+// second player.  Its sounds are player 1's, so clips stay silent there; a
+// phone line may still use it when it is the only remote in the room.
 bool WiiPadRemoteIsPartners(void);
 
 // What a Wii Remote's POWER button should do, asked from its callback on that

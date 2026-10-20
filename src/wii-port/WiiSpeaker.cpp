@@ -391,12 +391,14 @@ encodeCall(const s16 *samples, u32 count)
 		startCallStream();
 }
 
-// Whether the speaker is free to speak.  It is the remote on channel 0's, and everything
-// it is asked to say -- the radio's tuning, the phone, a mission call -- is player 1's.
-// While that remote is in a couch co-op partner's hands they would hear all of it, so the
-// three ways in (a clip, waking it for a call, routing a call) and the service loop all
-// ask here, so the callers do not each have to.  The gunshot sites in Weapon.cpp ask as
-// well, which is now redundant and does no harm.
+// Whether the speaker is free to speak.  It is player 1's remote -- or the
+// first partner remote when player 1 is on a GameCube pad -- and everything it
+// is asked to say (the radio's tuning, the phone, a mission call) is player 1's.
+// While that remote is in a couch co-op partner's hands they would hear all of
+// it, so the three ways in (a clip, waking it for a call, routing a call) and
+// the service loop all ask here, so the callers do not each have to.  The
+// gunshot sites in Weapon.cpp ask as well, which is now redundant and does no
+// harm.
 bool
 speakerIsPlayerOnes(void)
 {
@@ -404,8 +406,9 @@ speakerIsPlayerOnes(void)
 }
 
 // Phone calls are player 1's story, but the only remote in the room may be the
-// one a partner is holding: player 1 on a GameCube pad, a partner on channel 0.
-// The TV still carries the call; letting the only speaker carry it too is
+// one a partner is holding: player 1 on a GameCube pad, a partner on the
+// speaker's remote.  The TV still carries the call; letting the only speaker
+// carry it too is
 // better than leaving the call silent on the controller.  Clips keep the
 // stricter speakerIsPlayerOnes rule.
 bool
