@@ -97,7 +97,10 @@ class CVehicle;
 // or more contest it and nobody scores.  It works on foot, in cars and in
 // Rhinos.  Player-on-player damage is forced on for the round whatever the
 // friendly-fire toggle says, because a hill nobody can take from anybody is
-// not a hill.  Ninety seconds; most time held wins.
+// not a hill.  A downed or arrested partner is brought back at the body after
+// four seconds, so a fight does not thin the party out; the ordinary revive is
+// still there for anyone who reaches them sooner.  Ninety seconds; most time
+// held wins.
 //
 // The toy race, the dance-off, cops & robbers and Caddy football do not arm
 // while anyone in the party is wanted: they start from a jump, a duck or a

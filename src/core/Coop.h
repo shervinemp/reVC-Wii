@@ -139,6 +139,11 @@ public:
 	// who is not down, and always for player 1: his going down ends the session's
 	// run rather than starting a countdown.  Read-only.
 	static bool GetDownedState(int player, float &bleedLeft, float &reviveProgress);
+	// Brings a downed or arrested partner back at the body, through the same
+	// removal and arrival as an ordinary revive.  King of the Hill calls this
+	// after a few seconds so a round does not thin out; player 1 is still the
+	// engine's to bring back.
+	static bool ReviveDownedPlayer(int player);
 
 	// --- camera --------------------------------------------------------------
 	// Which of the shared camera's framings is in use; see Cam.cpp.  Cycled by

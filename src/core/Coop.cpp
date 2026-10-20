@@ -2734,3 +2734,29 @@ CCoop::GetDownedState(int player, float &bleedLeft, float &reviveProgress)
 		Clamp((float)(now - s_reviveTime[player])/(float)kReviveHoldMs, 0.0f, 1.0f);
 	return true;
 }
+
+bool
+CCoop::ReviveDownedPlayer(int player)
+{
+	if(player <= LEAD || player >= NUMPLAYERS)
+		return false;
+	CPlayerPed *partner = CWorld::Players[player].m_pPed;
+	if(partner == nil || !(partner->DyingOrDead() || partner->m_nPedState == PED_ARRESTED))
+		return false;
+
+	// Back where the body is.  A body in a car gets a clear spot beside the
+	// car instead of the roof; a body on foot gets the pavement it fell on.
+	CVector at = partner->GetPosition();
+	if(partner->bInVehicle && partner->m_pMyVehicle != nil){
+		CVehicle *vehicle = partner->m_pMyVehicle;
+		if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
+			at = vehicle->GetPosition();
+	}
+
+	const uint32 now = CTimer::GetTimeInMilliseconds();
+	RemovePartner(player, "king of the hill", false);
+	s_reviveAt[player] = at;
+	s_reviveValid[player] = true;
+	s_spawnTime[player] = now;
+	return true;
+}

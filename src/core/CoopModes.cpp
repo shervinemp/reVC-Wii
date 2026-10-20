@@ -256,6 +256,8 @@ const float kKothGatherRange = 14.0f;	// the ring, plus a couple of metres
 const uint32 kKothHoldMs = 600;		// every present player holds the nod
 const uint32 kKothCountdownMs = 3000;
 const uint32 kKothRoundMs = 90000;
+const uint32 kKothReviveMs = 4000;	// a downed partner is brought back this soon
+const uint32 kKothAloneGraceMs = 6000;	// a revive's gap is not the round ending
 const uint32 kKothFinishMs = 5000;
 const uint32 kKothRearmMs = 10000;
 const int kKothBarCells = 6;		// a cell every 15 seconds
@@ -281,6 +283,8 @@ struct KothState
 	CVector ring[kKothRingMarks];
 	uint32 scoreMs[NUMPLAYERS];
 	uint32 lastScoreAt;
+	uint32 downSince[NUMPLAYERS];
+	uint32 aloneSince;
 	int holder;
 	int inside;
 	int winner;
@@ -2315,11 +2319,14 @@ TryStartKoth(uint32 now)
 	s_koth.groupSpent = true;
 	s_koth.centre = centre;
 	s_koth.lastScoreAt = s_koth.countdownAt;
+	s_koth.aloneSince = 0;
 	s_koth.holder = -1;
 	s_koth.inside = 0;
 	s_koth.winner = -1;
-	for(int i = 0; i < NUMPLAYERS; i++)
+	for(int i = 0; i < NUMPLAYERS; i++){
 		s_koth.scoreMs[i] = 0;
+		s_koth.downSince[i] = 0;
+	}
 
 	for(int i = 0; i < kKothRingMarks; i++){
 		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
@@ -2359,8 +2366,8 @@ FinishKoth(uint32 now)
 	uint32 bestScore = 0;
 	bool tie = false;
 	for(int i = 0; i < NUMPLAYERS; i++){
-		if(CCoop::GetPlayerPed(i) == nil)
-			continue;
+		// A player in the middle of the hill's own revive still has the time
+		// they held; the scorer is not "not in the world" at the bell.
 		if(s_koth.scoreMs[i] > bestScore){
 			bestScore = s_koth.scoreMs[i];
 			best = i;
@@ -2387,8 +2394,11 @@ EndKoth(uint32 now, const char *why)
 	s_koth.counting = false;
 	s_koth.finished = false;
 	s_koth.groupSince = 0;
+	s_koth.aloneSince = 0;
 	s_koth.holder = -1;
 	s_koth.inside = 0;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_koth.downSince[i] = 0;
 	s_koth.rearmAt = now + kKothRearmMs;
 	COOP_LOG("WII coop: king of the hill off (%s)\n", why);
 }
@@ -2441,10 +2451,41 @@ UpdateKoth(uint32 now)
 			EndKoth(now, "over");
 		return;
 	}
-	if(present < 2){
-		EndKoth(now, "alone");
-		return;
+
+	// A downed or arrested partner is brought back at the body after a few
+	// seconds, so the hill does not turn into a two-player game the moment
+	// somebody loses a fight.  The ordinary co-op revive is still there for
+	// the players who reach a body sooner; this is the mode's own floor.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil){
+			s_koth.downSince[i] = 0;
+			continue;
+		}
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
+			if(s_koth.downSince[i] == 0)
+				s_koth.downSince[i] = now;
+			else if(now - s_koth.downSince[i] >= kKothReviveMs){
+				CCoop::ReviveDownedPlayer(i);
+				s_koth.downSince[i] = 0;
+			}
+		}else
+			s_koth.downSince[i] = 0;
 	}
+
+	// A revive removes the ped for a frame or two, and a player walking out of
+	// the party removes theirs for good.  The gap is not the round ending; a
+	// player who never comes back is.
+	if(present < 2){
+		if(s_koth.aloneSince == 0)
+			s_koth.aloneSince = now;
+		else if(now - s_koth.aloneSince >= kKothAloneGraceMs){
+			EndKoth(now, "alone");
+			return;
+		}
+	}else
+		s_koth.aloneSince = 0;
+
 	if(s_koth.counting){
 		if(now < s_koth.countdownAt)
 			return;
