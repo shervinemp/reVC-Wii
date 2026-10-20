@@ -13,6 +13,7 @@
 #include "AudioManager.h"
 #include "wii-port/WiiLog.h"
 #include "wii-port/WiiSpeaker.h"
+#include "wii-port/WiiTrace.h"
 #include "WiiAudioStreaming.h"
 #include "WiiSfxCache.h"
 
@@ -951,6 +952,7 @@ cSampleManager::SetStreamRemoteCall(bool8 on, uint8 stream)
 		// speaker is brought up here.  The payphone-pickup path used to be the only
 		// place that ever did this, which is why a mission cellphone call -- which has
 		// no pickup -- never reached the remote at all.
+		WiiTraceReport("WII speaker: stream %u marked as a phone call\n", (unsigned)stream);
 		WiiSpeakerWake();
 	}
 }

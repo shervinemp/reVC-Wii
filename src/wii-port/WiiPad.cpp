@@ -1550,14 +1550,16 @@ WiiPadJoinPulse(int player)
 }
 
 // --- the Nunchuk's lean ------------------------------------------------------
-// A Wiimote and Nunchuk have no right stick.  In a helicopter the right stick
-// is the yaw, and in the Rhino it is the turret, so the Nunchuk's own lean
-// stands in for it there and nowhere else: in a car the same axis is the
-// camera's look, the drive-by aim and the hydraulics, and none of those are
+// A Wiimote and Nunchuk have no right stick.  In a helicopter or a plane the
+// right stick is the yaw, and in the Rhino it is the turret, so the Nunchuk's
+// own lean stands in for it there and nowhere else: in a car the same axis is
+// the camera's look, the drive-by aim and the hydraulics, and none of those are
 // steered by leaning.  The fire truck is the other way round -- its stick
 // drives the truck and the hose is what is left -- so there the lean drives
 // both halves of the hose: left and right steers it, and leaning the Nunchuk
-// away or towards the player raises and lowers it.
+// away or towards the player raises and lowers it.  If the accelerometer is
+// flat or not reporting, the D-pad's look-left/look-right fields are the
+// fallback yaw in these vehicles; the shared co-op camera does not use them.
 //
 // The accelerometer carries gravity: leaning the Nunchuk over moves it between
 // the down axis (Z, across the face) and the right axis (X, along the short
@@ -1599,9 +1601,17 @@ WiiNunchukTiltSteering(int padID)
 		return 0;
 	CVehicle *vehicle = ped->m_pMyVehicle;
 	if(vehicle->GetModelIndex() != MI_RHINO && vehicle->GetModelIndex() != MI_FIRETRUCK &&
-	   !vehicle->IsRealHeli())
+	   !vehicle->IsRealHeli() && !vehicle->IsRealPlane() && !CVehicle::bAllDodosCheat)
 		return 0;
-	return NunchukLean(padID, 0);
+	const s16 lean = NunchukLean(padID, 0);
+	if(lean != 0)
+		return lean;
+	CPad *pad = CPad::GetPad(padID);
+	if(pad == nil)
+		return 0;
+	const s16 right = pad->NewState.RightShoulder2 != 0 ? (s16)kAxisFullScale : 0;
+	const s16 left = pad->NewState.LeftShoulder2 != 0 ? (s16)kAxisFullScale : 0;
+	return right - left;
 }
 
 s16

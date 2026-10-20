@@ -239,16 +239,10 @@ bool s_padHere[kNumPartners];
 uint32 s_padSince[kNumPartners];
 uint32 s_padLast[kNumPartners];
 bool s_padEver[kNumPartners];
-// Whether somebody has pressed a button on it since it turned up, and whether
-// they have been told that is what it takes.
+// Whether somebody has joined with it since it turned up.  Presence is the
+// whole rule now; the batteries of a joined remote are called low once per
+// connection.
 bool s_joined[kNumPartners];
-bool s_joinTold[kNumPartners];
-// And when they were last told, so a controller that is pressed without joining
-// -- +, - or the stick, none of which is the join button -- is told again, but
-// not every time a thumb brushes it.  Also whether the batteries of a joined
-// remote have been called low yet, once per connection.
-const uint32 kJoinHintMs = 20000;
-uint32 s_joinHintAt[kNumPartners];
 bool s_batteryTold[kNumPartners];
 // A controller that has not been seen this long counts as lost, for the HUD.
 // Longer than the pad layer's own grace for a dropped report (twenty scans, a
@@ -453,7 +447,6 @@ TellAbout(int player, const char *key)
 // One help line per partner, so a line about player 3 says player 3.  The
 // words are in Text.cpp's fallback table, since the user's own GXT files are
 // never rewritten.
-const char *const kJoinKeys[kNumPartners] = { "WII_P2J", "WII_P3J", "WII_P4J" };
 const char *const kJoinedKeys[kNumPartners] = { "WII_P2I", "WII_P3I", "WII_P4I" };
 const char *const kLeftKeys[kNumPartners] = { "WII_P2O", "WII_P3O", "WII_P4O" };
 const char *const kDownKeys[kNumPartners] = { "WII_P2D", "WII_P3D", "WII_P4D" };
@@ -854,6 +847,23 @@ FreeTeleportSeat(CVehicle *vehicle, uint8 &seat)
 	return false;
 }
 
+// Whether a partner can be put into or beside this vehicle without being
+// dropped into a fire, a bomb or the middle of a landing.  A partner who
+// appears in a car that is already burning is dead before the door closes.
+bool
+VehicleSafeForPartner(CVehicle *vehicle)
+{
+	if(vehicle == nil || vehicle->GetStatus() == STATUS_WRECKED)
+		return false;
+	if(vehicle->m_pCarFire != nil || vehicle->m_fHealth < 250.0f || vehicle->m_nBombTimer > 0)
+		return false;
+	bool found = false;
+	const CVector pos = vehicle->GetPosition();
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	// Five metres: still clearly in the air, not just a kerb or a jump.
+	return found && pos.z - ground <= 5.0f;
+}
+
 // Whether a player can sit in this vehicle while another player drives it.
 // Only ever a vehicle a player is driving: the engine makes any player who
 // gets onto a bike or into a boat its driver whatever seat they asked for,
@@ -869,6 +879,8 @@ CanRideAlong(CPlayerPed *driver, CVehicle *vehicle)
 	if(!vehicle->IsCar() && !vehicle->IsBike())
 		return false;
 	if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->bIsInWater || vehicle->IsUpsideDown())
+		return false;
+	if(!VehicleSafeForPartner(vehicle))
 		return false;
 	uint8 seat;
 	return FreeTeleportSeat(vehicle, seat);
@@ -1241,8 +1253,10 @@ SpawnPartner(CPlayerPed *lead, int player)
 				// No seat.  Beside it if it is standing still, and otherwise not
 				// yet: they join when player 1 stops or gets out.  Which, to the
 				// person holding the controller, is a character who has vanished,
-				// so they are told.
-				if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle)){
+				// so they are told.  A burning, bombed or still-airborne vehicle
+				// is not a place to put them either: wait for it to be safe.
+				if(vehicle->IsBoat() || vehicle->m_vecMoveSpeed.MagnitudeSqr() > SQR(kSlowVehicle) ||
+				   !VehicleSafeForPartner(vehicle)){
 					NoteWaiting(player, vehicle);
 					return false;
 				}
@@ -1577,7 +1591,7 @@ HoldingLeadAtWall(int player, CPlayerPed *partner)
 		return false;
 	const uint32 now = CTimer::GetTimeInMilliseconds();
 	if(now - s_wallLast[player] > kWallGapMs || partner->bInVehicle ||
-	   (partner->GetPosition() - s_wallAt[player]).MagnitudeSqr() > SQR(kWallMoved)){
+	   (partner->GetPosition() - s_wallAt[player]).Magnitude2D() > kWallMoved){
 		s_wallSince[player] = 0;
 		return false;
 	}
@@ -1602,7 +1616,12 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, int player, bool leadTelepor
 
 	const CVector leadPos = (lead->bInVehicle && lead->m_pMyVehicle) ? lead->m_pMyVehicle->GetPosition() : lead->GetPosition();
 	const CVector partnerPos = partnerVehicle != nil ? partnerVehicle->GetPosition() : partner->GetPosition();
-	if(partnerPos.z < leadPos.z - kFallLimit)
+	// A player 1 in the air is not a floor: a partner on the ground below a
+	// landing helicopter is not somebody who fell out of the world.
+	const bool leadAirborne = lead->bInVehicle && lead->m_pMyVehicle != nil &&
+		(lead->m_pMyVehicle->IsRealHeli() || lead->m_pMyVehicle->IsRealPlane() ||
+		 CVehicle::bAllDodosCheat);
+	if(!leadAirborne && partnerPos.z < leadPos.z - kFallLimit)
 		return "fell";
 	// Anyone in a vehicle a player is driving gets the longer leash, the driver
 	// and their passengers alike: it is the car that goes too far, a passenger
@@ -1614,7 +1633,9 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, int player, bool leadTelepor
 	// A pursuit mode suspends the distance leash -- falls and kidnaps still
 	// bring a partner back, distance no longer does.
 	const float leash = (partnerVehicle != nil && partnerVehicle->pDriver != nil) ? kLeashDriving : kLeash;
-	if(!CCoopModes::FreeRoam() && (leadPos - partnerPos).Magnitude() > leash)
+	// Ground distance, not 3D: a partner under a landing helicopter or a car
+	// at the top of a jump is not "too far" because of the height.
+	if(!CCoopModes::FreeRoam() && (leadPos - partnerPos).Magnitude2D() > leash)
 		return "too far from player 1";
 	// The wall holds player 1 to this partner, and the partner is not coming.
 	if(!CCoopModes::FreeRoam() && HoldingLeadAtWall(player, partner))
@@ -1911,8 +1932,6 @@ CCoop::Init(void)
 		s_padHere[partner] = false;
 		s_padEver[partner] = false;
 		s_joined[partner] = false;
-		s_joinTold[partner] = false;
-		s_joinHintAt[partner] = 0;
 		s_batteryTold[partner] = false;
 		s_padSince[partner] = 0;
 		s_padLast[partner] = 0;
@@ -2166,24 +2185,24 @@ CCoop::Update(void)
 	// house -- leaves the partners where they were.  Travel never covers this
 	// much ground in a frame, on foot or in anything.
 	const CVector leadPos = (lead->bInVehicle && lead->m_pMyVehicle) ? lead->m_pMyVehicle->GetPosition() : lead->GetPosition();
-	const bool leadTeleported = s_leadPosValid && (leadPos - s_leadPos).Magnitude() > kTeleportStep;
+	const CVector leadMoved = leadPos - s_leadPos;
+	const bool leadTeleported = s_leadPosValid &&
+		(leadMoved.Magnitude2D() > kTeleportStep || Abs(leadMoved.z) > 2.0f*kTeleportStep);
 	s_leadPos = leadPos;
 	s_leadPosValid = true;
 
-	// The partners' pads: presence, the join button, and the leave.  One
-	// partner joining or leaving is nobody else's business.
+	// The partners' pads: presence, the join, and the leave.  One partner
+	// joining or leaving is nobody else's business.
 	bool padPresent[NUMPLAYERS];
 	bool padGone[NUMPLAYERS];
 	padPresent[LEAD] = false;
 	padGone[LEAD] = false;
 	for(int partner = 0; partner < kNumPartners; partner++){
 		const int player = partner + 1;
-		CPad *pad = CPad::GetPad(PAD_COOP + partner);
 		padPresent[player] = s_padHere[partner] && now - s_padSince[partner] >= kJoinAfterMs;
 		padGone[player] = !s_padHere[partner] && (!s_padEver[partner] || now - s_padLast[partner] > kDropAfterMs);
 		if(padGone[player]){
 			s_joined[partner] = false;
-			s_joinTold[partner] = false;
 			s_batteryTold[partner] = false;
 			s_announceReturn[player] = false;
 			// A camera focus was that partner's choice for their drive.  Their
@@ -2192,34 +2211,13 @@ CCoop::Update(void)
 			if(ms_nCameraFocus == player)
 				ms_nCameraFocus = -1;
 		}else if(padPresent[player] && !s_joined[partner]){
-			// Any of these joins; they are A, B, 1, 2, Z, C and the D-pad on a
-			// remote and Nunchuk, the face buttons, shoulders and D-pad on a Classic
-			// Controller, and the same on a GameCube pad.  The prompt names A, the
-			// one that is the same button on all three (Cross in every capture
-			// function in WiiPad.cpp).  + and - are Start and Select, and the sticks
-			// are the sticks, and none of them joins.
-			const CControllerState &held = pad->NewState;
-			if(held.Cross || held.Circle || held.Square || held.Triangle ||
-			   held.LeftShoulder1 || held.LeftShoulder2 || held.RightShoulder1 || held.RightShoulder2 ||
-			   held.DPadUp || held.DPadDown || held.DPadLeft || held.DPadRight ||
-			   partner < ms_nAutoJoinPartners){
-				s_joined[partner] = true;
+			// A controller that is present is a player.  There is no button to
+			// press: the four hundred milliseconds in padPresent are the only
+			// debounce, so a hot-plug that is still settling is not a join.
+			s_joined[partner] = true;
 #ifdef NINTENDO_WII
-				WiiPadJoinPulse(player);
+			WiiPadJoinPulse(player);
 #endif
-			}else{
-				// Told when the controller is first noticed, and again whenever
-				// it is pressed without joining, which is somebody trying to:
-				// the first line goes by before the controller is in anyone's
-				// hands, and a +, - or stick press otherwise gets no answer.
-				const bool again = s_joinTold[partner] && now - s_joinHintAt[partner] >= kJoinHintMs &&
-					PadTouched(held, pad->OldState);
-				if(!s_joinTold[partner] || again){
-					s_joinTold[partner] = true;
-					s_joinHintAt[partner] = now;
-					Tell(kJoinKeys[partner]);
-				}
-			}
 		}
 #ifdef NINTENDO_WII
 		// A remote that is running out of batteries drops out in the middle of a
@@ -2753,8 +2751,11 @@ CCoop::ReviveDownedPlayer(int player)
 	CVector at = partner->GetPosition();
 	if(partner->bInVehicle && partner->m_pMyVehicle != nil){
 		CVehicle *vehicle = partner->m_pMyVehicle;
-		if(!FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
-			at = vehicle->GetPosition();
+		// A burning, bombed or still-airborne car is not a revive spot.  Wait
+		// for it to be safe rather than dropping the partner into the blast.
+		if(!VehicleSafeForPartner(vehicle) ||
+		   !FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
+			return false;
 	}
 
 	const uint32 now = CTimer::GetTimeInMilliseconds();

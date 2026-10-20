@@ -95,7 +95,7 @@ co-op layer whose behaviour depends on co-op reads `PairActive()` (or
 - **Joining takes a button press.** A controller being connected is not a
   player: the remote that launched the game is still switched on while its
   owner plays on a GameCube pad, and would otherwise put an idle Tommy beside
-  everyone who plays that way. The help box says "Player 3: press A to join"
+  everyone who plays that way. A controller that is connected joins; the help box says "Player 3: controller connected"
   when that controller is noticed — one line per partner, so it names the right
   player — and again, at most every 20 s per controller, when someone presses
   +, − or the stick on it, none of which joins. A Wii Remote with nothing

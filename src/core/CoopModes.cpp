@@ -2451,6 +2451,21 @@ FinishKoth(uint32 now)
 	s_koth.finishAt = now + kKothFinishMs;
 }
 
+// A burning, bombed or still-airborne vehicle is not a revive spot.
+bool
+KothVehicleSafe(CVehicle *vehicle)
+{
+	if(vehicle == nil || vehicle->GetStatus() == STATUS_WRECKED)
+		return false;
+	if(vehicle->m_pCarFire != nil || vehicle->m_fHealth < 250.0f || vehicle->m_nBombTimer > 0)
+		return false;
+	bool found = false;
+	const CVector pos = vehicle->GetPosition();
+	const float ground = CWorld::FindGroundZFor3DCoord(pos.x, pos.y, pos.z + 2.0f, &found);
+	// Five metres: still clearly in the air, not just a kerb or a jump.
+	return found && pos.z - ground <= 5.0f;
+}
+
 // A spot beside a car the lead died in: the car is left abandoned, so putting
 // the player back on its centre would put them inside the roof or the tank.
 CVector
@@ -2487,7 +2502,17 @@ ReviveKothLead(void)
 	const float angle = lead->m_fRotationCur;
 	if(lead->bInVehicle && lead->m_pMyVehicle != nil){
 		CVehicle *vehicle = lead->m_pMyVehicle;
-		at = KothLeadSpot(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward());
+		if(KothVehicleSafe(vehicle)){
+			at = KothLeadSpot(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward());
+		}else{
+			// Do not come back under a burning or falling car: the hill's
+			// centre is the safe ground the round is about.
+			at = s_koth.centre;
+			bool found = false;
+			const float ground = CWorld::FindGroundZFor3DCoord(at.x, at.y, at.z + 2.0f, &found);
+			if(found)
+				at.z = ground;
+		}
 		if(vehicle->pDriver == lead){
 			vehicle->pDriver = nil;
 			if(vehicle->GetStatus() != STATUS_WRECKED)

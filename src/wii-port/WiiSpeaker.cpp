@@ -331,6 +331,17 @@ speakerIsPlayerOnes(void)
 	return !WiiPadRemoteIsPartners();
 }
 
+// Phone calls are player 1's story, but the only remote in the room may be the
+// one a partner is holding: player 1 on a GameCube pad, a partner on channel 0.
+// The TV still carries the call; letting the only speaker carry it too is
+// better than leaving the call silent on the controller.  Clips keep the
+// stricter speakerIsPlayerOnes rule.
+bool
+speakerCanPhone(void)
+{
+	return WiiRemoteSpeakerEnabled && WiiPhoneRemoteMode != 0;
+}
+
 // Asks for a clip, powering the speaker up if it is off.  A request that is still
 // waiting when a better one arrives is replaced rather than queued: there is room
 // for one, and the better one is the one worth hearing.
@@ -378,7 +389,7 @@ WiiSpeakerPlayRing(void)
 void
 WiiSpeakerWake(void)
 {
-	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || !speakerIsPlayerOnes())
+	if(!speakerCanPhone())
 		return;
 	u32 expansion;
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
@@ -394,9 +405,11 @@ WiiSpeakerWake(void)
 bool
 WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 {
-	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate ||
-	   !speakerIsPlayerOnes())
+	if(!speakerCanPhone() || sampleRate < kSampleRate){
+		WiiTraceReport("WII speaker: call rejected enabled=%d mode=%d rate=%u\n",
+			(int)WiiRemoteSpeakerEnabled, (int)WiiPhoneRemoteMode, sampleRate);
 		return false;
+	}
 	releaseCallBuffer();
 	// Only a speaker that is already up, and nothing else still streaming: a line
 	// that cannot start at its first word is better left on the TV than joined late.
@@ -502,7 +515,7 @@ WiiSpeakerService(void)
 	// A remote that has been handed to a partner mid-clip or mid-call is let go of the
 	// same way a lost one is: the line goes back to the TV.
 	u32 expansion;
-	if(!WiiRemoteSpeakerEnabled || !speakerIsPlayerOnes() ||
+	if(!WiiRemoteSpeakerEnabled || (!speakerIsPlayerOnes() && !s_call.active) ||
 	   WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE){
 		powerDown();
 		return;

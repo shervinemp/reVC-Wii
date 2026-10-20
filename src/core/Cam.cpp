@@ -1254,7 +1254,9 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			continue;
 		for(int j = i + 1; j < NUMPLAYERS; j++)
 			if(present[j]){
-				const float dist = (pos[i] - pos[j]).Magnitude();
+				// Horizontal, not 3D: a jump, a helicopter climb or a flying
+				// car should not pull the shared view out to the horizon.
+				const float dist = (pos[i] - pos[j]).Magnitude2D();
 				if(dist > separation)
 					separation = dist;
 			}
