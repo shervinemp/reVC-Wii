@@ -248,6 +248,45 @@ struct PitchState
 };
 PitchState s_pitch;
 
+// --- King of the Hill's numbers ----------------------------------------------
+
+const float kKothRadius = 12.0f;
+const int kKothRingMarks = 12;
+const float kKothGatherRange = 30.0f;
+const uint32 kKothHoldMs = 600;		// every present player holds the nod
+const uint32 kKothCountdownMs = 3000;
+const uint32 kKothRoundMs = 90000;
+const uint32 kKothFinishMs = 5000;
+const uint32 kKothRearmMs = 10000;
+const int kKothBarCells = 6;		// a cell every 15 seconds
+const int kKothPay = 500;
+
+// King of the Hill: a ring at the party's feet.  Exactly one player inside
+// scores while they are the only one; two or more contest it and nobody
+// scores.  The player inside can be on foot, in a car or in a Rhino; damage
+// is forced on for the round, whatever the friendly-fire toggle says.
+struct KothState
+{
+	bool active;
+	bool counting;
+	bool finished;
+	uint32 countdownAt;
+	uint32 endAt;
+	uint32 finishAt;
+	uint32 rearmAt;
+	uint32 groupSince;	// when every present player began holding the nod
+	bool groupSpent;	// that hold already started a round; release to ask again
+	int groupNod;		// how many are holding it now, for the other modes
+	CVector centre;
+	CVector ring[kKothRingMarks];
+	uint32 scoreMs[NUMPLAYERS];
+	uint32 lastScoreAt;
+	int holder;
+	int inside;
+	int winner;
+};
+KothState s_koth;
+
 // --- the RC race's numbers ---------------------------------------------------
 
 const int kRcGates = 4;
@@ -423,6 +462,7 @@ enum eExplainer
 	EXPLAIN_DANCE,
 	EXPLAIN_CNR,
 	EXPLAIN_PITCH,
+	EXPLAIN_KOTH,
 	EXPLAIN_COUNT
 };
 
@@ -452,7 +492,8 @@ ShowExplainer(int mode, uint32 now)
 bool
 ModeActive(void)
 {
-	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active || s_cnr.active || s_pitch.active;
+	return s_shift.active || s_run.active || s_derby.active || s_rc.active || s_dance.active || s_cnr.active ||
+	       s_pitch.active || s_koth.active;
 }
 
 // Where a player is for these purposes: their car while they are in one, so a
@@ -2022,6 +2063,10 @@ TryStartPitch(uint32 now, bool held)
 {
 	if(!held)
 		return;
+	// A group hold is asking for the hill, not a pitch.  UpdateKoth has
+	// already seen this frame's count.
+	if(s_koth.groupNod >= 2)
+		return;
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
 	if(ModeActive())
@@ -2224,6 +2269,210 @@ UpdatePitch(uint32 now)
 	}
 
 	RegisterPitchCoronas();
+}
+
+// --- King of the Hill --------------------------------------------------------
+
+void
+TryStartKoth(uint32 now)
+{
+	if(!CoopMinigames || !CCoop::PairActive())
+		return;
+	if(ModeActive())
+		return;
+	if(now < s_koth.rearmAt)
+		return;
+
+	const CVector centre = CrewCentre();
+	int present = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		if((PlayerCoors(i) - centre).Magnitude2D() > kKothGatherRange)
+			return;
+		present++;
+	}
+	if(present < 2)
+		return;
+
+	s_koth.active = true;
+	s_koth.counting = true;
+	s_koth.finished = false;
+	s_koth.countdownAt = now + kKothCountdownMs;
+	s_koth.endAt = s_koth.countdownAt + kKothRoundMs;
+	s_koth.finishAt = 0;
+	s_koth.rearmAt = 0;
+	s_koth.groupSince = 0;
+	s_koth.groupSpent = true;
+	s_koth.centre = centre;
+	s_koth.lastScoreAt = s_koth.countdownAt;
+	s_koth.holder = -1;
+	s_koth.inside = 0;
+	s_koth.winner = -1;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_koth.scoreMs[i] = 0;
+
+	for(int i = 0; i < kKothRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
+		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kKothRadius;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
+		mark.z = (found ? ground : centre.z) + 1.0f;
+		s_koth.ring[i] = mark;
+	}
+
+	COOP_LOG("WII coop: king of the hill on\n");
+	CCoop::Notify("WII_CSK");
+	ShowExplainer(EXPLAIN_KOTH, now);
+}
+
+void
+RegisterKothCoronas(void)
+{
+	// Gold while the hill is open, the holder's colour while one player has
+	// it, red while it is contested: the ring itself says who is scoring.
+	CRGBA colour(255, 215, 80, 255);
+	if(s_koth.inside >= 2)
+		colour = CRGBA(255, 90, 80, 255);
+	else if(s_koth.holder >= 0)
+		colour = kCoopColours[s_koth.holder];
+	for(int i = 0; i < kKothRingMarks; i++)
+		CCoronas::RegisterCorona((uintptr)&s_koth + i, colour.r, colour.g, colour.b, 255,
+			s_koth.ring[i], 2.5f, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+}
+
+void
+FinishKoth(uint32 now)
+{
+	int best = -1;
+	uint32 bestScore = 0;
+	bool tie = false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		if(CCoop::GetPlayerPed(i) == nil)
+			continue;
+		if(s_koth.scoreMs[i] > bestScore){
+			bestScore = s_koth.scoreMs[i];
+			best = i;
+			tie = false;
+		}else if(s_koth.scoreMs[i] == bestScore && s_koth.scoreMs[i] > 0)
+			tie = true;
+	}
+	if(!tie && best >= 0){
+		s_koth.winner = best;
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kKothPay;
+		COOP_LOG("WII coop: king of the hill to player %d\n", best + 1);
+	}else
+		s_koth.winner = -1;
+	s_koth.holder = -1;
+	s_koth.inside = 0;
+	s_koth.finished = true;
+	s_koth.finishAt = now + kKothFinishMs;
+}
+
+void
+EndKoth(uint32 now, const char *why)
+{
+	s_koth.active = false;
+	s_koth.counting = false;
+	s_koth.finished = false;
+	s_koth.groupSince = 0;
+	s_koth.holder = -1;
+	s_koth.inside = 0;
+	s_koth.rearmAt = now + kKothRearmMs;
+	COOP_LOG("WII coop: king of the hill off (%s)\n", why);
+}
+
+void
+UpdateKoth(uint32 now)
+{
+	// Every present player holds the nod: the group gesture.  It is also
+	// counted here so the one-player nod modes wait while a group is clearly
+	// asking for the hill instead.
+	int present = 0;
+	int holding = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		present++;
+		if(GetPadFromPlayer(ped)->NewState.Triangle != 0)
+			holding++;
+	}
+	s_koth.groupNod = holding;
+
+	if(!s_koth.active){
+		if(holding == 0)
+			s_koth.groupSpent = false;
+		if(s_koth.groupSpent){
+			s_koth.groupSince = 0;
+			return;
+		}
+		if(present >= 2 && holding == present){
+			if(s_koth.groupSince == 0)
+				s_koth.groupSince = now;
+			else if(now - s_koth.groupSince >= kKothHoldMs){
+				s_koth.groupSince = 0;
+				TryStartKoth(now);
+			}
+		}else
+			s_koth.groupSince = 0;
+		return;
+	}
+
+	if(!CCoop::PairActive()){
+		EndKoth(now, "session");
+		return;
+	}
+	RegisterKothCoronas();
+
+	if(s_koth.finished){
+		if(now >= s_koth.finishAt)
+			EndKoth(now, "over");
+		return;
+	}
+	if(present < 2){
+		EndKoth(now, "alone");
+		return;
+	}
+	if(s_koth.counting){
+		if(now < s_koth.countdownAt)
+			return;
+		s_koth.counting = false;
+		s_koth.lastScoreAt = now;
+	}
+
+	// Who is on the hill?  A player is wherever the game says they are: their
+	// car or Rhino while they are in one.  Two players in one car are two
+	// occupants, so the hill is contested.
+	int inside = 0;
+	int occupant = -1;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->DyingOrDead())
+			continue;
+		if((PlayerCoors(i) - s_koth.centre).Magnitude2D() <= kKothRadius){
+			inside++;
+			occupant = i;
+		}
+	}
+	s_koth.inside = inside;
+
+	if(inside == 1){
+		s_koth.holder = occupant;
+		if(s_koth.scoreMs[occupant] < kKothRoundMs){
+			const uint32 room = kKothRoundMs - s_koth.scoreMs[occupant];
+			const uint32 delta = now - s_koth.lastScoreAt;
+			s_koth.scoreMs[occupant] += Min(delta, room);
+		}
+	}else
+		s_koth.holder = -1;
+	s_koth.lastScoreAt = now;
+
+	if(now >= s_koth.endAt)
+		FinishKoth(now);
 }
 
 // --- the RC race -------------------------------------------------------------
@@ -2924,6 +3173,9 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 void
 TryStartCnR(uint32 now, bool held)
 {
+	// A group nod is the hill's.  See UpdateKoth.
+	if(s_koth.groupNod >= 2)
+		return;
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
 	if(ModeActive())
@@ -3294,7 +3546,8 @@ DrawExplainer(uint32 now)
 		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
 		"HOLD NOD TO START. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
-		"EACH IN A CAR, HOLD NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED"
+		"EACH IN A CAR, HOLD NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
+		"ALL HOLD NOD. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -3307,7 +3560,9 @@ DrawExplainer(uint32 now)
 	case EXPLAIN_RC: live = s_rc.active; break;
 	case EXPLAIN_DANCE: live = s_dance.active; break;
 	case EXPLAIN_CNR: live = s_cnr.active; break;
-	default: live = s_pitch.active; break;
+	case EXPLAIN_PITCH: live = s_pitch.active; break;
+	case EXPLAIN_KOTH: live = s_koth.active; break;
+	default: live = false; break;
 	}
 	if(!live)
 		return;
@@ -3488,6 +3743,38 @@ DrawModeMarks(uint32 now)
 		}
 	}
 
+	// King of the Hill: the round clock and who is on the hill, then a bar per
+	// player for the time they have held it alone.
+	if(s_koth.active){
+		if(s_koth.finished){
+			DrawWinner(s_koth.winner);
+		}else if(s_koth.counting){
+			DrawStatus("KING OF THE HILL", white);
+			DrawCountdown(now, s_koth.countdownAt);
+		}else{
+			char koth[48];
+			const uint32 left = s_koth.endAt > now ? (s_koth.endAt - now + 999)/1000 : 0;
+			if(s_koth.inside >= 2)
+				sprintf(koth, "KING OF THE HILL  %us  CONTESTED", left);
+			else if(s_koth.holder >= 0)
+				sprintf(koth, "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
+			else
+				sprintf(koth, "KING OF THE HILL  %us  GET IN", left);
+			DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
+			           s_koth.inside >= 2 ? CRGBA(255, 120, 120, 255) : white);
+		}
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil)
+				continue;
+			DrawLaneBar(i, (float)s_koth.scoreMs[i]/(float)kKothRoundMs, kKothBarCells);
+			float cx, cy;
+			LaneSlot(i, cx, cy);
+			char secs[16];
+			sprintf(secs, "%us", s_koth.scoreMs[i]/1000);
+			PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), secs, white, 0.45f, 0.7f);
+		}
+	}
+
 	// The race: the lights, then a bar per racer for how far round they are,
 	// a cell to a lap, and which lap they are on.
 	if(s_rc.active){
@@ -3615,6 +3902,10 @@ CCoopModes::Init(void)
 	s_pitch.winner = -1;
 	s_pitch.winnerTeam = -1;
 
+	memset(&s_koth, 0, sizeof(s_koth));
+	s_koth.holder = -1;
+	s_koth.winner = -1;
+
 	memset(&s_explain, 0, sizeof(s_explain));
 }
 
@@ -3630,7 +3921,10 @@ CCoopModes::Update(void)
 	if(!CCoop::PairActive())
 		memset(&s_explain, 0, sizeof(s_explain));
 
-	// The modes are independent; all ride the same session state.
+	// The modes are independent; all ride the same session state.  King of the
+	// Hill goes first: its group nod must claim the press before the
+	// one-player nod modes can read the same hold.
+	UpdateKoth(now);
 	UpdateRun(now);
 	UpdatePitch(now);
 	UpdateDerby(now);
@@ -3754,10 +4048,11 @@ bool
 CCoopModes::SteadyView(void)
 {
 	// The derby, where every car is spinning, the toy race, where every car is
-	// a twitchy little thing that would whip the view around, and Caddy
-	// football, where the pitch should hold still while four cars fight over
-	// one golf cart.  See CCam::Process_WiiCoop.
-	return s_derby.active || s_rc.active || s_pitch.active;
+	// a twitchy little thing that would whip the view around, Caddy football,
+	// where the pitch should hold still while four cars fight over one golf
+	// cart, and King of the Hill, which is one fixed ring.  See
+	// CCam::Process_WiiCoop.
+	return s_derby.active || s_rc.active || s_pitch.active || s_koth.active;
 }
 
 bool
@@ -3767,6 +4062,15 @@ CCoopModes::FreeRoam(void)
 	// to stand aside or nobody can outrun anybody.  See CCoop::LimitSeparation
 	// and NeedsRegroup.
 	return s_cnr.active;
+}
+
+bool
+CCoopModes::ForceFriendlyFire(void)
+{
+	// King of the Hill is a fight over a ring: the toggle is suspended for
+	// the round, or a party with friendly fire off could stand in the ring
+	// together and nobody could take it from anybody.
+	return s_koth.active;
 }
 
 bool

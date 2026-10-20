@@ -1980,6 +1980,9 @@ CCoop::GetPlayerIndex(const CEntity *entity)
 bool
 CCoop::FriendlyFireBlocked(CEntity *attacker, CEntity *victim)
 {
+	// King of the Hill suspends the toggle for its round.
+	if(CCoopModes::ForceFriendlyFire())
+		return false;
 	if(CoopFriendlyFire || attacker == nil || victim == nil || attacker == victim)
 		return false;
 	if(!victim->IsPed())

@@ -117,12 +117,18 @@ public:
 	static CVehicle *EscortBoat(int player, CVehicle *lead);
 
 	// Whether a mode is running that wants the camera to hold still rather
-	// than turn with a car's nose: the derby, the toy race and Caddy football.
+	// than turn with a car's nose: the derby, the toy race, Caddy football and
+	// King of the Hill.
 	static bool SteadyView(void);
 
 	// Whether a mode is running that needs the party able to separate: cops &
 	// robbers, which the session's wall and leash would otherwise strangle.
 	static bool FreeRoam(void);
+
+	// Whether a mode is running that forces player-on-player damage on,
+	// whatever the friendly-fire toggle says: King of the Hill.  Asked by
+	// CCoop::FriendlyFireBlocked.
+	static bool ForceFriendlyFire(void);
 
 	// Whether a vehicle is one a mode made for itself and means to hand back: a
 	// toy, a loaner, the suspect's car, a smuggler's pursuer.  They are all

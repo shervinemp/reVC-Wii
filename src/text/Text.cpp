@@ -184,6 +184,7 @@ WiiFallbackText(const char *key)
 		{ "WII_CSF", "DANCE-OFF" },
 		{ "WII_CSN", "COPS & ROBBERS" },
 		{ "WII_CSP", "CADDY FOOTBALL" },
+		{ "WII_CSK", "KING OF THE HILL" },
 		{ "WII_P2D", "Player 2 is down - reach them to bring them back." },
 		{ "WII_P3D", "Player 3 is down - reach them to bring them back." },
 		{ "WII_P4D", "Player 4 is down - reach them to bring them back." },
