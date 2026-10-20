@@ -186,6 +186,10 @@ WiiAudioStream::StartPrepared()
 	// copied across to the remote.
 	m_routed = m_remoteCall &&
 		WiiSpeakerBeginCall(GetLength(), m_decoder->GetSampleRate());
+	if(m_remoteCall)
+		wiiLog("[WII][AUDIO][STREAM %d] phone route=%s rate=%u length=%ums\n",
+		       m_voice, m_routed ? "remote" : "tv",
+		       m_decoder->GetSampleRate(), GetLength());
 	if(!BeginVoice()){
 		wiiLog("[WII][AUDIO][STREAM %d] ASND start failed\n", m_voice);
 		m_playing = false;

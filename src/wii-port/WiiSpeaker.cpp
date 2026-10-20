@@ -89,6 +89,7 @@ Clip s_pending = CLIP_NONE;
 u64 s_pendingTime = 0;
 u64 s_clipEnd = 0;
 u64 s_deadline = 0;	// warm-up timeout while warming, power-down time while on
+u64 s_retryAt = 0;	// when to ask libogc to configure the speaker again
 
 u32 s_noise = 0x2545F491u;
 
@@ -251,6 +252,7 @@ powerDown(void)
 	WPAD_ControlSpeaker(kChannel, 0);
 	s_state = STATE_OFF;
 	s_pending = CLIP_NONE;
+	s_retryAt = 0;
 	// A call routed to the remote is over with it; the TV takes the rest of the line
 	// (the stream asks WiiSpeakerCallActive every frame).
 	s_call.active = false;
@@ -315,7 +317,10 @@ encodeCall(const s16 *samples, u32 count)
 	s_call.encoderFresh = false;
 	s_call.written += pairs/2;
 
-	if(!s_call.started && s_state == STATE_ON)
+	// A ring or another clip may still own the single stream.  The line is
+	// buffered from its first word, so it can start as soon as the stream is
+	// free without losing anything.
+	if(!s_call.started && s_state == STATE_ON && gettime() >= s_clipEnd)
 		startCallStream();
 }
 
@@ -363,6 +368,7 @@ request(Clip clip)
 		WPAD_ControlSpeaker(kChannel, 1);
 		s_state = STATE_WARMING;
 		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
+		s_retryAt = gettime() + millisecs_to_ticks(500);
 	}
 }
 
@@ -399,6 +405,7 @@ WiiSpeakerWake(void)
 		WPAD_ControlSpeaker(kChannel, 1);
 		s_state = STATE_WARMING;
 		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
+		s_retryAt = gettime() + millisecs_to_ticks(500);
 	}
 }
 
@@ -411,13 +418,17 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 		return false;
 	}
 	releaseCallBuffer();
-	// Only a speaker that is already up, and nothing else still streaming: a line
-	// that cannot start at its first word is better left on the TV than joined late.
-	// Waiting for the speaker to finish powering up is allowed: the line is buffered and
-	// starts streaming the moment it is up (see encodeCall).  Refusing a warming speaker
-	// here is what a call arriving during power-up used to hit.
-	if(s_call.active || s_call.buffer != nullptr || s_state == STATE_OFF || gettime() < s_clipEnd)
+	const u64 now = gettime();
+	// A warming speaker is allowed: the line is buffered and starts as soon as the
+	// speaker is up.  A line arriving while the previous call's stream is still being
+	// read is not: its buffer would be overwritten under libogc's alarm.  A completed
+	// call's buffer is reused once libogc has let go of it.
+	if(s_call.active || (s_call.buffer != nullptr && now < s_callFreeTime) ||
+	   s_state == STATE_OFF){
+		WiiTraceReport("WII speaker: call busy state=%d active=%d buffer=%p\n",
+			(int)s_state, s_call.active ? 1 : 0, (void*)s_call.buffer);
 		return false;
+	}
 	u32 expansion;
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
 		return false;
@@ -426,9 +437,18 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	if(bytes > kCallMaxBytes)
 		bytes = kCallMaxBytes;
 	bytes = (bytes + kPacketBytes - 1)/kPacketBytes*kPacketBytes;
-	u8 *buffer = (u8*)memalign(32, bytes);
-	if(buffer == nullptr)
-		return false;
+
+	u8 *buffer = s_call.buffer;
+	if(buffer == nullptr || s_call.capacity < bytes){
+		if(buffer != nullptr){
+			std::free(buffer);
+			s_call.buffer = nullptr;
+			s_call.capacity = 0;
+		}
+		buffer = (u8*)memalign(32, bytes);
+		if(buffer == nullptr)
+			return false;
+	}
 	std::memset(buffer, kAdpcmSilence, bytes);
 
 	std::memset(&s_call, 0, sizeof(s_call));
@@ -512,16 +532,20 @@ WiiSpeakerService(void)
 	if(s_state == STATE_OFF)
 		return;
 
+	const u64 now = gettime();
 	// A remote that has been handed to a partner mid-clip or mid-call is let go of the
-	// same way a lost one is: the line goes back to the TV.
+	// same way a lost one is: the line goes back to the TV.  A phone line is allowed
+	// through either remote, including the short window after WiiSpeakerWake but
+	// before the line's stream has actually started; otherwise the wake is cancelled
+	// by the next service tick when player 1 is using a GameCube pad.
+	const bool phoning = s_call.active || now < s_wakeUntil;
 	u32 expansion;
-	if(!WiiRemoteSpeakerEnabled || (!speakerIsPlayerOnes() && !s_call.active) ||
+	if(!WiiRemoteSpeakerEnabled || (!speakerIsPlayerOnes() && !phoning) ||
 	   WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE){
 		powerDown();
 		return;
 	}
 
-	const u64 now = gettime();
 	if(s_state == STATE_WARMING){
 		// WPAD_IsSpeakerEnabled reports an error code, not a boolean: it is
 		// WPAD_ERR_NONE (0) once the remote's speaker is up and WPAD_ERR_NOT_READY
@@ -530,27 +554,41 @@ WiiSpeakerService(void)
 		// stream send and both clip and call paths are all gated on STATE_ON.  Every
 		// remote sound was silent because of this one comparison.
 		if(WPAD_IsSpeakerEnabled(kChannel) != WPAD_ERR_NONE){
-			if(now > s_deadline)
+			// Asking again is cheap and covers a configuration command that was lost
+			// in the Bluetooth queue; give the first attempt 500 ms before retrying.
+			if(now >= s_retryAt){
+				WiiTraceReport("WII speaker: still warming (code %d)\n",
+					(int)WPAD_IsSpeakerEnabled(kChannel));
+				WPAD_ControlSpeaker(kChannel, 1);
+				s_retryAt = now + millisecs_to_ticks(750);
+			}
+			if(now > s_deadline){
+				WiiTraceReport("WII speaker: warm-up timed out\n");
 				powerDown();
+			}
 			return;
 		}
 		s_state = STATE_ON;
 		s_deadline = now + millisecs_to_ticks(kLingerMs);
+		s_retryAt = 0;
+		WiiTraceReport("WII speaker: ready\n");
 		// A clip that waited out this power-up starts its own age clock now, rather than
 		// being judged against the moment it was asked for.  Enabling the speaker is
 		// allowed to take kWarmupTimeoutMs, which is longer than the ring's whole
 		// tolerance, so a lone ring was always discarded before it could ever play.
 		s_pendingTime = now;
-		// And a call that arrived during the power-up has its first words written
-		// with nothing reading them: hand the buffer over now, before the next
-		// encode (which a short line may never need) can do it.
-		if(s_call.active && !s_call.started && s_call.written > 0)
-			startCallStream();
 	}
+
+	// A line takes the one stream: anything still waiting is a clip and is dropped.
+	if(s_call.active)
+		s_pending = CLIP_NONE;
 
 	// Whatever waited too long, through warm-up or behind another clip, is dropped.
 	if(s_pending != CLIP_NONE && now - s_pendingTime > millisecs_to_ticks(kClipMaxAgeMs[s_pending]))
 		s_pending = CLIP_NONE;
+
+	if(s_call.active && !s_call.started && s_call.written > 0 && now >= s_clipEnd)
+		startCallStream();
 
 	if(s_pending != CLIP_NONE && now >= s_clipEnd){
 		const Clip clip = s_pending;
