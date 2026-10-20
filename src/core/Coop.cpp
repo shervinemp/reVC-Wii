@@ -2466,6 +2466,8 @@ CCoop::Update(void)
 					driven->m_vecMoveSpeed = leadVehicle->IsBoat() ? leadVehicle->GetMoveSpeed() : CVector(0.0f, 0.0f, 0.0f);
 				}else
 					driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
+				driven->GetMatrix().UpdateRW();
+				driven->UpdateRwFrame();
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 				if(now - s_regroupLogTime >= 3000){
 					s_regroupLogTime = now;
@@ -2476,6 +2478,8 @@ CCoop::Update(void)
 				driven->SetPosition(airPos);
 				if(leadVehicle != nil)
 					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
+				driven->GetMatrix().UpdateRW();
+				driven->UpdateRwFrame();
 				driven->m_vecMoveSpeed = CVector(0.0f, 0.0f, 0.0f);
 				driven->m_vecTurnSpeed = CVector(0.0f, 0.0f, 0.0f);
 				if(now - s_regroupLogTime >= 3000){
@@ -2493,6 +2497,8 @@ CCoop::Update(void)
 				// not begin with a U-turn.
 				if(leadVehicle != nil)
 					driven->SetOrientation(0.0f, 0.0f, leadVehicle->GetForward().Heading());
+				driven->GetMatrix().UpdateRW();
+				driven->UpdateRwFrame();
 				// Moving with player 1 rather than parked in their road.  A car
 				// put down at rest fifty metres behind a car doing fifty is
 				// fifty metres behind again a second later, and the regroup
