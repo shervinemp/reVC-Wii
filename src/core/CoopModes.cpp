@@ -203,7 +203,7 @@ const float kPitchParkedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;
 const float kPitchRadius = 14.0f;	// two-goal pitch: each goal this far out
 const float kPitchTriangleRadius = 13.0f;	// three-goal pitch: vertex radius
 const float kPitchGoalRadius = 4.5f;
-const float kPitchTouchRange = 5.0f;	// last touch is the nearest car this close
+const float kPitchTouchRange = 4.0f;	// last touch is the nearest car this close
 const float kPitchClearance = 4.0f;	// ball spot clear of the cars
 const float kPitchLeash = 35.0f;	// a Caddy hit this far off the pitch comes back
 const uint32 kPitchHoldMs = 500;	// the nod is held this long to start
@@ -252,7 +252,7 @@ PitchState s_pitch;
 
 const float kKothRadius = 12.0f;
 const int kKothRingMarks = 12;
-const float kKothGatherRange = 30.0f;
+const float kKothGatherRange = 14.0f;	// the ring, plus a couple of metres
 const uint32 kKothHoldMs = 600;		// every present player holds the nod
 const uint32 kKothCountdownMs = 3000;
 const uint32 kKothRoundMs = 90000;
@@ -2085,6 +2085,8 @@ TryStartPitch(uint32 now, bool held)
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			return;
 		if(!PlayerInPitchCar(i, &car[i]))
 			return;
 		sum += car[i]->GetPosition();
@@ -2210,7 +2212,7 @@ UpdatePitch(uint32 now)
 	float bestDist = kPitchTouchRange;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		if(ped == nil || ped->DyingOrDead() || !ped->bInVehicle || ped->m_pMyVehicle == nil)
 			continue;
 		const float dist = (ped->m_pMyVehicle->GetPosition() - ball->GetPosition()).Magnitude2D();
 		if(dist < bestDist){
@@ -2289,6 +2291,12 @@ TryStartKoth(uint32 now)
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			return;
+		// The hill is on foot, in a car or in a Rhino.  A boat or an aircraft
+		// is a different game; leave it for the water and the air modes.
+		if(ped->bInVehicle && (ped->m_pMyVehicle == nil || !ped->m_pMyVehicle->IsCar()))
+			return;
 		if((PlayerCoors(i) - centre).Magnitude2D() > kKothGatherRange)
 			return;
 		present++;
@@ -2451,7 +2459,7 @@ UpdateKoth(uint32 now)
 	int occupant = -1;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || ped->DyingOrDead())
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
 			continue;
 		if((PlayerCoors(i) - s_koth.centre).Magnitude2D() <= kKothRadius){
 			inside++;
@@ -3545,8 +3553,8 @@ DrawExplainer(uint32 now)
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"GET IN A TOY AND FOLLOW YOUR COLOR OF GATE. FIRST TO 3 LAPS WINS. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
-		"HOLD NOD TO START. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
-		"EACH IN A CAR, HOLD NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
+		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
+		"EACH IN A CAR; ONE HOLDS NOD. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
 		"ALL HOLD NOD. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
 	};
 

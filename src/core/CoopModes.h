@@ -85,10 +85,25 @@ class CVehicle;
 // party's wall and leash stand aside for it: a pursuit nobody can outrun is
 // not a pursuit.
 //
-// The toy race, the dance-off and cops & robbers do not arm while anyone in
-// the party is wanted: they start from a jump, a duck and a press of the nod,
-// the things a party being chased does anyway.  The cop shift and the
-// smuggling run are about the police, and are not held back.
+// The seventh is Caddy football.  A Caddy with nobody in it is the ball; the
+// party's own cars push it.  Two players get two goals and a 1v1, four get
+// 2v2, and three get three goals in a triangle, each player defending the
+// nearest one.  One player holds the nod in a car to start; ramming only;
+// first to three.  The camera holds still and the pitch is built wherever the
+// party stopped.
+//
+// The eighth is King of the Hill.  Every present player holds the nod, and a
+// ring is drawn where they stand.  Exactly one player inside scores time; two
+// or more contest it and nobody scores.  It works on foot, in cars and in
+// Rhinos.  Player-on-player damage is forced on for the round whatever the
+// friendly-fire toggle says, because a hill nobody can take from anybody is
+// not a hill.  Ninety seconds; most time held wins.
+//
+// The toy race, the dance-off, cops & robbers and Caddy football do not arm
+// while anyone in the party is wanted: they start from a jump, a duck or a
+// press of the nod, the things a party being chased does anyway.  The cop
+// shift and the smuggling run are about the police, and are not held back.
+// King of the Hill is a fight and does not check the wanted level either.
 class CCoopModes
 {
 public:
