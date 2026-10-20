@@ -70,7 +70,12 @@ void bootPrintf(const char *format, ...);
 constexpr unsigned int kFifoSize = 256 * 1024;
 constexpr const char *kInstallDirectories[] = {
 	"sd:/apps/reVC", "usb:/apps/reVC", "usb2:/apps/reVC",
-	"usb3:/apps/reVC", "usb4:/apps/reVC"
+	"usb3:/apps/reVC", "usb4:/apps/reVC",
+	// Last: the data may sit in a dedicated reVC-data folder at the root of the
+	// stick, with only the DOL and its metadata under apps/reVC.  An ordinary
+	// whole-install-beside-the-DOL layout always wins because every entry above
+	// is tried first.
+	"usb:/reVC-data", "usb2:/reVC-data", "usb3:/reVC-data", "usb4:/reVC-data"
 };
 
 GXRModeObj *s_renderMode;
@@ -118,7 +123,9 @@ bool
 tryInstallDirectory(const char *directory)
 {
 	char path[192];
-	std::snprintf(path, sizeof(path), "%s/DATA/GTA_VC.DAT", directory);
+	const size_t length = std::strlen(directory);
+	const char *separator = length > 0 && directory[length - 1] == '/' ? "" : "/";
+	std::snprintf(path, sizeof(path), "%s%sDATA/GTA_VC.DAT", directory, separator);
 	if(!fileExists(path))
 		return false;
 	if(chdir(directory) != 0){

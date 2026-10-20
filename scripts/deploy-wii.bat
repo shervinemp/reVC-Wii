@@ -5,6 +5,8 @@ setlocal EnableExtensions
 :: Usage:
 ::   scripts\deploy-wii.bat E:            -> install boot.dol/meta.xml to E:\apps\reVC
 ::   scripts\deploy-wii.bat E: assets     -> also copy the Vice City PC assets (first run)
+::   scripts\deploy-wii.bat E: root       -> data in E:\reVC-data, app in E:\apps\reVC
+::   scripts\deploy-wii.bat E: root assets-> first run, data in E:\reVC-data
 ::   scripts\deploy-wii.bat local         -> stage everything to .\dist\reVC on disk
 
 set "REPO=%~dp0.."
@@ -13,6 +15,11 @@ set "VC_DIR=D:\Program Files (x86)\Rockstar Games\Grand Theft Auto Vice City"
 
 set "TARGET=%~1"
 set "ASSETS=%~2"
+set "ROOTMODE=0"
+if /I "%~2"=="root" (
+    set "ROOTMODE=1"
+    set "ASSETS=%~3"
+)
 if /I "%TARGET%"=="local" ( set "TARGET=%REPO%\dist" & set "MODE=local" )
 
 if "%TARGET%"=="" (
@@ -20,6 +27,7 @@ if "%TARGET%"=="" (
     echo Insert your SD/USB card, then run, e.g.:
     echo   scripts\deploy-wii.bat E:          ^(app only; reuse existing assets^)
     echo   scripts\deploy-wii.bat E: assets   ^(first time: full copy, several minutes^)
+    echo   scripts\deploy-wii.bat E: root     ^(data in reVC-data, app in apps\reVC^)
     echo   scripts\deploy-wii.bat local       ^(stage to .\dist on disk for Dolphin^)
     echo.
     echo Removable drives detected:
@@ -28,6 +36,8 @@ if "%TARGET%"=="" (
 )
 
 set "APP=%TARGET%\apps\reVC"
+set "DATA=%APP%"
+if "%ROOTMODE%"=="1" set "DATA=%TARGET%\reVC-data"
 
 if not exist "%BUILD_DOL%" (
     echo ERROR: missing %BUILD_DOL%. Build first.
@@ -37,6 +47,7 @@ if not exist "%BUILD_DOL%" (
 echo.
 echo [1/3] Creating %APP%
 if not exist "%APP%" mkdir "%APP%" || goto :fail
+if not exist "%DATA%" mkdir "%DATA%" || goto :fail
 
 echo [2/3] Copying boot.dol, meta.xml, icon, fonts
 copy /Y "%BUILD_DOL%" "%APP%\boot.dol" >nul || goto :fail
@@ -54,8 +65,8 @@ if /I "%ASSETS%"=="assets" (
     for %%D in (anim data models TEXT mp3 audio txd skins) do (
         if exist "%VC_DIR%\%%D" (
             echo    - %%D
-            if not exist "%APP%\%%D" mkdir "%APP%\%%D"
-            xcopy /E /I /Y /Q "%VC_DIR%\%%D" "%APP%\%%D" >nul
+            if not exist "%DATA%\%%D" mkdir "%DATA%\%%D"
+            xcopy /E /I /Y /Q "%VC_DIR%\%%D" "%DATA%\%%D" >nul
         )
     )
     echo    - movies skipped on purpose ^(edit this script to add them^)
@@ -64,10 +75,10 @@ if /I "%ASSETS%"=="assets" (
 )
 
 echo [4/4] Overwriting with repository gamefiles ^(compat fixes, GXT, neo^)
-xcopy /E /I /Y /Q "%REPO%\gamefiles\data" "%APP%\data" >nul
-xcopy /E /I /Y /Q "%REPO%\gamefiles\models" "%APP%\models" >nul
-xcopy /E /I /Y /Q "%REPO%\gamefiles\TEXT" "%APP%\TEXT" >nul
-if exist "%REPO%\gamefiles\neo" xcopy /E /I /Y /Q "%REPO%\gamefiles\neo" "%APP%\neo" >nul
+xcopy /E /I /Y /Q "%REPO%\gamefiles\data" "%DATA%\data" >nul
+xcopy /E /I /Y /Q "%REPO%\gamefiles\models" "%DATA%\models" >nul
+xcopy /E /I /Y /Q "%REPO%\gamefiles\TEXT" "%DATA%\TEXT" >nul
+if exist "%REPO%\gamefiles\neo" xcopy /E /I /Y /Q "%REPO%\gamefiles\neo" "%DATA%\neo" >nul
 
 echo.
 echo [5/5] Syncing boot.dol to every other install we can see ^(SD/USB/^Dolphin^)
