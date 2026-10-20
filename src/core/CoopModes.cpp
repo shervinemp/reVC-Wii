@@ -2235,8 +2235,11 @@ SpawnPitchBall(void)
 	if(ball == nil)
 		return false;
 	pos.z += ball->GetDistanceFromCentreOfMassToBaseOfModel();
+	CTheScripts::ClearSpaceForMissionEntity(pos, ball);
 	ball->SetPosition(pos);
 	ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
+	ball->GetMatrix().UpdateRW();
+	ball->UpdateRwFrame();
 	ball->SetStatus(STATUS_ABANDONED);
 	ball->bIsLocked = true;
 	ball->m_nDoorLock = CARLOCK_LOCKED;
@@ -2271,6 +2274,8 @@ ResetPitchBall(void)
 	s_pitch.ball->SetMoveSpeed(0.0f, 0.0f, 0.0f);
 	s_pitch.ball->SetTurnSpeed(0.0f, 0.0f, 0.0f);
 	s_pitch.ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
+	s_pitch.ball->GetMatrix().UpdateRW();
+	s_pitch.ball->UpdateRwFrame();
 	s_pitch.ball->SetStatus(STATUS_ABANDONED);
 	s_pitch.ball->bIsHandbrakeOn = false;
 	s_pitch.ball->bEngineOn = false;
@@ -4398,6 +4403,7 @@ MenuRequiredModel(int mode)
 	case MENU_SHIFT: return MI_POLICE;
 	case MENU_RUN: return MI_SQUALO;
 	case MENU_RC: return MI_RCBANDIT;
+	case MENU_PITCH: return MI_CADDY;
 	default: return -1;
 	}
 }
@@ -4413,8 +4419,11 @@ MenuSpawnPolice(const CVector &at, float heading)
 
 	CVector pos = MenuGround(at, 0.0f);
 	pos.z += car->GetDistanceFromCentreOfMassToBaseOfModel();
+	CTheScripts::ClearSpaceForMissionEntity(pos, car);
 	car->SetPosition(pos);
 	car->SetOrientation(0.0f, 0.0f, heading);
+	car->GetMatrix().UpdateRW();
+	car->UpdateRwFrame();
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = false;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -4494,8 +4503,9 @@ StartMenuShift(uint32 now)
 			continue;
 		// A full car is not a reason to leave somebody behind: a second
 		// cruiser is still a crewed law car, and the shift's own check only
-		// needs the largest one.
-		const CVector beside(spot.x + 8.0f, spot.y, spot.z);
+		// needs the largest one.  Put it beside the first on real ground,
+		// rather than on a kerb that happens to be eight metres east.
+		const CVector beside = MenuGround(CVector(spot.x + 8.0f, spot.y, spot.z), 0.0f);
 		CVehicle *second = MenuSpawnPolice(beside, 0.0f);
 		if(second == nil || !SeatMenuDriver(ped, second))
 			return false;
@@ -4612,6 +4622,11 @@ StartMenuCars(int mode, uint32 now)
 		return false;
 
 	if(caddy){
+		// The ball is a Caddy model of its own, and a pitch with no ball is not
+		// a match.  The airport scene switch can drop a request, so ensure it
+		// after the scene is loaded as well as before the mode starts.
+		if(!MenuEnsureModel(MI_CADDY))
+			return false;
 		// The gesture check gives King of the Hill first refusal on a group
 		// aim-hold; a menu selection is already that decision.
 		const bool group = s_koth.groupAll;
