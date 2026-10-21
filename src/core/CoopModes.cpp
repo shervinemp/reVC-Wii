@@ -3201,6 +3201,9 @@ TryStartKoth(uint32 now, bool menuStart)
 	if(!menuStart){
 		if(!FindKothCentre(centre, centre)){
 			COOP_LOG("WII coop: king of the hill needs open ground\n");
+			// A held button asks once, not every retry interval.  Let go and
+			// try again on open ground.
+			s_koth.groupSpent = true;
 			return;
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
@@ -5390,6 +5393,7 @@ CCoopModes::LeaveRcCar(CPlayerPed *ped)
 		return false;
 
 	CVehicle *toy = ped->m_pMyVehicle;
+	COOP_LOG("WII coop: player %d leaving rc car\n", player + 1);
 	CVector at = toy->GetPosition() + toy->GetRight()*2.2f;
 	bool found = false;
 	const float ground = CWorld::FindGroundZFor3DCoord(at.x, at.y, at.z + 3.0f, &found);
