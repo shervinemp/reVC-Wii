@@ -20,7 +20,7 @@ Each is its own commit, so a regression can be bisected or reverted alone.
 | gx: skin in paired singles | Skinning blends each vertex's bone matrices, then transforms once, in Broadway's paired-single instructions | About 40 instructions per two-bone vertex instead of about 100 |
 | gx: free a streamed model's own copy of its data once it is instanced | After the first instancing of a model read from a DFF, frees RenderWare's triangles, prelight, UVs and mesh indices, its bind pose unless skinned, and the instance's index copy | Memory, not speed: every streamed model was held twice. About half of a model's bytes go (44KB of ~80KB for a 1000-vertex, 1500-triangle prelit building), which is heap headroom under the same streaming budget |
 
-On `coop-4-perf` (the same commits on top of `coop-4`) the skin commit replaces
+On `coop` (the same commits on top of `coop-4`) the skin commit replaces
 `aa7070e5`, which drained the GPU once per repeat draw of a shared model: up to
 three drains a frame with four players. One more commit there adds the player count
 to the frame-rate line.
@@ -64,15 +64,15 @@ card gets one line every ten seconds, for example (the numbers are made up):
 - `vsync-wait` -- waiting for the retrace. Large means there is headroom.
 - `skin repeats` -- draws per frame of a model already skinned that frame;
   `stalls` -- how many of those had to drain the GPU (should stay 0).
-- `players` (coop-4-perf only) -- fewest and most players in the world.
+- `players` (coop only) -- fewest and most players in the world.
 
 ## Four-player co-op test
 
-`dist/coop4-perf-ab/` (not in git) holds two builds of the same co-op code:
+`dist/coop-ab/` (not in git) holds two builds of the same co-op code:
 
 - `reVC-coop4-before.dol` -- `coop-4` as it is, plus a frame-rate-only line
   (`WII perf (baseline)`), so it can be compared.
-- `reVC-coop4-after.dol` -- `coop-4-perf`: every change above.
+- `reVC-coop4-after.dol` -- `coop`: every change above.
 
 Deploy each as `apps/reVC/boot.dol` in turn (what `scripts/deploy-wii.bat` does
 with `build-wii/src/reVC.dol`), and run the same scenes for about 30 seconds each,
