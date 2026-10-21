@@ -4,6 +4,60 @@ Scope: everything the multiplayer work changed since 352ca4b4 (about 8,600 added
 Nothing was built or run. Five reviewers read the code, one area each, and I read the menu,
 HUD and text changes myself.
 
+**Third pass (2026-10-21, an audit of the co-op paths for cases, interactions and physics;
+read from the code, nothing seen on a TV).** Four reviewers read the shared camera
+(`Cam.cpp`), the minigame vehicles and props (`CoopModes.cpp`), the session and player
+interactions (`Coop.cpp`) and the engine's treatment of a partner (`PedFight.cpp`,
+`PedAI.cpp`, `Vehicle.cpp`, `Weapon.cpp`, `Script5.cpp`). Every finding below was re-read
+and confirmed in the source before it was fixed; two claims in the audit were wrong and
+were dropped (the "partner's boat takes double the damage" is backwards — it takes half;
+and the "race arms itself after a save load" does not reproduce, because the clock is only
+zeroed at start-up). Fixed in this pass, none of it run on a console:
+
+- **The cop shift never opened a case.** [V] `caseActive`, `spawnPending` and
+  `UpdateSpawnRequest` formed a closed cycle: the request was only run from `UpdateCase`,
+  which only ran when a case was already open, and a case was only open once the suspect
+  existed, which only happened when the request ran. The shift armed, and then did nothing,
+  for ever — no suspect, no clock, no pay. The structure has been there since the shift was
+  written (`3231e712`), so every later shift change was untested. `Update` now drives the
+  request. The shift also had no re-arm timer, so forfeiting it re-armed it in the same
+  frame; it has one now, like every other mode.
+- **A barrel blast was player 1's blast.** [V] `CWeapon::BlowUpExplosiveThings` named
+  `FindPlayerPed()` as the culprit, so with friendly fire off a partner's barrel hurt
+  player 1 — the culprit and the victim were the same ped, which the rule cannot block —
+  and spared the partner. The shooter is the culprit now, in the bullet path, the shotgun
+  path and the chain reaction.
+- **The Rhino's turret followed the wrong player.** [V] It keyed off
+  `FindPlayerVehicle()`, which is the vehicle player 1 is *in*: with player 1 riding along
+  in a partner's Rhino the turret was driven by player 1's pad. It is the driver's now.
+- **A partner's shotgun turned the victim on player 1.** [V] `FireShotgun` said
+  `ReactToAttack(FindPlayerPed())` where the instant-hit path says `shooter`.
+- **A partner's boat took half the damage a party car took.** [V] `CBoat::ProcessControl`
+  keyed off `FindPlayerVehicle()` where the car uses `IsPartyVehicle`.
+- **The derby and the RC race could not end.** [V] The derby capped a round but not a
+  match, and a round that ran out of time awarded nobody, so it looped for ever; the race
+  capped the grid but not the racing. Both have a match cap now.
+- **A partner's skin that would not stream made them late to every arrival.** [V] The
+  give-up cleared the wait, which is the same value as "not waiting at all", so the next
+  arrival began the whole six seconds again — and the one after that.
+- **The camera framed the dead.** [V] A downed partner's body was in the centroid and in
+  the separation that sets how far back the camera sits, so the view centred on a corpse
+  and the two players who could still act became specks.
+- **The party could spread further than the camera can show.** [V] The wall was a star
+  and the camera zooms out to 40 m: two partners on opposite sides of player 1 could be
+  48 m apart and one of them went off the screen. Partners are held to each other now, by
+  a wider band.
+- Smaller: a camera focus outlived the partner who asked for it; a revive put a partner
+  back at the raw coordinate where they died, with none of the checks every other
+  placement uses; a bike beside a partner cancelled the whole "take a car of your own"
+  search; the HUD's down bar counted a different clock from the bleed-out; an RC racer
+  who never had a toy was given a gate and a lap bar; a partner's katana could never
+  decapitate; a gang-7 ped did not put its hands up at a partner's gun; a partner's mugging
+  produced no money; a partner's bat had no motion trail; a partner's Rhino registered no
+  explosion events; and a mode's own vehicles were handed to the traffic system when the
+  mode ended — which also left the traffic counters wrong, because those cars were never
+  in the traffic system to begin with.
+
 **Status (2026-10-18):** everything below is fixed except the list under "Still open". All of it
 compiles (`-fsyntax-only`, the Wii build's flags, all 250 game sources, no warnings); none of it has
 been run on a console, and the PC build was not compiled. Item 3 turned out to be wrong and needed

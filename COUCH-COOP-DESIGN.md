@@ -141,8 +141,10 @@ and ammo, and which one was in hand. That covers:
 ### Staying together
 
 There is a limit on how far apart the party can get, in two parts. It is a
-**star**: every partner is held to player 1, not to each other, and player 1 is
-held to each partner the same way.
+**star**: every partner is held to player 1, and player 1 is held to each partner
+the same way. Two partners are held to each other as well, but by a wider band
+(26 m to 34 m, against the lead's 18 m to 24 m) — the camera is the other half
+of this rule, and it can only zoom out so far.
 
 **On foot it is a wall** (`CCoop::LimitSeparation`, applied to the walking
 velocity in `CPed::UpdatePosition` and to a jump's take-off). Past 18 m a
@@ -153,6 +155,12 @@ untouched. It is sized so that at the wall two players are still on screen; with
 more than two, the wall is the lever to tighten if the spread ever runs off the
 screen (see "Not done"). The help box says so the first time someone reaches
 it.
+
+The wider partner-to-partner band is there because the wall is a star and the
+camera is not: it centres on the middle of the party and zooms out to 40 m and
+no further, so a star could put two partners 48 m apart with player 1 between
+them, and one of them went off the screen with no reticle and nothing to say
+so. The band still leaves room to spread out.
 
 **The wall only works on someone walking**, so behind it there is a leash at
 28 m for everything that gets past: a car driving off, a fall, the blast from an
