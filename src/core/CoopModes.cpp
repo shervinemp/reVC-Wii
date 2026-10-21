@@ -3573,8 +3573,8 @@ TryStartKoth(uint32 now, bool menuStart)
 
 	if(menuStart)
 		StartKothAt(now, centre);
-	else
-		ArmStart(MENU_KOTH, now, centre, CVector(0.0f, 0.0f, 0.0f), present);
+	else if(ArmStart(MENU_KOTH, now, centre, CVector(0.0f, 0.0f, 0.0f), present))
+		s_koth.groupSpent = true;
 }
 
 void
