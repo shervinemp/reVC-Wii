@@ -510,6 +510,17 @@ thin state machine over the script's own machinery -- spawn recipes, locked
 mission cars, `CleanUpThisPed`/`CleanUpThisVehicle` hand-backs -- with no new
 assets:
 
+**Where they happen.** A mode started from the menu goes to a named venue, and
+the ready-up card names it before anybody has moved: the airport apron (the
+derby and the cop shift), the golf course (the Caddy), the stadium car park
+(the toy race), the docks (the hill), Ocean Beach (the dance-off and cops and
+robbers), the dockyard (the smuggling run). The airport and the beach are
+known spots. The others are *bases*: the game walks out from the base in rings
+and takes the first square that is dry, flat and clear of the size the mode
+needs, and the airport is the fallback for anything it cannot find. A venue
+that fails to find open ground is the airport, not a bad one -- the party is
+never dropped into traffic again.
+
 - the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
   while a case is open the takedown is not a crime),
 - the **smuggling run** (player 1 at the wheel of a boat and the horn: the

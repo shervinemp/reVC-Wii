@@ -95,6 +95,28 @@ fire through vehicle explosions (`SparedByFriendlyFire` in `KillPedsInVehicle`, 
 the camera's "keep the heading it already had" branch (entering the shared camera is a
 transition, and a transition sets `ResetStatics`, so the branch is reached).
 
+**Fifth pass (2026-10-21, the last of the redesign's content).** Fixed here, none of it
+run on a console:
+
+- **The modes had one venue.** [V] Every mode but the dance-off and the run started on the
+  airport apron, so the party learned one place and every mode felt like the same
+  afternoon. The venues are now named and different: the airport (the derby, the cop
+  shift), the golf course (the Caddy), the stadium car park (the toy race), the docks
+  (the hill), Ocean Beach (the dance-off, cops and robbers), the dockyard (the run).
+  The airport and the beach are known spots; the others are bases the game walks out
+  from in rings, taking the first square that is dry, flat and clear of the size the
+  mode needs, with the airport as the fallback for anything it cannot find. The
+  ready-up card names the venue before anybody has moved.
+- **The camera's collision tests are not done every frame.** [V] Measuring the room
+  behind the camera is up to four line-of-sight tests of forty metres, every frame --
+  the most expensive thing the shared camera does. The camera eases towards the
+  answer anyway, so it is measured every third frame now and held in between, and
+  measured at once whenever the view moves to a new place.
+- **The cop shift's whole path was read again now that it runs.** [V] The vehicle and
+  ped clean-ups use the engine's own order -- `CWorld::Remove` before the delete, or
+  the deleted vehicle stays in the world's lists -- and the suspect's spawn no longer
+  deletes a player who is driving nearby.
+
 **Status (2026-10-18):** everything below is fixed except the list under "Still open". All of it
 compiles (`-fsyntax-only`, the Wii build's flags, all 250 game sources, no warnings); none of it has
 been run on a console, and the PC build was not compiled. Item 3 turned out to be wrong and needed
