@@ -502,7 +502,7 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	// speaker is up.  The previous line may still be in libogc's alarm even though
 	// its stream object has closed; keep that buffer alive somewhere else and give
 	// this line a fresh one, rather than refusing the line as busy.
-	if(s_call.active || s_state == STATE_OFF){
+	if(s_call.active){
 		WiiTraceReport("WII speaker: call busy state=%d active=%d buffer=%p\n",
 			(int)s_state, s_call.active ? 1 : 0, (void*)s_call.buffer);
 		return false;
@@ -510,6 +510,18 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	u32 expansion;
 	if(WPAD_Probe(channel, &expansion) != WPAD_ERR_NONE)
 		return false;
+
+	// A mission call can arrive when no ring or gunshot has kept the speaker
+	// awake.  Wake it here instead of refusing the line: the buffer is prefilled
+	// with silence, so it can start as soon as the speaker finishes enabling.
+	if(s_state == STATE_OFF){
+		WPAD_ControlSpeaker(channel, 1);
+		s_state = STATE_WARMING;
+		s_deadline = now + millisecs_to_ticks(kWarmupTimeoutMs);
+		s_retryAt = now + millisecs_to_ticks(500);
+		s_wakeUntil = now + millisecs_to_ticks(kWakeLingerMs);
+		WiiTraceReport("WII speaker: call woke speaker\n");
+	}
 
 	if(s_call.buffer != nullptr){
 		if(s_call.started){
@@ -541,6 +553,8 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	s_call.encoderFresh = true;
 	s_call.active = true;
 	s_pending = CLIP_NONE;
+	WiiTraceReport("WII speaker: call begin state=%d rate=%u length=%ums bytes=%u\n",
+		(int)s_state, (unsigned)sampleRate, (unsigned)lengthMs, (unsigned)bytes);
 	return true;
 }
 

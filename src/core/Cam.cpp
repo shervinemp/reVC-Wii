@@ -5641,9 +5641,17 @@ CCam::Process_FollowCar_SA(const CVector& CameraTarget, float TargetOrientation,
 		targetAlphaBlendAmount = maxAlphaBlendAmount;
 	}
 
-	// Using GetCarGun(LR/UD) will give us same unprocessed RightStick value as SA
+	// Using GetCarGun(LR/UD) will give us same unprocessed RightStick value as SA.
+	// On Wii those getters also publish the Nunchuk lean in aircraft, the Rhino
+	// and the fire truck; the camera must read the actual right stick or leaning
+	// to steer would turn the view at the same time.
+#ifdef NINTENDO_WII
+	float stickX = -(float)pad->NewState.RightStickX;
+	float stickY = -(float)pad->NewState.RightStickY;
+#else
 	float stickX = -(pad->GetCarGunLeftRight());
 	float stickY = -pad->GetCarGunUpDown();
+#endif
 
 	// In SA this checks for m_bUseMouse3rdPerson so num2 / num8 do not move camera
 	// when Keyboard & Mouse controls are used. To make it work better with III/VC, check for actual pad state instead

@@ -286,6 +286,20 @@ static const float kFlickSettleSec = 0.09f;      // stay deaf this long after a 
 static const float kFlickDownAlign = 0.55f;      // must still point into gravity: down-flick only
 static const float kFlickMaxSaneG = 8.0f;        // past this the reading is not a reading
 
+// The Nunchuk's lean is its gravity direction, not the acceleration a flick
+// happens to add to it.  A low-pass keeps the lean steady through a flick and
+// through ordinary hand shake, so a jump gesture cannot also yaw a helicopter
+// or pitch the fire truck's hose.
+struct LeanState
+{
+	bool seeded;
+	float x, y, z;
+};
+static LeanState s_lean[NUM_PLAYERS];
+static const float kLeanFollow = 0.10f;          // per scan; about a sixth of a second
+static const float kLeanMinG = 0.70f;
+static const float kLeanMaxG = 1.40f;
+
 // --- the pointer as a crosshair ---------------------------------------------
 // Standard aiming draws a crosshair at a fixed point and traces the shot through
 // it, so aiming is steering the camera, and with the rate camera above that means
@@ -1375,6 +1389,10 @@ updateFlick(FlickDetector &flick, const WPADData *wd, CPlayerPed *ped)
 	const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
 		wd->exp.type == WPAD_EXP_NUNCHUK;
 	const bool onFoot = ped != nullptr && !ped->bInVehicle;
+	// Walking and steering shake the Nunchuk.  The detector is deliberately
+	// deaf unless the stick is at rest, as the comment below says it should be;
+	// without this test a normal stick movement could read as a jump.
+	const bool stickCentered = nunchukReady && wd->exp.nunchuk.js.mag < 0.20f;
 	// Menus run with the player ped still alive on foot, so without this the
 	// flick would pulse Square behind an open menu.  Gameplay input is paused
 	// in menus anyway, so the pulse would go nowhere -- this just keeps the
@@ -1388,7 +1406,7 @@ updateFlick(FlickDetector &flick, const WPADData *wd, CPlayerPed *ped)
 	// written so that a NaN fails it too.
 	float ax = 0.0f, ay = 0.0f, az = 0.0f, mag = 0.0f;
 	bool readable = false;
-	if(nunchukReady && onFoot && !inMenu){
+	if(nunchukReady && onFoot && !inMenu && stickCentered){
 		ax = wd->exp.nunchuk.gforce.x;
 		ay = wd->exp.nunchuk.gforce.y;
 		az = wd->exp.nunchuk.gforce.z;
@@ -1680,6 +1698,35 @@ WiiPadJoinPulse(int player)
 const float kNunchukLeanDead = 0.14f;	// about 8 degrees: a hand at rest
 const float kNunchukLeanFull = 0.61f;	// about 35 degrees: hard over
 
+// Fed once per scan, away from the vehicle code, so a fast flick is not also a
+// steering sample.  The current vector is ignored when its magnitude is far
+// from one g; that is a jolt, not a new lean.
+static void
+updateLean(LeanState &lean, const WPADData *data)
+{
+	if(data == nullptr || data->err != WPAD_ERR_NONE ||
+	   data->exp.type != WPAD_EXP_NUNCHUK){
+		lean.seeded = false;
+		return;
+	}
+	const float x = data->exp.nunchuk.gforce.x;
+	const float y = data->exp.nunchuk.gforce.y;
+	const float z = data->exp.nunchuk.gforce.z;
+	const float mag = std::sqrt(x*x + y*y + z*z);
+	if(mag < kLeanMinG || mag > kLeanMaxG)
+		return;
+	if(!lean.seeded){
+		lean.x = x;
+		lean.y = y;
+		lean.z = z;
+		lean.seeded = true;
+		return;
+	}
+	lean.x += (x - lean.x)*kLeanFollow;
+	lean.y += (y - lean.y)*kLeanFollow;
+	lean.z += (z - lean.z)*kLeanFollow;
+}
+
 // axis 0 is left/right (X against Z), 1 is forward/back (Y against Z).
 static s16
 NunchukLean(int padID, int axis)
@@ -1693,9 +1740,18 @@ NunchukLean(int padID, int axis)
 	WPADData *data = WPAD_Data(device.channel);
 	if(data == nullptr || data->err != WPAD_ERR_NONE || data->exp.type != WPAD_EXP_NUNCHUK)
 		return 0;
+	const LeanState &leanState = s_lean[player];
+	if(!leanState.seeded)
+		return 0;
+	// A sample outside the gravity band is a flick/impact, not a lean.
+	const float rawMag = std::sqrt(data->exp.nunchuk.gforce.x*data->exp.nunchuk.gforce.x +
+	                               data->exp.nunchuk.gforce.y*data->exp.nunchuk.gforce.y +
+	                               data->exp.nunchuk.gforce.z*data->exp.nunchuk.gforce.z);
+	if(rawMag < kLeanMinG || rawMag > kLeanMaxG)
+		return 0;
 
-	const float g = axis == 0 ? data->exp.nunchuk.gforce.x : data->exp.nunchuk.gforce.y;
-	const float lean = std::atan2(g, data->exp.nunchuk.gforce.z);
+	const float g = axis == 0 ? leanState.x : leanState.y;
+	const float lean = std::atan2(g, leanState.z);
 	float amount = (std::fabs(lean) - kNunchukLeanDead)/(kNunchukLeanFull - kNunchukLeanDead);
 	if(amount <= 0.0f)
 		return 0;
@@ -1894,9 +1950,10 @@ WiiPadScan(void)
 	// Square).  One detector per player, each reading its own player's remote: see
 	// updateFlick.
 	for(int player = 0; player < NUM_PLAYERS; player++){
-		updateFlick(s_flick[player],
-			s_devices[player].kind == PadDevice::WIIMOTE ? WPAD_Data(s_devices[player].channel) : nullptr,
-			padPlayer(padForPlayer(player)));
+		WPADData *data = s_devices[player].kind == PadDevice::WIIMOTE ?
+			WPAD_Data(s_devices[player].channel) : nullptr;
+		updateFlick(s_flick[player], data, padPlayer(padForPlayer(player)));
+		updateLean(s_lean[player], data);
 	}
 
 	// Frame time for the pointer's rate camera.  gettime() is the timebase, which
