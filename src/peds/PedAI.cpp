@@ -29,6 +29,7 @@
 #include "Weather.h"
 #include "GameLogic.h"
 #include "Streaming.h"
+#include "CoopModes.h"
 
 CVector vecPedCarDoorAnimOffset;
 CVector vecPedCarDoorLoAnimOffset;
@@ -4120,6 +4121,12 @@ CPed::SetExitBoat(CVehicle *boat)
 void
 CPed::SetExitCar(CVehicle *veh, uint32 wantedDoorNode)
 {
+	// A toy car has no door frames.  The co-op RC race puts a real player in
+	// one, so take the direct route before any of the door geometry below is
+	// asked for.  The caller's normal exit path stays untouched for real cars.
+	if(IsPlayer() && CCoopModes::LeaveRcCar((CPlayerPed*)this))
+		return;
+
 	uint32 optedDoorNode = wantedDoorNode;
 	bool teleportNeeded = false;
 	bool isLow = !!veh->bLowVehicle;

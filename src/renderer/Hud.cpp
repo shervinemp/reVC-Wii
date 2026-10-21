@@ -332,6 +332,38 @@ DrawCoopSight(float px, float py, float size, const CRGBA &colour)
 		colour, 0.0f, 0.0f,  1.0f, 0.0f,  0.0f, 1.0f,  1.0f, 1.0f);
 }
 
+// Which seat a player is actually in.  The old marker spread the badges by
+// player index, so a partner driving with player 1 beside them put P1's tag on
+// the driver's side and P2's on the passenger's.  The engine's seat layout is
+// fixed: driver is front-left, pPassengers[0] is front-right, [1] rear-left,
+// [2] rear-right.  A bike's pillion is behind the rider, not to one side.
+static int
+CoopSeatForPed(CPlayerPed *ped, CVehicle *vehicle)
+{
+	if (vehicle == nil)
+		return -1;
+	if (vehicle->pDriver == ped)
+		return 0;
+	for (int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
+		if (vehicle->pPassengers[i] == ped)
+			return i + 1;
+	return -1;
+}
+
+static int
+CoopPlayersInVehicle(CVehicle *vehicle)
+{
+	if (vehicle == nil)
+		return 0;
+	int count = 0;
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped != nil && ped->InVehicle() && ped->m_pMyVehicle == vehicle)
+			count++;
+	}
+	return count;
+}
+
 static void
 DrawCoopMarks(void)
 {
@@ -355,7 +387,7 @@ DrawCoopMarks(void)
 			// A player in a vehicle is marked over the vehicle, because there is
 			// nothing else to mark: the HUD proper is player 1's, so this is the only
 			// place a driving partner's health and ammo are shown at all.  Those
-			// sharing one vehicle stand side by side over it, in player order.
+			// sharing one vehicle stand over their own seats, driver left.
 			CVehicle *vehicle = ped->InVehicle() ? ped->m_pMyVehicle : nil;
 			CEntity *marked = vehicle != nil ? (CEntity*)vehicle : (CEntity*)ped;
 			if (!marked->bIsVisible)
@@ -370,16 +402,16 @@ DrawCoopMarks(void)
 			if (!CSprite::CalcScreenCoors(above, &screen, &w, &h, false))
 				continue;
 			if (vehicle != nil) {
-				int seat = 0, seated = 0;
-				for (int j = 0; j < NUMPLAYERS; j++) {
-					CPlayerPed *other = CWorld::Players[j].m_pPed;
-					if (other == nil || !other->InVehicle() || other->m_pMyVehicle != vehicle)
-						continue;
-					if (j < i)
-						seat++;
-					seated++;
+				// Follow the seat, not the player slot: a driver is on the left
+				// and the front passenger on the right, whichever of them is P1.
+				// One player in the car keeps a centred tag; two or more spread
+				// over the seats so the tag can be read against the body in it.
+				const int seat = CoopSeatForPed(ped, vehicle);
+				if (!vehicle->IsBike() && seat >= 0 &&
+				    CoopPlayersInVehicle(vehicle) > 1) {
+					const bool right = (seat & 1) != 0;	// RF and RR are odd
+					screen.x += SCREEN_SCALE_X(right ? 14.0f : -14.0f);
 				}
-				screen.x += SCREEN_SCALE_X(28.0f) * (seat - 0.5f*(seated - 1));
 			}
 			const float ry = SCREEN_SCALE_Y(3.0f);
 			const float ey = SCREEN_SCALE_Y(1.0f);

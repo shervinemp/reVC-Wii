@@ -1,6 +1,7 @@
 #pragma once
 
 class CEntity;
+class CPlayerPed;
 class CVehicle;
 class CVector;
 
@@ -94,19 +95,19 @@ class CVector;
 // exit-vehicle button in a car, and the horn already starts the derby.  The
 // camera holds still and the pitch is built wherever the party stopped.
 //
-// The eighth is King of the Hill.  Every present player holds aim, and a ring
-// is drawn where they stand.  Aim, not the nod: the nod is the exit-vehicle
-// button in a car, so a group holding it would bail out of the cars the hill
-// is meant to allow.  Exactly one player inside scores time; two or more
-// contest it and nobody scores.  It works on foot, in cars and in Rhinos.
-// Player-on-player damage is forced on for the round whatever the
-// friendly-fire toggle says, because a hill nobody can take from anybody is
-// not a hill.  A downed or arrested partner is brought back at the body after
-// four seconds, so a fight does not thin the party out; the ordinary revive is
-// still there for anyone who reaches them sooner.  Player 1 is the mode's too:
-// the wasted/hospital sequence is held off and he comes back at the body on
-// the same clock, with the party still in the session.  Ninety seconds; most
-// time held wins.
+// The eighth is King of the Hill.  Every present player holds aim on foot, and
+// a ring is drawn on open ground near them: a street is not an arena, so the
+// ring moves to the nearest clear patch that is not a roadway.  Aim, not the
+// nod: the nod is the enter-vehicle button.  Only a player on foot inside
+// scores time; two or more contest it and nobody scores.  A player who stays in
+// a car is a spectator, not a second score.  Player-on-player damage is forced
+// on for the round whatever the friendly-fire toggle says, because a hill
+// nobody can take from anybody is not a hill.  A downed or arrested partner is
+// brought back at the body after four seconds, so a fight does not thin the
+// party out; the ordinary revive is still there for anyone who reaches them
+// sooner.  Player 1 is the mode's too: the wasted/hospital sequence is held
+// off and he comes back at the body on the same clock, with the party still in
+// the session.  Ninety seconds; most time held wins.
 //
 // The toy race, the dance-off, cops & robbers and Caddy football do not arm
 // while anyone in the party is wanted: they start from a jump, a duck or a
@@ -140,6 +141,16 @@ public:
 	// The same boat comes back until it is wrecked, taken, or left behind.
 	static CVehicle *EscortBoat(int player, CVehicle *lead);
 
+	// Get a player out of an RC toy without the engine's car-door exit path.
+	// The RC Bandit has no door dummies or door frames, so SetExitCar's normal
+	// animation/collision route is not safe in it.  This detaches the ped where
+	// it stands, puts them on clear ground beside the toy and leaves the race
+	// to respawn the toy on its own clock.  Called by the player-1 and partner
+	// input paths before they hand the exit button to SetExitCar, and by
+	// SetExitCar itself as the last line of defence.  False when the ped is not
+	// in one of the race's toys.
+	static bool LeaveRcCar(CPlayerPed *ped);
+
 	// The menu's shortcuts into the modes.  Each one teleports the party to a
 	// clear piece of the map and puts them in whatever the mode needs -- cars
 	// for the derby and Caddy football, a police car for the shift, boats for
@@ -162,7 +173,11 @@ public:
 	static bool SteadyView(void);
 
 	// Whether a mode is running that needs the party able to separate: cops &
-	// robbers, which the session's wall and leash would otherwise strangle.
+	// robbers, whose pursuit the leash would otherwise catch; the RC race,
+	// whose cars have to get away from player 1 to race; and King of the Hill,
+	// whose 12 m ring leaves two players at opposite edges past the walking
+	// tether.  The wall would hold a partner on foot and the leash would pull a
+	// partner's toy back mid-lap.
 	static bool FreeRoam(void);
 
 	// Where the action is in Cops & Robbers: the case carrier while it is

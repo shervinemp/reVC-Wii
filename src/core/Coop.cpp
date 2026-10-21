@@ -1568,6 +1568,11 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 			return false;
 		}
 		const bool wantsOut = partner->bVehExitWillBeInstant ? pad->ExitVehicleJustDown() : pad->GetExitVehicle();
+		// An RC toy is not a car with doors.  Leave it through the mode's own
+		// direct detach instead of asking SetExitCar for a door that does not
+		// exist; the toy is replaced by UpdateRc after its foot grace.
+		if(wantsOut && CCoopModes::LeaveRcCar(partner))
+			return false;
 		if(wantsOut && canLeave && vehicle->GetStatus() != STATUS_WRECKED && !vehicle->bIsInWater)
 			partner->SetObjective(OBJECTIVE_LEAVE_CAR, vehicle);
 		return false;
@@ -2637,8 +2642,8 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 {
 	if(!ms_bRunning)
 		return;
-	// A pursuit mode stands the wall aside; the parties in it have to be able
-	// to separate.
+	// A mode that needs room -- a pursuit, the toy race, the hill -- stands the
+	// wall aside; the parties in it have to be able to separate.
 	if(CCoopModes::FreeRoam())
 		return;
 	const int index = GetPlayerIndex(ped);

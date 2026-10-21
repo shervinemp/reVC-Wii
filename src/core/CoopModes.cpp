@@ -296,6 +296,8 @@ PitchState s_pitch;
 const float kKothRadius = 12.0f;
 const int kKothRingMarks = 12;
 const float kKothGatherRange = 14.0f;	// the ring, plus a couple of metres
+const float kKothOpenRoad = 8.0f;	// centre at least this far off a car path
+const float kKothShiftLimit = 18.0f;	// how far off their feet the ring may move
 const uint32 kKothHoldMs = 600;		// every present player holds aim
 const uint32 kKothCountdownMs = 3000;
 const uint32 kKothRoundMs = 90000;
@@ -506,7 +508,10 @@ struct MenuVenue
 	float heading;
 };
 const MenuVenue kAirportMenu = { CVector(-1540.0f, -1110.0f, 14.0f), 0.0f };
-const MenuVenue kKothMenu = { CVector(700.0f, 1000.0f, 20.0f), 0.0f };
+// The airport apron is the one piece of ground guaranteed to be wide, flat and
+// clear of traffic; the old point was a roadway in Vice Point.  The world
+// gesture still uses the nearest clear patch to wherever the party stands.
+const MenuVenue kKothMenu = kAirportMenu;
 const MenuVenue kDanceMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f };
 const MenuVenue kCnRMenu = { CVector(650.0f, -1250.0f, 10.0f), 0.0f };
 const CVector kShiftMenuBase(650.0f, -1250.0f, 10.0f);
@@ -3095,8 +3100,74 @@ UpdatePitch(uint32 now)
 
 // --- King of the Hill --------------------------------------------------------
 
+// A hill centre needs real ground under the whole ring, must not be in water,
+// and should not be the middle of a car path.  The road test uses the path
+// graph's car nodes: a point within a few metres of one is roadway, while a
+// beach, park or broad forecourt is clear.  The distance is Manhattan because
+// that is how FindNodeClosestToCoors measures it.
+bool
+KothSpot(const CVector &at, float &roadDistance, CVector &out)
+{
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(at.x, at.y, at.z + 3.0f, &found);
+	if(!found)
+		return false;
+
+	float water = 0.0f;
+	if(CWaterLevel::GetWaterLevel(at, &water, true) && ground < water + 0.4f)
+		return false;
+
+	// The ring's own marks have to find ground too; a point on a pier or a
+	// rooftop over water is not an arena.
+	for(int i = 0; i < kKothRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
+		const CVector mark = at + CVector(Cos(angle), Sin(angle), 0.0f)*kKothRadius;
+		bool markFound = false;
+		CWorld::FindGroundZFor3DCoord(mark.x, mark.y, at.z + 3.0f, &markFound);
+		if(!markFound)
+			return false;
+	}
+
+	out = CVector(at.x, at.y, ground);
+	const int node = ThePaths.FindNodeClosestToCoors(out, PATH_CAR, 1000000.0f,
+	                                                 false, false, false, false);
+	if(node < 0){
+		roadDistance = 1000.0f;
+		return true;
+	}
+	const CVector nodePos = ThePaths.FindNodeCoorsForScript(node);
+	roadDistance = (out - nodePos).Magnitude2D();
+	return true;
+}
+
+// The ring is drawn on open ground, not wherever the party happens to be
+// standing.  If they are in the roadway, look for the nearest clear spot within
+// a short walk; if there is none, do not arm rather than put a fight in traffic.
+bool
+FindKothCentre(const CVector &from, CVector &out)
+{
+	static const float distances[] = { 0.0f, 6.0f, 12.0f, kKothShiftLimit };
+	for(int d = 0; d < (int)(sizeof(distances)/sizeof(distances[0])); d++){
+		const int directions = distances[d] == 0.0f ? 1 : 16;
+		for(int i = 0; i < directions; i++){
+			const float angle = 2.0f*PI*(float)i/(float)directions;
+			const CVector candidate = from +
+				CVector(Cos(angle), Sin(angle), 0.0f)*distances[d];
+			float roadDistance = 0.0f;
+			CVector spot;
+			if(!KothSpot(candidate, roadDistance, spot))
+				continue;
+			if(roadDistance >= kKothOpenRoad){
+				out = spot;
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
 void
-TryStartKoth(uint32 now)
+TryStartKoth(uint32 now, bool menuStart)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
@@ -3105,7 +3176,7 @@ TryStartKoth(uint32 now)
 	if(now < s_koth.rearmAt)
 		return;
 
-	const CVector centre = CrewCentre();
+	CVector centre = CrewCentre();
 	int present = 0;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -3113,16 +3184,32 @@ TryStartKoth(uint32 now)
 			continue;
 		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
 			return;
-		// The hill is on foot, in a car or in a Rhino.  A boat or an aircraft
-		// is a different game; leave it for the water and the air modes.
-		if(ped->bInVehicle && (ped->m_pMyVehicle == nil || !ped->m_pMyVehicle->IsCar()))
-			return;
-		if((PlayerCoors(i) - centre).Magnitude2D() > kKothGatherRange)
+		// The hill is on foot.  A player who stays in a car is a spectator:
+		// a passenger seat must not be a second scoring position, and a car
+		// must not turn a fight into a demolition derby.
+		if(ped->bInVehicle)
 			return;
 		present++;
 	}
 	if(present < 2)
 		return;
+
+	// Move the ring out of the roadway if that is where the party stopped.
+	// The party may have to walk a few steps to it; a fight in traffic is
+	// worse than a short walk.  The menu already put them on the airport
+	// apron, which is known clear ground, so it does not need the search.
+	if(!menuStart){
+		if(!FindKothCentre(centre, centre)){
+			COOP_LOG("WII coop: king of the hill needs open ground\n");
+			return;
+		}
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped != nil &&
+			   (ped->GetPosition() - centre).Magnitude2D() > kKothGatherRange + kKothShiftLimit)
+				return;
+		}
+	}
 
 	s_koth.active = true;
 	s_koth.counting = true;
@@ -3154,7 +3241,7 @@ TryStartKoth(uint32 now)
 		s_koth.ring[i] = mark;
 	}
 
-	COOP_LOG("WII coop: king of the hill on\n");
+	COOP_LOG("WII coop: king of the hill on at %.0f %.0f\n", centre.x, centre.y);
 	CCoop::Notify("WII_CSK");
 	ShowExplainer(EXPLAIN_KOTH, now);
 }
@@ -3195,7 +3282,8 @@ FinishKoth(uint32 now)
 	if(!tie && best >= 0){
 		s_koth.winner = best;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kKothPay;
-		COOP_LOG("WII coop: king of the hill to player %d\n", best + 1);
+		COOP_LOG("WII coop: king of the hill to player %d (%u/%u ms)\n",
+		         best + 1, s_koth.scoreMs[0], s_koth.scoreMs[1]);
 	}else
 		s_koth.winner = -1;
 	s_koth.holder = -1;
@@ -3328,7 +3416,7 @@ UpdateKoth(uint32 now)
 				s_koth.groupSince = now;
 			else if(now - s_koth.groupSince >= kKothHoldMs){
 				s_koth.groupSince = 0;
-				TryStartKoth(now);
+				TryStartKoth(now, false);
 			}
 		}else
 			s_koth.groupSince = 0;
@@ -3400,20 +3488,18 @@ UpdateKoth(uint32 now)
 		s_koth.lastScoreAt = now;
 	}
 
-	// Who is on the hill?  A player is wherever the game says they are: their
-	// car or Rhino while they are in one.  Two players in one car are two
-	// occupants, so the hill is contested.
+	// Who is on the hill?  Only a player on foot is a contender.  A car is a
+	// way to arrive, not a second scoring position, and two players in one car
+	// must not make the hill look contested without anybody standing on it.
 	int inside = 0;
 	int occupant = -1;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
 			continue;
-		// The hill starts on foot, in a car or in a Rhino.  A boat or an
-		// aircraft that wanders into the ring is not a contender.
-		if(ped->bInVehicle && (ped->m_pMyVehicle == nil || !ped->m_pMyVehicle->IsCar()))
+		if(ped->bInVehicle)
 			continue;
-		if((PlayerCoors(i) - s_koth.centre).Magnitude2D() <= kKothRadius){
+		if((ped->GetPosition() - s_koth.centre).Magnitude2D() <= kKothRadius){
 			inside++;
 			occupant = i;
 		}
@@ -4571,7 +4657,7 @@ DrawExplainer(uint32 now)
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
 		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
 		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
-		"ALL HOLD AIM. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
+		"ALL HOLD AIM ON FOOT. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -4832,10 +4918,19 @@ DrawModeMarks(uint32 now)
 			}
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
-			if(CCoop::GetPlayerPed(i) == nil)
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
 				continue;
 			const int score = s_pitch.players == 3 ? s_pitch.score[i] : s_pitch.teamScore[s_pitch.team[i]];
 			DrawLaneBar(i, (float)score/(float)kPitchGoalsToWin, kPitchGoalsToWin);
+			// The pitch is driven.  A passenger in somebody else's car is not
+			// in their own car and cannot score; say why their lane stays put.
+			CVehicle *car = nil;
+			if(!s_pitch.finished && !s_pitch.counting && !PlayerInPitchCar(i, &car)){
+				float cx, cy;
+				LaneSlot(i, cx, cy);
+				PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), "GET CAR", white, 0.45f, 0.7f);
+			}
 		}
 	}
 
@@ -4843,7 +4938,12 @@ DrawModeMarks(uint32 now)
 	// player for the time they have held it alone.
 	if(s_koth.active){
 		if(s_koth.finished){
-			DrawWinner(s_koth.winner);
+			char koth[48];
+			if(s_koth.winner >= 0){
+				sprintf(koth, "KING OF THE HILL  P%d WINS", s_koth.winner + 1);
+				DrawStatus(koth, kCoopColours[s_koth.winner]);
+			}else
+				DrawStatus("KING OF THE HILL  DRAW", white);
 		}else if(s_koth.counting){
 			DrawStatus("KING OF THE HILL", white);
 			DrawCountdown(now, s_koth.countdownAt);
@@ -4859,19 +4959,25 @@ DrawModeMarks(uint32 now)
 			else if(s_koth.holder >= 0)
 				sprintf(koth, "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
 			else
-				sprintf(koth, "KING OF THE HILL  %us  GET IN", left);
+				sprintf(koth, "KING OF THE HILL  %us  GET IN RING", left);
 			if(s_koth.downSince[0] == 0 || now - s_koth.downSince[0] >= kKothReviveMs)
 				DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
 				           s_koth.inside >= 2 ? CRGBA(255, 120, 120, 255) : white);
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
-			if(CCoop::GetPlayerPed(i) == nil)
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
 				continue;
 			DrawLaneBar(i, (float)s_koth.scoreMs[i]/(float)kKothRoundMs, kKothBarCells);
 			float cx, cy;
 			LaneSlot(i, cx, cy);
 			char secs[16];
-			sprintf(secs, "%us", s_koth.scoreMs[i]/1000);
+			// A player in a car is out of the hill by rule.  Say so on their
+			// lane instead of leaving a zero that looks like a scoring bug.
+			if(ped->bInVehicle)
+				sprintf(secs, "IN CAR");
+			else
+				sprintf(secs, "%us", s_koth.scoreMs[i]/1000);
 			PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), secs, white, 0.45f, 0.7f);
 		}
 	}
@@ -5153,7 +5259,7 @@ StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
 		return s_cnr.active;
 	case MENU_KOTH:
 		s_koth.rearmAt = 0;
-		TryStartKoth(now);
+		TryStartKoth(now, true);
 		return s_koth.active;
 	default:
 		return false;
@@ -5261,6 +5367,49 @@ UpdateMenuPending(uint32 now)
 }
 
 } // namespace
+
+// The RC Bandit is a remote-control model, not a car with doors.  The ordinary
+// exit path asks for a door dummy and a door opening animation the model does
+// not have; on hardware that is a crash when a player presses the exit button.
+// This detaches the player directly, puts them on clear ground beside the toy,
+// and lets UpdateRc bring a replacement on its usual five-second clock.  It is
+// also the last line of defence for any other caller of SetExitCar.
+bool
+CCoopModes::LeaveRcCar(CPlayerPed *ped)
+{
+	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		return false;
+	const int player = CCoop::GetPlayerIndex(ped);
+	if(player < 0 || player >= NUMPLAYERS)
+		return false;
+	// The race's toy is the usual case.  Checking the model as well catches a
+	// toy that is already on its way out of the mode, when its slot has been
+	// cleared but the player is still seated for a frame.
+	if(s_rc.car[player] != ped->m_pMyVehicle &&
+	   ped->m_pMyVehicle->GetModelIndex() != MI_RCBANDIT)
+		return false;
+
+	CVehicle *toy = ped->m_pMyVehicle;
+	CVector at = toy->GetPosition() + toy->GetRight()*2.2f;
+	bool found = false;
+	const float ground = CWorld::FindGroundZFor3DCoord(at.x, at.y, at.z + 3.0f, &found);
+	if(found)
+		at.z = ground;
+
+	// Move first, and clear the door node: PedSetOutCarCB checks the ped's
+	// position against the world, and if it has to resolve a collision it must
+	// not ask the toy for a door.  No door is the point of an RC model.
+	ped->Teleport(at);
+	ped->m_vehDoor = 0;
+	MenuLeaveVehicle(ped);
+	ped->bRenderPedInCar = true;
+	ped->bUsesCollision = true;
+	ped->SetPedState(PED_IDLE);
+	ped->SetMoveState(PEDMOVE_STILL);
+	s_rc.footSince[player] = CTimer::GetTimeInMilliseconds();
+	COOP_LOG("WII coop: player %d left rc car\n", player + 1);
+	return true;
+}
 
 void
 CCoopModes::Init(void)
@@ -5536,9 +5685,13 @@ bool
 CCoopModes::FreeRoam(void)
 {
 	// Cops & robbers is a pursuit: the wall that holds the party together has
-	// to stand aside or nobody can outrun anybody.  See CCoop::LimitSeparation
-	// and NeedsRegroup.
-	return s_cnr.active;
+	// to stand aside or nobody can outrun anybody.  The RC race needs the same
+	// room: a toy can be a hundred metres from player 1 on the far side of the
+	// ring, and the leash must not pull it back mid-lap.  King of the Hill is a
+	// fight over a 12 m ring; two players at opposite edges are already at the
+	// walking tether's limit, so the wall must not settle the fight for them.
+	// See CCoop::LimitSeparation and NeedsRegroup.
+	return s_cnr.active || s_rc.active || s_koth.active;
 }
 
 bool

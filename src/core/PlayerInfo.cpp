@@ -5,6 +5,7 @@
 #include "Camera.h"
 #include "CarCtrl.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #include "Cranes.h"
 #include "Darkel.h"
 #include "Explosion.h"
@@ -308,6 +309,11 @@ CPlayerInfo::Process(void)
 		enterOrExitVeh = CPad::GetPad(0)->ExitVehicleJustDown();
 	else
 		enterOrExitVeh = CPad::GetPad(0)->GetExitVehicle();
+
+	// The RC race seats a player in a toy with no doors.  Get them out through
+	// the mode's direct path before the engine's car-door exit runs.
+	if (enterOrExitVeh && CCoopModes::LeaveRcCar(m_pPed))
+		enterOrExitVeh = false;
 
 	if (enterOrExitVeh && m_pPed->m_nPedState != PED_ANSWER_MOBILE && m_pPed->m_nPedState != PED_SNIPER_MODE && m_pPed->m_nPedState != PED_ROCKET_MODE) {
 		if (m_pPed->bInVehicle) {

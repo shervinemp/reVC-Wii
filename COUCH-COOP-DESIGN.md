@@ -481,7 +481,10 @@ nothing.
 - **Marks on screen.** One colour per player (cyan, pink, green, amber), worn
   by their reticle and by a badge with their number on it, over their head (or
   their vehicle), with a health bar and an ammo line under it -- one set per
-  player, shown once a partner is in the world. The colours differ in lightness
+  player, shown once a partner is in the world. In a shared car the badges
+  follow the seats, not the player slots: the driver is on the left and the
+  front passenger on the right, whichever of them is player 1. The colours
+  differ in lightness
   as well as hue, and the number is what tells them apart for anyone hue does
   not. A downed partner's bar becomes the seconds they have left to bleed out,
   with "DOWN" under it and a white bar filling while someone revives them
@@ -509,7 +512,8 @@ assets:
   first to two rounds, weapons off),
 - the **RC race** (jump together on foot: the racers are seated directly in
   their toys, four gates in order, three laps, each driver's next gate in
-  their colour),
+  their colour; the party leash stands aside so a toy can take the far side
+  of the ring without being pulled back),
 - the **dance-off** (everyone ducks together: prompts on a climbing beat; the
   dancing is the players' own bodies), and
 - **cops & robbers** (the nod held for 0.6 s while gathered: grab the case,
@@ -517,11 +521,15 @@ assets:
 - **Caddy football** (everyone in their own car, one player holds the brake: a
   driverless Caddy is the ball; two goals for 1v1 or 2v2, three goals in a
   triangle for three players; first to three; not while wanted), and
-- **King of the Hill** (everyone holds aim: a 12 m ring where the party stands;
-  the sole occupant banks time, two or more contest it and nobody scores;
-  player-on-player damage is forced on; 90 seconds, most time wins; a downed or
-  arrested partner is brought back at the body after four seconds, and player 1
-  comes back on the same clock without the hospital reset).
+- **King of the Hill** (everyone holds aim on foot: a 12 m ring on the nearest
+  clear ground, never the roadway; the sole player standing inside banks time,
+  two or more contest it and nobody scores; player-on-player damage is forced
+  on; 90 seconds, most time wins; a downed or arrested partner is brought back
+  at the body after four seconds, and player 1 comes back on the same clock
+  without the hospital reset). A player who stays in a car is a spectator, not
+  a second scoring position, and a player in a car cannot make the ring
+  contested. The wall and leash stand aside for the round, because two players
+  at opposite edges of a 12 m ring are at the walking tether's limit already.
 
 The toy race seats its racers directly (`WarpPedIntoCar`) instead of asking
 them to walk into a toy: the RC Bandit is a remote-control model with no door
@@ -540,8 +548,8 @@ The co-op page also has **START A MINIGAME**, a page of the eight modes for
 players who do not want to remember the in-world gesture. Choosing a row arms
 the mode; once the menu closes, `CCoopModes::MenuStart` takes over and
 `UpdateMenuPending` teleports the party to a clear venue -- the airport apron
-for the derby, Caddy football and the toy race; the beaches for King of the
-Hill, the dance-off and cops & robbers; a road node for the cop shift; and a
+for the derby, Caddy football, King of the Hill and the toy race; the beaches
+for the dance-off and cops & robbers; a road node for the cop shift; and a
 water node off the docks for the smuggling run -- after loading the
 destination's collision. If a mode needs a vehicle, the menu makes one:
 Bloodring loaners for the derby and Caddy football, a police cruiser (and a
