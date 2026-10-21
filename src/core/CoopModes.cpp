@@ -3177,7 +3177,9 @@ TryStartPitch(uint32 now, bool held, bool menuStart = false)
 		return;
 	// Every present player holding aim is asking for the hill, not a pitch.
 	// One player's brake is the football; a partial group is not a hill ask.
-	if(s_koth.groupAll)
+	// A menu choice is already a decision, so it is allowed through even if
+	// the party happens to be aiming while choosing it.
+	if(s_koth.groupAll && !menuStart)
 		return;
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
