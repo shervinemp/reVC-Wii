@@ -538,6 +538,114 @@ struct MenuPending
 };
 MenuPending s_menuPending = { -1, 0 };
 
+// A world gesture does not start a mode on its own any more: it only puts a
+// mode on the table.  The party then sees the mode, its objective and a ready
+// state for every player; every player has to press A, and only then does the
+// countdown run.  This is deliberately not a menu page -- the game is still
+// live behind it -- but it turns an accidental horn/jump/brake into a
+// deliberate decision instead of a takeover.
+struct LobbyState
+{
+	bool active;
+	bool fromMenu;
+	int mode;
+	uint32 until;
+	uint32 startAt;
+	uint32 coolUntil;
+	bool ready[NUMPLAYERS];
+	CVector centre;
+	CVector forward;
+	int players;
+};
+LobbyState s_lobby;
+
+const char *s_startNotice;
+uint32 s_startNoticeUntil;
+
+void
+SetStartNotice(const char *notice, uint32 now)
+{
+	s_startNotice = notice;
+	s_startNoticeUntil = now + 2000;
+}
+
+bool ModeActive(void);
+
+// A ring built in an alley is worse than no ring.  Twelve spokes from the
+// centre catch the walls and solid objects that the old ground-only checks
+// missed; vehicles and peds are ignored because the party is standing there.
+bool
+AreaOpen(const CVector &centre, float radius)
+{
+	if(radius <= 0.0f)
+		return true;
+	for(int i = 0; i < 12; i++){
+		const float angle = 2.0f*PI*(float)i/12.0f;
+		CVector a = centre;
+		CVector b = centre + CVector(Cos(angle), Sin(angle), 0.0f)*radius;
+		a.z += 1.2f;
+		b.z += 1.2f;
+		if(!CWorld::GetIsLineOfSightClear(a, b, true, false, false, true, false, false))
+			return false;
+	}
+	return true;
+}
+
+bool
+ArmStart(int mode, uint32 now, const CVector &centre, const CVector &forward, int players,
+	bool fromMenu = false)
+{
+	if(s_lobby.active)
+		return false;
+	if(!fromMenu && now < s_lobby.coolUntil){
+		SetStartNotice("WAIT A MOMENT", now);
+		return false;
+	}
+	if(!CoopMinigames || !CCoop::PairActive() || ModeActive())
+		return false;
+	if(!fromMenu && mode != MENU_SHIFT && mode != MENU_RUN){
+		float radius = 0.0f;
+		switch(mode){
+		case MENU_DERBY: radius = kDerbyRadius; break;
+		case MENU_RC: radius = kRcRadius; break;
+		case MENU_DANCE: radius = kDanceFloor; break;
+		case MENU_CNR: radius = 12.0f; break;
+		case MENU_PITCH: radius = kPitchRingRadius; break;
+		case MENU_KOTH: radius = kKothRadius; break;
+		default: break;
+		}
+		if(!AreaOpen(centre, radius)){
+			COOP_LOG("WII coop: mode %d needs open ground\n", mode);
+			SetStartNotice("NEED OPEN GROUND", now);
+			return false;
+		}
+		if(mode == MENU_CNR){
+			CVector dir = forward;
+			dir.z = 0.0f;
+			if(dir.Magnitude() > 0.01f){
+				dir.Normalise();
+				if(!AreaOpen(centre + dir*kCnRGetawayDist, 8.0f)){
+					COOP_LOG("WII coop: cops & robbers getaway is blocked\n");
+					SetStartNotice("GETAWAY IS BLOCKED", now);
+					return false;
+				}
+			}
+		}
+	}
+	s_lobby.active = true;
+	s_lobby.fromMenu = fromMenu;
+	s_lobby.mode = mode;
+	s_lobby.until = now + 8000;
+	s_lobby.startAt = 0;
+	s_lobby.centre = centre;
+	s_lobby.forward = forward;
+	s_lobby.players = players;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_lobby.ready[i] = false;
+	COOP_LOG("WII coop: lobby armed for mode %d\n", mode);
+	return true;
+}
+
 void ReleaseLoaner(int player);
 void MenuLeaveVehicle(CPlayerPed *ped);
 bool SeatMenuDriver(CPlayerPed *ped, CVehicle *car);
@@ -1185,6 +1293,21 @@ EndShift(uint32 now, const char *why, int result)
 }
 
 void
+BeginShift(uint32 now)
+{
+	s_shift.active = true;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_shift.gunGiven[i] = false;
+	s_shift.streak = 0;
+	s_shift.crewLostAt = 0;
+	s_shift.resultAt = 0;
+	s_shift.nextCaseAt = now + kShiftStartDelayMs;
+	COOP_LOG("WII coop: cop shift on\n");
+	CCoop::Notify("WII_CSH");
+	ShowExplainer(EXPLAIN_SHIFT, now);
+}
+
+void
 TryStartShift(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
@@ -1197,16 +1320,7 @@ TryStartShift(uint32 now)
 	if(FindCrewedLawCar(true) == nil)
 		return;
 
-	s_shift.active = true;
-	for(int i = 0; i < NUMPLAYERS; i++)
-		s_shift.gunGiven[i] = false;
-	s_shift.streak = 0;
-	s_shift.crewLostAt = 0;
-	s_shift.resultAt = 0;
-	s_shift.nextCaseAt = now + kShiftStartDelayMs;
-	COOP_LOG("WII coop: cop shift on\n");
-	CCoop::Notify("WII_CSH");
-	ShowExplainer(EXPLAIN_SHIFT, now);
+	ArmStart(MENU_SHIFT, now, CVector(0.0f, 0.0f, 0.0f), CVector(0.0f, 0.0f, 0.0f), 0);
 }
 
 // --- the smuggling run -------------------------------------------------------
@@ -1853,6 +1967,15 @@ SeatRunCrew(CVehicle *lead)
 }
 
 void
+BeginRunWorld(uint32 now)
+{
+	CVehicle *boat = FindLeadBoat();
+	if(boat == nil || !StartRunAt(now, boat))
+		return;
+	SeatRunCrew(boat);
+}
+
+void
 TryStartRun(uint32 now)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
@@ -1870,8 +1993,7 @@ TryStartRun(uint32 now)
 	CPad *pad = GetPadFromVehicleDriver(boat);
 	if(pad == nil || !pad->GetHorn())
 		return;
-	if(StartRunAt(now, boat))
-		SeatRunCrew(boat);
+	ArmStart(MENU_RUN, now, CVector(0.0f, 0.0f, 0.0f), CVector(0.0f, 0.0f, 0.0f), 0);
 }
 
 void
@@ -2630,7 +2752,7 @@ TryStartDerby(uint32 now)
 			continue;
 		CPad *pad = GetPadFromVehicleDriver(car[i]);
 		if(pad != nil && pad->GetHorn()){
-			StartDerby(now, centre);
+			ArmStart(MENU_DERBY, now, centre, CVector(0.0f, 0.0f, 0.0f), count);
 			return;
 		}
 	}
@@ -3049,7 +3171,7 @@ StartPitch(uint32 now, const CVector &centre, const CVector &forward, int player
 }
 
 void
-TryStartPitch(uint32 now, bool held)
+TryStartPitch(uint32 now, bool held, bool menuStart = false)
 {
 	if(!held)
 		return;
@@ -3100,7 +3222,10 @@ TryStartPitch(uint32 now, bool held)
 	if(forward.Magnitude() < 0.1f)
 		forward = CVector(1.0f, 0.0f, 0.0f);
 	forward.Normalise();
-	StartPitch(now, centre, forward, count);
+	if(menuStart)
+		StartPitch(now, centre, forward, count);
+	else
+		ArmStart(MENU_PITCH, now, centre, forward, count);
 }
 
 void
@@ -3360,6 +3485,44 @@ FindKothCentre(const CVector &from, CVector &out)
 }
 
 void
+StartKothAt(uint32 now, const CVector &centre)
+{
+	s_koth.active = true;
+	s_koth.counting = true;
+	s_koth.finished = false;
+	s_koth.countdownAt = now + kKothCountdownMs;
+	s_koth.endAt = s_koth.countdownAt + kKothRoundMs;
+	s_koth.finishAt = 0;
+	s_koth.rearmAt = 0;
+	s_koth.groupSince = 0;
+	s_koth.groupAll = false;
+	s_koth.groupSpent = true;
+	s_koth.centre = centre;
+	s_koth.lastScoreAt = s_koth.countdownAt;
+	s_koth.aloneSince = 0;
+	s_koth.holder = -1;
+	s_koth.inside = 0;
+	s_koth.winner = -1;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		s_koth.scoreMs[i] = 0;
+		s_koth.downSince[i] = 0;
+	}
+
+	for(int i = 0; i < kKothRingMarks; i++){
+		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
+		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kKothRadius;
+		bool found = false;
+		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
+		mark.z = (found ? ground : centre.z) + 1.0f;
+		s_koth.ring[i] = mark;
+	}
+
+	COOP_LOG("WII coop: king of the hill on at %.0f %.0f\n", centre.x, centre.y);
+	CCoop::Notify("WII_CSK");
+	ShowExplainer(EXPLAIN_KOTH, now);
+}
+
+void
 TryStartKoth(uint32 now, bool menuStart)
 {
 	if(!CoopMinigames || !CCoop::PairActive())
@@ -3408,39 +3571,10 @@ TryStartKoth(uint32 now, bool menuStart)
 		}
 	}
 
-	s_koth.active = true;
-	s_koth.counting = true;
-	s_koth.finished = false;
-	s_koth.countdownAt = now + kKothCountdownMs;
-	s_koth.endAt = s_koth.countdownAt + kKothRoundMs;
-	s_koth.finishAt = 0;
-	s_koth.rearmAt = 0;
-	s_koth.groupSince = 0;
-	s_koth.groupAll = false;
-	s_koth.groupSpent = true;
-	s_koth.centre = centre;
-	s_koth.lastScoreAt = s_koth.countdownAt;
-	s_koth.aloneSince = 0;
-	s_koth.holder = -1;
-	s_koth.inside = 0;
-	s_koth.winner = -1;
-	for(int i = 0; i < NUMPLAYERS; i++){
-		s_koth.scoreMs[i] = 0;
-		s_koth.downSince[i] = 0;
-	}
-
-	for(int i = 0; i < kKothRingMarks; i++){
-		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
-		CVector mark = centre + CVector(Cos(angle), Sin(angle), 0.0f)*kKothRadius;
-		bool found = false;
-		const float ground = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, mark.z + 2.0f, &found);
-		mark.z = (found ? ground : centre.z) + 1.0f;
-		s_koth.ring[i] = mark;
-	}
-
-	COOP_LOG("WII coop: king of the hill on at %.0f %.0f\n", centre.x, centre.y);
-	CCoop::Notify("WII_CSK");
-	ShowExplainer(EXPLAIN_KOTH, now);
+	if(menuStart)
+		StartKothAt(now, centre);
+	else
+		ArmStart(MENU_KOTH, now, centre, CVector(0.0f, 0.0f, 0.0f), present);
 }
 
 void
@@ -3977,7 +4111,7 @@ TryStartRc(uint32 now)
 	if(dir.Magnitude() < 0.1f)
 		dir = CVector(1.0f, 0.0f, 0.0f);
 	dir.Normalise();
-	StartRc(now, centre, dir);
+	ArmStart(MENU_RC, now, centre, dir, count);
 }
 
 // The gates glow for everyone, and each driver's own next gate glows in their
@@ -4286,7 +4420,7 @@ TryStartDance(uint32 now)
 		if(ped != nil && (ped->GetPosition() - centre).Magnitude2D() > kDanceGatherRange)
 			return;
 	}
-	StartDance(now, centre);
+	ArmStart(MENU_DANCE, now, centre, CVector(0.0f, 0.0f, 0.0f), count);
 }
 
 void
@@ -4549,7 +4683,7 @@ TryStartCnR(uint32 now, bool held)
 		if(ped != nil && (ped->GetPosition() - centre).Magnitude2D() > kCnRGatherRange)
 			return;
 	}
-	StartCnR(now, centre, forward);
+	ArmStart(MENU_CNR, now, centre, forward, count);
 }
 
 void
@@ -4810,6 +4944,9 @@ DrawLaneTag(int player, const char *text)
 // cut into one cell for each thing being counted -- a round to win, a point,
 // a lap -- with a gap between them, so that a bar that is half full reads as
 // one of two and not as half of something; and over it, the player's name.
+char s_laneNoteText[NUMPLAYERS][32];
+const char *s_laneNote[NUMPLAYERS];
+
 void
 DrawLaneBar(int player, float fill, int cells)
 {
@@ -4828,8 +4965,12 @@ DrawLaneBar(int player, float fill, int cells)
 		if(part > 0.0f)
 			CSprite2d::DrawRect(CRect(left, cy - hh, left + (right - left)*part, cy + hh), kCoopColours[player]);
 	}
-	char name[8];
-	sprintf(name, "P%d", player + 1);
+	char name[32];
+	if(s_laneNote[player] != nil)
+		strncpy(name, s_laneNote[player], sizeof(name) - 1);
+	else
+		sprintf(name, "P%d", player + 1);
+	name[sizeof(name) - 1] = '\0';
 	DrawLaneTag(player, name);
 }
 
@@ -5018,9 +5159,67 @@ DrawObjectiveLabel(float x, float y, const char *ascii, const CRGBA &colour, flo
 	CFont::SetCentreOff();
 }
 
+const char *const kLobbyTitles[MENU_KOTH + 1] = {
+	"COP SHIFT", "SMUGGLING RUN", "BLOODRING", "RC RACE",
+	"DANCE-OFF", "COPS & ROBBERS", "CADDY FOOTBALL", "KING OF THE HILL"
+};
+const char *const kLobbyObjectives[MENU_KOTH + 1] = {
+	"CHASE THE SUSPECT. DRIVER AND SHOOTER.",
+	"RACE FOR THE CRATE. THREE DROPS.",
+	"LAST CAR RUNNING. FIRST TO TWO ROUNDS.",
+	"THREE LAPS. FOLLOW YOUR GATE COLOR.",
+	"MATCH THE PROMPT BEFORE THE NEXT BEAT.",
+	"GRAB THE CASE. REACH THE GETAWAY.",
+	"PUSH THE CADDY INTO A GOAL.",
+	"ONLY ONE IN THE RING SCORES. 90 SECONDS."
+};
+
+void
+DrawLobby(uint32 now)
+{
+	CSprite2d::DrawRect(CRect(0.0f, 0.0f, SCREEN_WIDTH, SCREEN_HEIGHT),
+		CRGBA(0, 0, 0, 120));
+	const float cx = SCREEN_WIDTH*0.5f;
+	PrintCentred(cx, SCREEN_SCALE_Y(76.0f), "MINIGAME READY",
+		CRGBA(255, 255, 255, 255), 0.7f, 1.0f);
+	PrintCentred(cx, SCREEN_SCALE_Y(100.0f), kLobbyTitles[s_lobby.mode],
+		CRGBA(255, 255, 255, 255), 1.0f, 1.5f);
+	PrintCentred(cx, SCREEN_SCALE_Y(128.0f), kLobbyObjectives[s_lobby.mode],
+		CRGBA(220, 220, 220, 255), 0.55f, 0.8f);
+	const char *venue = s_lobby.fromMenu ?
+		(s_lobby.mode == MENU_RUN ? "DOCKYARD" :
+		 s_lobby.mode == MENU_DANCE ? "OCEAN BEACH" : "AIRPORT APRON") :
+		"WHERE YOU STAND";
+	PrintCentred(cx, SCREEN_SCALE_Y(148.0f), venue,
+		CRGBA(170, 200, 220, 255), 0.45f, 0.7f);
+
+	int present = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		char line[32];
+		sprintf(line, "P%d  %s", i + 1, s_lobby.ready[i] ? "READY" : "PRESS A");
+		PrintCentred(cx, SCREEN_SCALE_Y(176.0f + 20.0f*present), line,
+			s_lobby.ready[i] ? kCoopColours[i] : CRGBA(255, 255, 255, 255),
+			0.55f, 0.8f);
+		present++;
+	}
+
+	if(s_lobby.startAt != 0){
+		char count[48];
+		const uint32 left = s_lobby.startAt > now ? (s_lobby.startAt - now + 999)/1000 : 0;
+		sprintf(count, "STARTING IN %u", left);
+		PrintCentred(cx, SCREEN_SCALE_Y(276.0f), count,
+			CRGBA(255, 220, 90, 255), 0.9f, 1.3f);
+	}else
+		PrintCentred(cx, SCREEN_SCALE_Y(276.0f), "A: READY    B: CANCEL",
+			CRGBA(200, 200, 200, 255), 0.65f, 0.9f);
+}
+
 void
 DrawObjectiveTag(const CVector &target, int fromPlayer, const char *name,
-	const CRGBA &colour, float scale)
+	const CRGBA &colour, float scale, bool showDistance = false)
 {
 	CPlayerPed *from = CCoop::GetPlayerPed(fromPlayer);
 	if(from == nil)
@@ -5028,7 +5227,9 @@ DrawObjectiveTag(const CVector &target, int fromPlayer, const char *name,
 	const CVector playerPos = PlayerCoors(fromPlayer);
 	const float distance = (target - playerPos).Magnitude2D();
 	char label[64];
-	if(distance < 2.0f)
+	if(!showDistance)
+		sprintf(label, "%s", name);
+	else if(distance < 2.0f)
 		sprintf(label, "%s HERE", name);
 	else
 		sprintf(label, "%s %dm", name, (int)distance);
@@ -5091,12 +5292,120 @@ DrawObjectiveTag(const CVector &target, int fromPlayer, const char *name,
 	DrawObjectiveLabel(x, y, label, colour, scale);
 }
 
+bool
+ObjectiveForPlayer(int player, CVector &target)
+{
+	if(s_shift.active && s_shift.caseActive){
+		if(s_shift.suspectCar != nil)
+			target = s_shift.suspectCar->GetPosition();
+		else if(s_shift.suspectPed != nil)
+			target = s_shift.suspectPed->GetPosition();
+		else
+			return false;
+		return true;
+	}
+	if(s_run.active){
+		target = s_run.carrier >= 0 ? s_run.drop : s_run.cargoPos[s_run.leg];
+		return true;
+	}
+	if(s_derby.active && !s_derby.finished){
+		target = s_derby.centre;
+		return true;
+	}
+	if(s_pitch.active && !s_pitch.finished){
+		target = s_pitch.ball != nil ? s_pitch.ball->GetPosition() : s_pitch.centre;
+		return true;
+	}
+	if(s_koth.active && !s_koth.finished){
+		target = s_koth.centre;
+		return true;
+	}
+	if(s_dance.active && !s_dance.finished){
+		target = s_dance.centre;
+		return true;
+	}
+	if(s_cnr.active && !s_cnr.finished){
+		target = s_cnr.carried ? s_cnr.getaway : s_cnr.casePos;
+		return true;
+	}
+	if(s_rc.active && !s_rc.finished && s_rc.nextGate[player] >= 0){
+		target = s_rc.gate[s_rc.nextGate[player]];
+		return true;
+	}
+	return false;
+}
+
+// Per-player distance to the same objective.  The tag on the target says what
+// it is; this says how far it is from each player's own body, which the old
+// single P1-relative number never did.
+void
+DrawObjectiveDistances(void)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->DyingOrDead())
+			continue;
+		CVector target;
+		if(!ObjectiveForPlayer(i, target))
+			continue;
+		const float distance = (target - PlayerCoors(i)).Magnitude2D();
+		char line[16];
+		if(distance < 2.0f)
+			strcpy(line, "HERE");
+		else
+			sprintf(line, "%dm", (int)distance);
+		float cx, cy;
+		LaneSlot(i, cx, cy);
+		PrintCentred(cx, cy - SCREEN_SCALE_Y(48.0f), line,
+			kCoopColours[i], 0.38f, 0.58f);
+	}
+}
+
 // All the mode objectives on screen at once.  A tag is deliberately small:
 // the status line and bars already own the top and bottom, and this is the
 // missing "which way, and which mark is mine" line.
 void
+DrawPlayerRole(int player, const char *role)
+{
+	float cx, cy;
+	LaneSlot(player, cx, cy);
+	PrintCentred(cx, cy - SCREEN_SCALE_Y(64.0f), role,
+		kCoopColours[player], 0.38f, 0.58f);
+}
+
+void
 DrawObjectiveMarks(void)
 {
+	DrawObjectiveDistances();
+	if(s_shift.active){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
+				continue;
+			const char *role = "ON FOOT";
+			if(ped->bInVehicle && ped->m_pMyVehicle != nil){
+				role = ped->m_pMyVehicle->pDriver == ped ? "DRIVER" : "GUNNER";
+			}
+			DrawPlayerRole(i, role);
+		}
+	}
+	if(s_run.active){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
+				continue;
+			const char *role;
+			if(i == 0)
+				role = "SKIPPER";
+			else if(s_run.carrier == i)
+				role = "CARRIER";
+			else if(ped->bInVehicle && ped->m_pMyVehicle != nil && ped->m_pMyVehicle->pDriver == ped)
+				role = "ESCORT";
+			else
+				role = "COVER";
+			DrawPlayerRole(i, role);
+		}
+	}
 	if(s_shift.active && s_shift.caseActive){
 		if(s_shift.suspectCar != nil)
 			DrawObjectiveTag(s_shift.suspectCar->GetPosition(), 0, "SUSPECT",
@@ -5142,7 +5451,7 @@ DrawObjectiveMarks(void)
 				continue;
 			char name[24];
 			sprintf(name, "P%d GATE", i + 1);
-			DrawObjectiveTag(s_rc.gate[s_rc.nextGate[i]], i, name, kCoopColours[i], 0.8f);
+			DrawObjectiveTag(s_rc.gate[s_rc.nextGate[i]], i, name, kCoopColours[i], 0.8f, true);
 		}
 	}
 
@@ -5170,19 +5479,22 @@ DrawObjectiveMarks(void)
 		}
 		const char *hint = nil;
 		if(present >= 2 && onFoot == present)
-			hint = "START:  JUMP RC   DUCK DANCE   HOLD NOD COPS   AIM KING";
+			hint = "TRY:  JUMP RC   DUCK DANCE   HOLD NOD COPS   AIM KING";
 		else if(present >= 2 && inCars == present)
 			hint = FindCrewedLawCar(true) != nil ?
-				"START:  SIREN COP   HORN DERBY   HOLD BRAKE CADDY" :
-				"START:  HORN DERBY   HOLD BRAKE CADDY";
+				"TRY:  SIREN COP   HORN DERBY   HOLD BRAKE CADDY" :
+				"TRY:  HORN DERBY   HOLD BRAKE CADDY";
 		else if(present >= 2 && inBoats == present)
-			hint = "START:  HORN SMUGGLING RUN";
+			hint = "TRY:  HORN SMUGGLING RUN";
 		if(hint != nil){
 			DrawObjectiveLabel(SCREEN_WIDTH*0.5f,
 				SCREEN_HEIGHT - SCREEN_SCALE_Y(54.0f), hint,
 				CRGBA(255, 255, 255, 255), 0.75f);
 		}
 	}
+	if(ModeActive())
+		PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_HEIGHT - SCREEN_SCALE_Y(18.0f),
+			"HOLD SELECT OR L+R: END MODE", CRGBA(190, 190, 190, 255), 0.35f, 0.55f);
 }
 
 // The nearest live police boat to the thing being chased, for the run's
@@ -5212,6 +5524,30 @@ DrawModeMarks(uint32 now)
 {
 	char line[64];
 	const CRGBA white(255, 255, 255, 255);
+
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_laneNote[i] = nil;
+	if(s_cnr.active && !s_cnr.finished && s_cnr.carried &&
+	   s_cnr.carrier >= 0 && s_cnr.carrier < NUMPLAYERS){
+		sprintf(s_laneNoteText[s_cnr.carrier], "P%d ROBBER", s_cnr.carrier + 1);
+		s_laneNote[s_cnr.carrier] = s_laneNoteText[s_cnr.carrier];
+	}
+	if(s_derby.active && !s_derby.finished && !s_derby.counting && s_derby.round > 0){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil || s_derby.running[i])
+				continue;
+			sprintf(s_laneNoteText[i], "P%d OUT", i + 1);
+			s_laneNote[i] = s_laneNoteText[i];
+		}
+	}
+	if(s_pitch.active && !s_pitch.finished && s_pitch.players != 3){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(!s_pitch.inMatch[i] || s_pitch.team[i] < 0)
+				continue;
+			sprintf(s_laneNoteText[i], "P%d T%d", i + 1, s_pitch.team[i] + 1);
+			s_laneNote[i] = s_laneNoteText[i];
+		}
+	}
 
 	// The cop shift: the streak, the case's clock, and what the last case came to.
 	DrawShiftMarks(now);
@@ -5610,7 +5946,7 @@ StartMenuShift(uint32 now)
 	}
 
 	CCoop::ClearTeleportWatch();
-	TryStartShift(now);
+	BeginShift(now);
 	return s_shift.active;
 }
 
@@ -5668,6 +6004,14 @@ StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
 	MenuLoadScene(actual.pos);
 	if(!MenuVenueOnLand(actual, nil)){
 		COOP_LOG("WII coop: menu venue is water, using airport\n");
+		actual = kAirportMenu;
+		MenuLoadScene(actual.pos);
+	}
+	const float venueRadius = mode == MENU_RC ? kRcRadius :
+		mode == MENU_DANCE ? kDanceFloor :
+		mode == MENU_CNR ? 12.0f : kKothRadius;
+	if(!AreaOpen(actual.pos, venueRadius)){
+		COOP_LOG("WII coop: menu venue is blocked, using airport\n");
 		actual = kAirportMenu;
 		MenuLoadScene(actual.pos);
 	}
@@ -5729,7 +6073,7 @@ StartMenuCars(int mode, uint32 now)
 		const bool group = s_koth.groupAll;
 		s_koth.groupAll = false;
 		s_pitch.rearmAt = 0;
-		TryStartPitch(now, true);
+		TryStartPitch(now, true, true);
 		s_koth.groupAll = s_pitch.active ? false : group;
 		return s_pitch.active;
 	}
@@ -5800,13 +6144,232 @@ UpdateMenuPending(uint32 now)
 	}
 
 	const int mode = s_menuPending.mode;
-	if(StartMenuMode(mode, now)){
+	if(ArmStart(mode, now, CVector(0.0f, 0.0f, 0.0f), CVector(0.0f, 0.0f, 0.0f), 0, true)){
 		s_menuPending.mode = -1;
 		return;
 	}
 	ReleaseMenuLoaners();
 	COOP_LOG("WII coop: menu start %d failed\n", mode);
 	s_menuPending.mode = -1;
+}
+
+void
+CloseLobby(uint32 now, const char *why)
+{
+	s_lobby.active = false;
+	s_lobby.fromMenu = false;
+	s_lobby.startAt = 0;
+	s_lobby.mode = -1;
+	s_lobby.coolUntil = now + 4000;
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_lobby.ready[i] = false;
+	COOP_LOG("WII coop: lobby closed (%s)\n", why);
+}
+
+bool
+BeginLobbyStart(uint32 now)
+{
+	const int mode = s_lobby.mode;
+	const CVector centre = s_lobby.centre;
+	const CVector forward = s_lobby.forward;
+	int players = 0;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && !ped->DyingOrDead() && ped->m_nPedState != PED_ARRESTED)
+			players++;
+	}
+	const bool fromMenu = s_lobby.fromMenu;
+	s_lobby.active = false;
+	s_lobby.fromMenu = false;
+	s_lobby.startAt = 0;
+	s_lobby.mode = -1;
+
+	if(fromMenu){
+		if(StartMenuMode(mode, now))
+			return true;
+		s_lobby.coolUntil = now + 4000;
+		COOP_LOG("WII coop: menu lobby start failed\n");
+		return false;
+	}
+
+	if(mode != MENU_SHIFT && mode != MENU_RUN){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped != nil && (PlayerCoors(i) - centre).Magnitude2D() > 45.0f){
+				s_lobby.coolUntil = now + 4000;
+				COOP_LOG("WII coop: lobby aborted, player %d walked away\n", i + 1);
+				return false;
+			}
+		}
+	}
+
+	// Pressing A to ready is also the enter/gas button.  A player can get into
+	// a car during the countdown; do not start a foot mode with a spectator.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			continue;
+		if((mode == MENU_RC || mode == MENU_DANCE || mode == MENU_CNR || mode == MENU_KOTH) &&
+		   ped->bInVehicle){
+			s_lobby.coolUntil = now + 4000;
+			COOP_LOG("WII coop: lobby aborted, player %d got into a car\n", i + 1);
+			return false;
+		}
+		if((mode == MENU_DERBY || mode == MENU_PITCH)){
+			CVehicle *car = nil;
+			const bool ready = mode == MENU_DERBY ? PlayerInDerbyCar(i, &car) : PlayerInPitchCar(i, &car);
+			if(!ready){
+				s_lobby.coolUntil = now + 4000;
+				COOP_LOG("WII coop: lobby aborted, player %d left their car\n", i + 1);
+				return false;
+			}
+		}
+	}
+
+	switch(mode){
+	case MENU_SHIFT:
+		if(PartyWanted() || FindCrewedLawCar(true) == nil){
+			s_lobby.coolUntil = now + 4000;
+			COOP_LOG("WII coop: lobby shift lost its cruiser\n");
+			return false;
+		}
+		BeginShift(now);
+		return true;
+	case MENU_RUN:
+		BeginRunWorld(now);
+		if(!s_run.active)
+			s_lobby.coolUntil = now + 4000;
+		return s_run.active;
+	case MENU_DERBY:
+		StartDerby(now, centre);
+		return true;
+	case MENU_RC:
+		StartRc(now, centre, forward);
+		return true;
+	case MENU_DANCE:
+		StartDance(now, centre);
+		return true;
+	case MENU_CNR:
+		StartCnR(now, centre, forward);
+		return true;
+	case MENU_PITCH:
+		StartPitch(now, centre, forward, players);
+		return true;
+	case MENU_KOTH:
+		StartKothAt(now, centre);
+		return true;
+	default:
+		s_lobby.coolUntil = now + 4000;
+		return false;
+	}
+}
+
+void
+UpdateLobby(uint32 now)
+{
+	if(!s_lobby.active)
+		return;
+	// Opening the pause menu is not a reason to lose the lobby; it waits for
+	// the players to come back, then gives them the full window again.
+	if(FrontEndMenuManager.GetIsMenuActive()){
+		s_lobby.until = now + 8000;
+		return;
+	}
+	if(!CoopMinigames || !CCoop::PairActive()){
+		CloseLobby(now, "session");
+		return;
+	}
+	if(now >= s_lobby.until && s_lobby.startAt == 0){
+		CloseLobby(now, "timed out");
+		return;
+	}
+
+	int present = 0;
+	bool allReady = true;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
+			allReady = false;
+			continue;
+		}
+		present++;
+		CPad *pad = GetPadFromPlayer(ped);
+		if(pad->GetCircleJustDown()){
+			CloseLobby(now, "cancelled");
+			return;
+		}
+		if(pad->GetCrossJustDown())
+			s_lobby.ready[i] = true;
+		if(!s_lobby.ready[i])
+			allReady = false;
+	}
+	if(present < 2){
+		CloseLobby(now, "not enough players");
+		return;
+	}
+
+	if(allReady){
+		if(s_lobby.startAt == 0)
+			s_lobby.startAt = now + 2500;
+		else if(now >= s_lobby.startAt)
+			BeginLobbyStart(now);
+	}else
+		s_lobby.startAt = 0;
+}
+
+uint32 s_endHold[NUMPLAYERS];
+
+void
+AbortActiveMode(uint32 now)
+{
+	if(s_shift.active)
+		EndShift(now, "forfeit", SHIFT_RESULT_STOOD_DOWN);
+	else if(s_run.active)
+		EndRun(now, "forfeit");
+	else if(s_derby.active)
+		EndDerby(now, "forfeit");
+	else if(s_rc.active)
+		EndRc(now, "forfeit");
+	else if(s_dance.active)
+		EndDance(now, "forfeit");
+	else if(s_cnr.active)
+		EndCnR(now, "forfeit");
+	else if(s_pitch.active)
+		EndPitch(now, "forfeit");
+	else if(s_koth.active)
+		EndKoth(now, "forfeit");
+	for(int i = 0; i < NUMPLAYERS; i++)
+		s_endHold[i] = 0;
+}
+
+void
+UpdateModeCancel(uint32 now)
+{
+	if(!ModeActive() || s_lobby.active){
+		for(int i = 0; i < NUMPLAYERS; i++)
+			s_endHold[i] = 0;
+		return;
+	}
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil){
+			s_endHold[i] = 0;
+			continue;
+		}
+		CPad *pad = GetPadFromPlayer(ped);
+		const bool endButton = pad->NewState.Select != 0 ||
+			(pad->NewState.LeftShoulder1 != 0 && pad->NewState.RightShoulder1 != 0);
+		if(!endButton){
+			s_endHold[i] = 0;
+			continue;
+		}
+		if(s_endHold[i] == 0)
+			s_endHold[i] = now;
+		else if(now - s_endHold[i] >= 1500){
+			AbortActiveMode(now);
+			return;
+		}
+	}
 }
 
 } // namespace
@@ -5877,6 +6440,10 @@ CCoopModes::Init(void)
 {
 	s_menuPending.mode = -1;
 	s_menuPending.requestedAt = 0;
+	memset(&s_lobby, 0, sizeof(s_lobby));
+	s_lobby.mode = -1;
+	s_startNotice = nil;
+	s_startNoticeUntil = 0;
 	if(s_shift.suspectCar != nil)
 		s_shift.suspectCar->CleanUpOldReference((CEntity**)&s_shift.suspectCar);
 	if(s_shift.suspectPed != nil)
@@ -5959,6 +6526,8 @@ CCoopModes::Update(void)
 	// A row on the minigame page arms a start; this is the first point after
 	// the menu has closed that can stream the destination and move anybody.
 	UpdateMenuPending(now);
+	UpdateLobby(now);
+	UpdateModeCancel(now);
 	RegisterObjectiveBeacons();
 
 	// A car or boat gunner needs a submachine gun to join the fight.  One kit
@@ -6115,7 +6684,7 @@ CCoopModes::SteadyView(void)
 bool
 CCoopModes::MenuStart(int mode)
 {
-	if(!CoopMinigames || !CCoop::PairActive() || ModeActive())
+	if(!CoopMinigames || !CCoop::PairActive() || ModeActive() || s_lobby.active)
 		return false;
 	if(mode < MENU_SHIFT || mode > MENU_KOTH)
 		return false;
@@ -6162,6 +6731,13 @@ CCoopModes::FreeRoam(void)
 bool
 CCoopModes::CameraHint(CVector &target)
 {
+	// The cargo carrier is the thing the escort has to keep in view; without
+	// this the shared camera can stay with the lead boat while the partner
+	// carries the crate off the side of the screen.
+	if(s_run.active && s_run.carrier >= 0 && CCoop::GetPlayerPed(s_run.carrier) != nil){
+		target = PlayerCoors(s_run.carrier);
+		return true;
+	}
 	if(!s_cnr.active || s_cnr.finished)
 		return false;
 	if(s_cnr.carrier >= 0 && CCoop::GetPlayerPed(s_cnr.carrier) != nil)
@@ -6248,6 +6824,17 @@ void
 CCoopModes::DrawHud(void)
 {
 	const uint32 now = CTimer::GetTimeInMilliseconds();
+
+	// World starts are nominations, not takeovers: while the readiness card is
+	// up it is the only mode UI on screen.
+	if(s_lobby.active){
+		DrawLobby(now);
+		return;
+	}
+	if(!ModeActive() && s_startNoticeUntil > now){
+		PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_HEIGHT - SCREEN_SCALE_Y(78.0f),
+			s_startNotice, CRGBA(255, 210, 110, 255), 0.45f, 0.7f);
+	}
 
 	// The headlines, countdowns and bars, and what is left of them once a mode
 	// has ended.
