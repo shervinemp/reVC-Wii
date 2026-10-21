@@ -1,4 +1,4 @@
-# Co-op review: coop-4-perf (2026-10-18)
+# Co-op review: coop (2026-10-18)
 
 Scope: everything the multiplayer work changed since 352ca4b4 (about 8,600 added lines).
 Nothing was built or run. Five reviewers read the code, one area each, and I read the menu,
