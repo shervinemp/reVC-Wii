@@ -5180,7 +5180,7 @@ DrawObjectiveMarks(void)
 		if(hint != nil){
 			DrawObjectiveLabel(SCREEN_WIDTH*0.5f,
 				SCREEN_HEIGHT - SCREEN_SCALE_Y(54.0f), hint,
-				CRGBA(255, 255, 255, 255), 0.62f);
+				CRGBA(255, 255, 255, 255), 0.75f);
 		}
 	}
 }
