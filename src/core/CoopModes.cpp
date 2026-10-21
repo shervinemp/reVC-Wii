@@ -517,28 +517,49 @@ CnRState s_cnr;
 
 // --- menu quick starts -------------------------------------------------------
 // The menu's versions of the modes need a clear, known piece of ground.  The
-// airport apron is the largest flat space on the map and carries the three
-// vehicle modes; the beaches are flat enough for the foot modes, and the two
+// airport apron is the largest flat space on the map and carries the vehicle
+// modes; the beaches are flat enough for the foot modes, and the two
 // road/water starts are picked from the path graph below.
+//
+// A venue is a landmark, a name, and how much open ground the mode needs.
+// The airport and the beach are known spots.  The others are bases the search
+// walks out from -- a ring at a time, taking the first square that is dry and
+// clear -- so an approximate coordinate still finds the place.  A venue that
+// cannot be found falls back to the airport, which is the one piece of ground
+// in the city that is known to be wide, flat and clear of traffic.
 struct MenuVenue
 {
 	CVector pos;
 	float heading;
+	const char *name;
 };
-const MenuVenue kAirportMenu = { CVector(-1540.0f, -1110.0f, 14.0f), 0.0f };
+const MenuVenue kAirportMenu = { CVector(-1540.0f, -1110.0f, 14.0f), 0.0f, "AIRPORT APRON" };
 // The airport apron is the one piece of ground guaranteed to be wide, flat and
 // clear of traffic; the old point was a roadway in Vice Point.  The world
 // gesture still uses the nearest clear patch to wherever the party stands.
-const MenuVenue kKothMenu = kAirportMenu;
-const MenuVenue kDanceMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f };
+const MenuVenue kGolfMenu = { CVector(-700.0f, 1000.0f, 10.0f), 0.0f, "GOLF COURSE" };
+const MenuVenue kStadiumMenu = { CVector(1250.0f, -950.0f, 10.0f), 0.0f, "STADIUM CAR PARK" };
+const MenuVenue kDocksMenu = { CVector(-1150.0f, -400.0f, 5.0f), 0.0f, "THE DOCKS" };
+const MenuVenue kBeachMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f, "OCEAN BEACH" };
 // The old CnR and shift venue was the boulevard in front of Ocean View
 // Hospital.  It is a landmark, but it is also a live road with traffic, and a
 // mode that starts there reads as an invisible patch of pavement rather than a
-// deliberate arena.  Both starts use the airport apron: flat, clear, and one
-// landmark the party can see and name.
-const MenuVenue kCnRMenu = kAirportMenu;
+// deliberate arena.  Both starts are somewhere the party can name instead.
+const MenuVenue kKothMenu = kDocksMenu;
+const MenuVenue kCnRMenu = kBeachMenu;
+const MenuVenue kDanceMenu = kBeachMenu;
+const MenuVenue kDerbyMenu = kAirportMenu;
+const MenuVenue kCaddyMenu = kGolfMenu;
+const MenuVenue kRcMenu = kStadiumMenu;
 const CVector kShiftMenuBase = kAirportMenu.pos;
 const CVector kRunMenuBase(-850.0f, -1250.0f, 0.0f);
+// The run starts on the water, which the land search below would refuse: it
+// is here for the name and for nothing else.
+const MenuVenue kWaterMenu = { kRunMenuBase, 0.0f, "DOCKYARD" };
+
+// The venue the party is about to be taken to, worked out when the mode is
+// chosen so that the ready-up card can name it before anybody has moved.
+MenuVenue s_menuVenue = { CVector(0.0f, 0.0f, 0.0f), 0.0f, "AIRPORT APRON" };
 
 struct MenuPending
 {
@@ -2499,6 +2520,68 @@ MenuVenueOnLand(const MenuVenue &venue, CVector *out)
 		out->z = ground;
 	}
 	return true;
+}
+
+// The venue for a mode, and how much open ground that mode needs around it.
+const MenuVenue *
+MenuVenueFor(int mode, float &openness)
+{
+	switch(mode){
+	case MENU_DERBY: openness = kDerbyRadius; return &kDerbyMenu;
+	case MENU_PITCH: openness = kPitchRingRadius; return &kCaddyMenu;
+	case MENU_RC: openness = kRcRadius; return &kRcMenu;
+	case MENU_DANCE: openness = kDanceFloor; return &kDanceMenu;
+	case MENU_CNR: openness = 12.0f; return &kCnRMenu;
+	case MENU_KOTH: openness = kKothRadius; return &kKothMenu;
+	case MENU_SHIFT: openness = 12.0f; return &kAirportMenu;
+	case MENU_RUN: openness = 12.0f; return &kWaterMenu;
+	default: openness = 12.0f; return &kAirportMenu;
+	}
+}
+
+// The venue, worked out: the base itself if it is open, dry ground, and
+// otherwise the first square near it that is.  The search walks out in rings
+// and takes the first that passes, so a base that is only approximately
+// where it should be still finds the place.  The airport is the fallback: it
+// is the one piece of ground in the city that is known to be wide, flat and
+// clear of traffic.
+MenuVenue
+ResolveMenuVenue(const MenuVenue &venue, float openness)
+{
+	MenuVenue actual = venue;
+	MenuLoadScene(actual.pos);
+	if(MenuVenueOnLand(actual, nil) && AreaOpen(actual.pos, openness))
+		return actual;
+
+	for(int ring = 0; ring <= 4; ring++){
+		const float dist = ring*25.0f;
+		const int spokes = ring == 0 ? 1 : 12;
+		for(int i = 0; i < spokes; i++){
+			const float angle = 2.0f*PI*(float)i/(float)spokes + ring*0.37f;
+			CVector at = venue.pos + CVector(Cos(angle), Sin(angle), 0.0f)*dist;
+			bool found = false;
+			const float ground = CWorld::FindGroundZFor3DCoord(at.x, at.y, venue.pos.z + 60.0f, &found);
+			if(!found)
+				continue;
+			at.z = ground;
+			float water = 0.0f;
+			if(CWaterLevel::GetWaterLevel(at, &water, true) && at.z < water + 0.6f)
+				continue;
+			// The collision around this square has to be in before it can
+			// be tested: the scene that was loaded is the base's, and the
+			// search walks out of it.
+			MenuLoadScene(at);
+			if(!AreaOpen(at, openness))
+				continue;
+			COOP_LOG("WII coop: %s venue at %.0f %.0f\n", venue.name, at.x, at.y);
+			actual.pos = at;
+			return actual;
+		}
+	}
+	COOP_LOG("WII coop: no open ground near %s, using the airport\n", venue.name);
+	actual = kAirportMenu;
+	MenuLoadScene(actual.pos);
+	return actual;
 }
 
 CVector
@@ -5327,10 +5410,9 @@ DrawLobby(uint32 now)
 		CRGBA(255, 255, 255, 255), 1.0f, 1.5f);
 	PrintCentred(cx, SCREEN_SCALE_Y(128.0f), kLobbyObjectives[s_lobby.mode],
 		CRGBA(220, 220, 220, 255), 0.55f, 0.8f);
-	const char *venue = s_lobby.fromMenu ?
-		(s_lobby.mode == MENU_RUN ? "DOCKYARD" :
-		 s_lobby.mode == MENU_DANCE ? "OCEAN BEACH" : "AIRPORT APRON") :
-		"WHERE YOU STAND";
+	// Where the party is going.  A menu start has a venue worked out before
+	// the card; a world gesture starts where they are standing.
+	const char *venue = s_lobby.fromMenu ? s_menuVenue.name : "WHERE YOU STAND";
 	PrintCentred(cx, SCREEN_SCALE_Y(148.0f), venue,
 		CRGBA(170, 200, 220, 255), 0.45f, 0.7f);
 
@@ -6153,10 +6235,11 @@ StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
 	if(mode != MENU_KOTH && PartyWanted())
 		return false;
 
-	// The beach points were picked from the map's empty ground, but the sea is
-	// close enough that a wrong one puts the party in water.  Load the venue
-	// first, then keep it only if there is real ground above the waterline; the
-	// airport apron is the safe fallback for the foot modes.
+	// The venue was worked out when the mode was chosen, so the ready-up
+	// card could name it.  It is checked again here: the world has moved on
+	// since, and the sea is close enough to a wrong one to put the party in
+	// water.  Load the venue first, then keep it only if there is real
+	// ground above the waterline; the airport apron is the safe fallback.
 	MenuVenue actual = venue;
 	MenuLoadScene(actual.pos);
 	if(!MenuVenueOnLand(actual, nil)){
@@ -6216,7 +6299,7 @@ StartMenuCars(int mode, uint32 now)
 	const bool caddy = mode == MENU_PITCH;
 	if(caddy && PartyWanted())
 		return false;
-	if(!MenuPrepareCars(kAirportMenu, caddy))
+	if(!MenuPrepareCars(s_menuVenue, caddy))
 		return false;
 
 	if(caddy){
@@ -6261,11 +6344,11 @@ StartMenuMode(int mode, uint32 now)
 	case MENU_SHIFT: return StartMenuShift(now);
 	case MENU_RUN: return StartMenuRun(now);
 	case MENU_DERBY: return StartMenuCars(MENU_DERBY, now);
-	case MENU_RC: return StartMenuFoot(MENU_RC, kAirportMenu, now);
-	case MENU_DANCE: return StartMenuFoot(MENU_DANCE, kDanceMenu, now);
-	case MENU_CNR: return StartMenuFoot(MENU_CNR, kCnRMenu, now);
+	case MENU_RC: return StartMenuFoot(MENU_RC, s_menuVenue, now);
+	case MENU_DANCE: return StartMenuFoot(MENU_DANCE, s_menuVenue, now);
+	case MENU_CNR: return StartMenuFoot(MENU_CNR, s_menuVenue, now);
 	case MENU_PITCH: return StartMenuCars(MENU_PITCH, now);
-	case MENU_KOTH: return StartMenuFoot(MENU_KOTH, kKothMenu, now);
+	case MENU_KOTH: return StartMenuFoot(MENU_KOTH, s_menuVenue, now);
 	default: return false;
 	}
 }
@@ -6301,6 +6384,18 @@ UpdateMenuPending(uint32 now)
 	}
 
 	const int mode = s_menuPending.mode;
+	// The venue is worked out now, before the ready-up card, so the card can
+	// say where the party is going: "GOLF COURSE" is a place they can name,
+	// where the old card said nothing at all.
+	if(mode == MENU_RUN){
+		// The run starts on the water, and the land search below would only
+		// refuse it.  It has a name and a base of its own.
+		s_menuVenue = kWaterMenu;
+	}else{
+		float openness = 12.0f;
+		const MenuVenue *venue = MenuVenueFor(mode, openness);
+		s_menuVenue = ResolveMenuVenue(*venue, openness);
+	}
 	if(ArmStart(mode, now, CVector(0.0f, 0.0f, 0.0f), CVector(0.0f, 0.0f, 0.0f), 0, true)){
 		s_menuPending.mode = -1;
 		return;

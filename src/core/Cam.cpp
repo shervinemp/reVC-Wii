@@ -243,6 +243,13 @@ static float s_coopPitch;
 static float s_coopClip = 1.0f;
 static CVector s_coopTarget;
 static bool s_coopArena;
+// The room behind the camera, and how many frames old it is.  Measuring it
+// is up to four line-of-sight tests of forty metres: the most expensive
+// thing the shared camera does.  The camera eases towards the answer anyway,
+// so an answer two frames old is not visible, and it is measured every third
+// frame and held in between.
+static float s_coopRoom = -1.0f;
+static int s_coopRoomAge;
 
 #ifdef NINTENDO_WII
 // The shared camera can only be judged on a console, by two people, and a
@@ -1484,16 +1491,29 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	const CVector reach = view*-s_coopDistance;
 	const float reachLen = reach.Magnitude();
 	const CVector reachDir = reachLen > 0.01f ? reach/reachLen : view;
-	float room = CoopRoomBehind(s_coopTarget, reach);
-	for(int i = 0; i < NUMPLAYERS; i++){
-		if(!present[i])
-			continue;
-		if((pos[i] - s_coopTarget).Magnitude() <= kCoopSeparateClip)
-			continue;	// a player standing on another answers the same
-		const CVector offset = pos[i] - s_coopTarget;
-		const float along = offset.x*reachDir.x + offset.y*reachDir.y + offset.z*reachDir.z;
-		room = Max(room, CoopRoomBehind(pos[i], reach) + along);
-	}
+	// A new place is measured now; otherwise the room is a couple of frames
+	// old, which the camera's own easing hides.
+	if(snap)
+		s_coopRoomAge = 0;
+	float room = s_coopRoom;
+	if(s_coopRoomAge <= 0){
+		float measured = CoopRoomBehind(s_coopTarget, reach);
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(!present[i])
+				continue;
+			if((pos[i] - s_coopTarget).Magnitude() <= kCoopSeparateClip)
+				continue;	// a player standing on another answers the same
+			const CVector offset = pos[i] - s_coopTarget;
+			const float along = offset.x*reachDir.x + offset.y*reachDir.y + offset.z*reachDir.z;
+			measured = Max(measured, CoopRoomBehind(pos[i], reach) + along);
+		}
+		s_coopRoom = measured;
+		s_coopRoomAge = 2;
+		room = measured;
+	}else
+		s_coopRoomAge--;
+	if(room < 0.0f)
+		room = s_coopDistance;
 	const float clear = Min(1.0f, Max(room, kCoopMinDistance)/Max(s_coopDistance, kCoopMinDistance));
 	if(clear < s_coopClip)
 		s_coopClip = clear;
