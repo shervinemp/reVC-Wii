@@ -2857,59 +2857,59 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					return false;
 
 				{
-				// The attacker, not player 1: the katana's head-removing
-				// slash is the swing that lands it.  It was written against
-				// player 1 by name, so a partner's katana could never take a
-				// head off -- the condition was never true for them and they
-				// always got the ordinary hit animation.
-				CPed *attacker = (damagedBy != nil && damagedBy->IsPed()) ? (CPed*)damagedBy : nil;
-				if (method != WEAPONTYPE_KATANA ||
-					attacker == nil ||
-					attacker->m_nPedState != PED_FIGHT
-					|| attacker->m_curFightMove != FIGHTMOVE_MELEE1 && attacker->m_curFightMove != FIGHTMOVE_MELEE2
-					|| CGeneral::GetRandomNumber() & 3) {
+					// The attacker, not player 1: the katana's head-removing
+					// slash is the swing that lands it.  It was written against
+					// player 1 by name, so a partner's katana could never take a
+					// head off -- the condition was never true for them and they
+					// always got the ordinary hit animation.
+					CPed *attacker = (damagedBy != nil && damagedBy->IsPed()) ? (CPed*)damagedBy : nil;
+					if (method != WEAPONTYPE_KATANA ||
+						attacker == nil ||
+						attacker->m_nPedState != PED_FIGHT
+						|| attacker->m_curFightMove != FIGHTMOVE_MELEE1 && attacker->m_curFightMove != FIGHTMOVE_MELEE2
+						|| CGeneral::GetRandomNumber() & 3) {
 
-					if (m_nPedState == PED_FALL) {
-						if (IsPedHeadAbovePos(-0.3f)) {
-							dieAnim = ANIM_STD_NUM;
-						} else {
-							if (RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_FRONTAL))
-								dieAnim = ANIM_STD_HIT_FLOOR_FRONT;
-							else
-								dieAnim = ANIM_STD_HIT_FLOOR;
-							dieDelta = dieDelta * 2.0f;
-							dieSpeed = 0.5f;
-						}
-					} else if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE2) {
-						if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE3) {
-							switch (direction) {
-								case 0:
-									dieAnim = ANIM_STD_HIGHIMPACT_FRONT;
-									break;
-								case 1:
-									dieAnim = ANIM_STD_HIGHIMPACT_LEFT;
-									break;
-								case 2:
-									dieAnim = ANIM_STD_HIGHIMPACT_BACK;
-									break;
-								case 3:
-									dieAnim = ANIM_STD_HIGHIMPACT_RIGHT;
-									break;
-								default:
-									break;
+						if (m_nPedState == PED_FALL) {
+							if (IsPedHeadAbovePos(-0.3f)) {
+								dieAnim = ANIM_STD_NUM;
+							} else {
+								if (RpAnimBlendClumpGetFirstAssociation(GetClump(), ASSOC_FRONTAL))
+									dieAnim = ANIM_STD_HIT_FLOOR_FRONT;
+								else
+									dieAnim = ANIM_STD_HIT_FLOOR;
+								dieDelta = dieDelta * 2.0f;
+								dieSpeed = 0.5f;
+							}
+						} else if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE2) {
+							if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE3) {
+								switch (direction) {
+									case 0:
+										dieAnim = ANIM_STD_HIGHIMPACT_FRONT;
+										break;
+									case 1:
+										dieAnim = ANIM_STD_HIGHIMPACT_LEFT;
+										break;
+									case 2:
+										dieAnim = ANIM_STD_HIGHIMPACT_BACK;
+										break;
+									case 3:
+										dieAnim = ANIM_STD_HIGHIMPACT_RIGHT;
+										break;
+									default:
+										break;
+								}
+							} else {
+								dieAnim = ANIM_STD_KO_SHOT_STOMACH;
 							}
 						} else {
-							dieAnim = ANIM_STD_KO_SHOT_STOMACH;
+							dieAnim = ANIM_STD_KO_SHOT_FACE;
 						}
 					} else {
 						dieAnim = ANIM_STD_KO_SHOT_FACE;
+						RemoveBodyPart(PED_HEAD, direction);
+						headShot = true;
+						willLinger = true;
 					}
-				} else {
-					dieAnim = ANIM_STD_KO_SHOT_FACE;
-					RemoveBodyPart(PED_HEAD, direction);
-					headShot = true;
-					willLinger = true;
-				}
 				}
 				break;
 			case WEAPONTYPE_COLT45:

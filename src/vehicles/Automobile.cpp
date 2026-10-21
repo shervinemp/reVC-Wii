@@ -4575,7 +4575,7 @@ CAutomobile::VehicleDamage(float impulse, uint16 damagedPiece)
 			        (m_pDamageEntity == FindPlayerVehicle() || IsPartyVehicle((CVehicle*)m_pDamageEntity)))
 				// The ram bonus is the party's: a partner at the wheel
 				// breaks a car the way player 1 does.  It used to be
-				// player 1's car only, so a partner's ram did a quarter
+				// player 1's car only, so a partner's ram did a fraction
 				// of the damage and the car shrugged it off.
 				m_fHealth -= damage/1.5f;
 			else

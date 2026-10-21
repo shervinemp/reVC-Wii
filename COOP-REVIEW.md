@@ -32,8 +32,10 @@ zeroed at start-up). Fixed in this pass, none of it run on a console:
   in a partner's Rhino the turret was driven by player 1's pad. It is the driver's now.
 - **A partner's shotgun turned the victim on player 1.** [V] `FireShotgun` said
   `ReactToAttack(FindPlayerPed())` where the instant-hit path says `shooter`.
-- **A partner's boat took half the damage a party car took.** [V] `CBoat::ProcessControl`
-  keyed off `FindPlayerVehicle()` where the car uses `IsPartyVehicle`.
+- **A partner's boat was twice as tough as a party car.** [V] `CBoat::ProcessControl`
+  keyed off `FindPlayerVehicle()` where the car uses `IsPartyVehicle`: a partner's hull
+  took half the collision damage player 1's did, while a party car takes the same as
+  player 1's, and the driver the engine let complain about the noise was the partner's.
 - **The derby and the RC race could not end.** [V] The derby capped a round but not a
   match, and a round that ran out of time awarded nobody, so it looped for ever; the race
   capped the grid but not the racing. Both have a match cap now.
@@ -71,9 +73,10 @@ run on a console:
   negative, the ray was traced backwards out of the back of the view, and the shot left the
   muzzle pointing away from the screen. The ray is now followed only as far as it goes in
   front, and the shot goes the way the reticle points.
-- **A partner's ram did a quarter of player 1's.** [V] The 1.5x ram bonus was keyed on
-  `FindPlayerVehicle()`, and the crash voice line was keyed on it too, so a partner's car
-  was neither as tough to break nor as loud as player 1's. Both are the party's now.
+- **A partner's ram did a fraction of player 1's.** [V] The 1.5x ram bonus was keyed on
+  `FindPlayerVehicle()`, so a car rammed by a partner took a fraction of the damage one
+  rammed by player 1 took. The crash voice line was keyed on it the other way round: a
+  partner's car announced every shunt and player 1's did not. Both are the party's now.
 - **A mode's payout was invisible.** [V] The money goes to the party's one wallet, as the
   wanted level and the arsenal do, and the result said only `P2 WINS` — which read as a
   win that paid nothing. The result says what it paid: `P2 WINS   PARTY +$500`.

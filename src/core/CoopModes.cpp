@@ -544,7 +544,9 @@ const MenuVenue kBeachMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f, "OCEAN BE
 // The old CnR and shift venue was the boulevard in front of Ocean View
 // Hospital.  It is a landmark, but it is also a live road with traffic, and a
 // mode that starts there reads as an invisible patch of pavement rather than a
-// deliberate arena.  Both starts are somewhere the party can name instead.
+// deliberate arena.  The hill and the cops and robbers go to the docks and
+// the beach instead; the shift still starts at the airport, where a cruiser
+// and a siren are at least what you would expect.
 const MenuVenue kKothMenu = kDocksMenu;
 const MenuVenue kCnRMenu = kBeachMenu;
 const MenuVenue kDanceMenu = kBeachMenu;
@@ -2522,6 +2524,11 @@ MenuVenueOnLand(const MenuVenue &venue, CVector *out)
 	return true;
 }
 
+// How many scenes the venue search is allowed to load before it gives up and
+// uses the airport.  Loading a scene is not cheap, and a party that has stood
+// in a loading screen for a second has already paid enough.
+const int kVenueSceneLoads = 4;
+
 // The venue for a mode, and how much open ground that mode needs around it.
 const MenuVenue *
 MenuVenueFor(int mode, float &openness)
@@ -2545,6 +2552,11 @@ MenuVenueFor(int mode, float &openness)
 // where it should be still finds the place.  The airport is the fallback: it
 // is the one piece of ground in the city that is known to be wide, flat and
 // clear of traffic.
+//
+// The search is bounded, because a scene has to be loaded before a square can
+// be tested and loading a scene is not cheap.  A handful of candidates is
+// worth the wait; past that the airport is the better answer, and a party
+// that has stood in a loading screen for a second has already paid enough.
 MenuVenue
 ResolveMenuVenue(const MenuVenue &venue, float openness)
 {
@@ -2553,10 +2565,11 @@ ResolveMenuVenue(const MenuVenue &venue, float openness)
 	if(MenuVenueOnLand(actual, nil) && AreaOpen(actual.pos, openness))
 		return actual;
 
-	for(int ring = 0; ring <= 4; ring++){
+	int loads = 0;
+	for(int ring = 0; ring <= 2 && loads < kVenueSceneLoads; ring++){
 		const float dist = ring*25.0f;
 		const int spokes = ring == 0 ? 1 : 12;
-		for(int i = 0; i < spokes; i++){
+		for(int i = 0; i < spokes && loads < kVenueSceneLoads; i++){
 			const float angle = 2.0f*PI*(float)i/(float)spokes + ring*0.37f;
 			CVector at = venue.pos + CVector(Cos(angle), Sin(angle), 0.0f)*dist;
 			bool found = false;
@@ -2571,6 +2584,7 @@ ResolveMenuVenue(const MenuVenue &venue, float openness)
 			// be tested: the scene that was loaded is the base's, and the
 			// search walks out of it.
 			MenuLoadScene(at);
+			loads++;
 			if(!AreaOpen(at, openness))
 				continue;
 			COOP_LOG("WII coop: %s venue at %.0f %.0f\n", venue.name, at.x, at.y);
@@ -3215,10 +3229,12 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 	s_pitch.finishAt = now + kPitchFinishMs;
 	s_pitch.winner = winner;
 	s_pitch.winnerTeam = winnerTeam;
-	s_resultPot = 500;
-	// A team whose last player left before the whistle has no one to pay.
-	if(winner >= 0)
+	// A team whose last player left before the whistle has no one to pay, and
+	// no pot to show: what was paid is what the result says was paid.
+	if(winner >= 0){
+		s_resultPot = 500;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+	}
 	COOP_LOG("WII coop: caddy football to %s %d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1);
 }
 

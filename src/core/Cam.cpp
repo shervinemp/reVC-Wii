@@ -1269,8 +1269,6 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		// Nobody to look at: every player is down, or gone.  The view stays
 		// where it is rather than jumping to the world origin.
 		target = s_coopTarget;
-	// The camera hangs from the middle of the party, not from the lead: that
-	// is the point the room behind it is measured from, below.
 
 	float separation = 0.0f;
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -1476,14 +1474,14 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// open.
 	//
 	// The roomiest of the answers, in the frame the camera is placed in.
-	// The camera hangs off the middle of the party, so that is where the
-	// space behind it has to be measured from -- and a player's own answer
-	// has to be moved into that frame before it can be compared.  It used
-	// not to be: the room was measured from each player and used as if it
-	// had been measured from the middle, and the loosest of them won.  With
-	// the party strung out along the view -- one player in front, one
-	// behind, a wall behind that -- the front player's generous answer put
-	// the camera ten metres inside the building.
+	// The camera hangs off the middle of the party, not from the lead: that
+	// is the point the space behind it has to be measured from -- and a
+	// player's own answer has to be moved into that frame before it can be
+	// compared.  It used not to be: the room was measured from each player
+	// and used as if it had been measured from the middle, and the loosest
+	// of them won.  With the party strung out along the view -- one player
+	// in front, one behind, a wall behind that -- the front player's
+	// generous answer put the camera ten metres inside the building.
 	//
 	// A player nearer the camera than the middle has less room behind them
 	// than the middle does, and one further away has more, so their answer
