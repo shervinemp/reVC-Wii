@@ -346,6 +346,13 @@ CShadows::StoreStaticShadow(uint32 nID, uint8 ShadowType, RwTexture *pTexture, C
 
 			if ( nSlot != MAX_STATICSHADOWS )
 			{
+#ifdef FIX_BUGS
+				// False means there is nothing to lie on, and UpdatePermanentShadows deletes the shadow for it.
+				// With no polygon bunch left nothing can be cast, which says nothing about the ground: try again later.
+				if ( pEmptyBunchList == nil )
+					return true;
+#endif
+
 				aStaticShadows[nSlot].m_nId              = nID;
 				aStaticShadows[nSlot].m_nType            = ShadowType;
 				aStaticShadows[nSlot].m_pTexture         = pTexture;
@@ -742,9 +749,15 @@ CShadows::StoreCarLightShadow(CVehicle *pCar, int32 nID, RwTexture *pTexture, CV
 
 			if ( fDistToCam >= (fDrawDistance*(1.0f-(1.0f/4.0f))) && !bSpecialCam ) // BUG? must be 3.0?
 			{
+#ifdef FIX_BUGS
+				//fDistToCam == fDrawDistance*0.75 -> 1
+				//fDistToCam == fDrawDistance      -> 0
+				float fMult = 1.0f - (4.0f / fDrawDistance) * (fDistToCam - (fDrawDistance*(1.0f-(1.0f/4.0f))));
+#else
 				//fDistToCam == 0             -> 3
 				//fDistToCam == fDrawDistance -> 0
 				float fMult = 1.0f - (3.0f / fDrawDistance) * (fDistToCam - (fDrawDistance*(1.0f-(1.0f/3.0f))) );
+#endif
 
 				nRed   = (int32)(nRed   * fMult);
 				nGreen = (int32)(nGreen * fMult);
@@ -1027,7 +1040,14 @@ CShadows::StoreShadowForPole(CEntity *pPole, float fOffsetX, float fOffsetY, flo
 				CTimeCycle::GetShadowSideY()    * fPoleWidth,
 				2 * (int32)((pPole->GetUp().z - 0.5f) * CTimeCycle::GetShadowStrength() * 2.0f) / 3,
 				0, 0, 0,
+#ifdef FIX_BUGS
+				// The sun moves every game second and the front and side vectors move with it, so StoreStaticShadow,
+				// which keeps a shadow only if they are exactly the same, cast this one again every frame. Keep it
+				// until its position, which follows the sun too, has moved this far.
+				15.0f, 1.0f, 40.0f, false, 0.03f);
+#else
 				15.0f, 1.0f, 40.0f, false, 0.0f);
+#endif
 	}
 }
 

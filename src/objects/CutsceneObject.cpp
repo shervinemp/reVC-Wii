@@ -56,8 +56,17 @@ CCutsceneObject::CreateShadow(void)
 	if ( IsPedModel(GetModelIndex()) )
 	{
 		m_pShadow = new CCutsceneShadow();
+#ifdef FIX_BUGS
+		// a backend that can't make the shadow camera's raster leaves the ped with the blob shadow
+		if (!m_pShadow->IsInitialized() && !m_pShadow->Create(m_rwObject, 6, true, 4, true))
+		{
+			delete m_pShadow;
+			m_pShadow = nil;
+		}
+#else
 		if (!m_pShadow->IsInitialized())
 			m_pShadow->Create(m_rwObject, 6, true, 4, true);
+#endif
 	}
 }
 
