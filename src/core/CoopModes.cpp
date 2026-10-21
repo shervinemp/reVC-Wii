@@ -6219,6 +6219,7 @@ BeginLobbyStart(uint32 now)
 		if((mode == MENU_RC || mode == MENU_DANCE || mode == MENU_CNR || mode == MENU_KOTH) &&
 		   ped->bInVehicle){
 			s_lobby.coolUntil = now + 4000;
+			SetStartNotice("BOTH PLAYERS MUST BE ON FOOT", now);
 			COOP_LOG("WII coop: lobby aborted, player %d got into a car\n", i + 1);
 			return false;
 		}
@@ -6227,6 +6228,7 @@ BeginLobbyStart(uint32 now)
 			const bool ready = mode == MENU_DERBY ? PlayerInDerbyCar(i, &car) : PlayerInPitchCar(i, &car);
 			if(!ready){
 				s_lobby.coolUntil = now + 4000;
+				SetStartNotice("BOTH PLAYERS MUST BE AT A WHEEL", now);
 				COOP_LOG("WII coop: lobby aborted, player %d left their car\n", i + 1);
 				return false;
 			}
@@ -6287,6 +6289,7 @@ UpdateLobby(uint32 now)
 		return;
 	}
 	if(now >= s_lobby.until && s_lobby.startAt == 0){
+		SetStartNotice("NO ONE READY", now);
 		CloseLobby(now, "timed out");
 		return;
 	}
