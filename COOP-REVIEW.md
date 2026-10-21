@@ -58,6 +58,43 @@ zeroed at start-up). Fixed in this pass, none of it run on a console:
   mode ended — which also left the traffic counters wrong, because those cars were never
   in the traffic system to begin with.
 
+**Fourth pass (2026-10-21, the rest of the list from the third pass).** Fixed here, none of it
+run on a console:
+
+- **The camera's wall-clip room was measured in the wrong frame.** [V] The room behind the
+  camera was measured from each player and the loosest answer won, but the camera hangs off
+  the middle of the party: with the party strung out along the view, the front player's
+  generous answer put the camera ten metres inside a building. The room is now measured from
+  the middle and each player's answer is shifted by how far along the view they stand.
+- **A player above the camera aimed behind it.** [V] The reticle's level plane is the
+  player's own chest; when the player is above the camera the distance to that plane is
+  negative, the ray was traced backwards out of the back of the view, and the shot left the
+  muzzle pointing away from the screen. The ray is now followed only as far as it goes in
+  front, and the shot goes the way the reticle points.
+- **A partner's ram did a quarter of player 1's.** [V] The 1.5x ram bonus was keyed on
+  `FindPlayerVehicle()`, and the crash voice line was keyed on it too, so a partner's car
+  was neither as tough to break nor as loud as player 1's. Both are the party's now.
+- **A mode's payout was invisible.** [V] The money goes to the party's one wallet, as the
+  wanted level and the arsenal do, and the result said only `P2 WINS` — which read as a
+  win that paid nothing. The result says what it paid: `P2 WINS   PARTY +$500`.
+- **The second Predator turned up a leg late.** [V] The index was the leg that had just
+  finished, which was the slot the first Predator had already taken, so the second boat
+  only ever appeared for the last drop.
+- **Two RC toys could be dropped on the same square.** [V] The toy goes 2.5 m in front of
+  its racer, and two racers in a knot had toys shorter apart than a toy is long: the
+  collision resolver threw them apart on the first physics step and the grid never
+  settled. A toy whose square is taken is put to one side of it.
+- **Player 1's controller dying did not stop the game.** [V] The pause button, the HOME
+  button and the Quit in the pause menu are all on that controller, so a game that carried
+  on without it was a game somebody had to stop at the wall while the world kept going.
+  Three seconds of silence now pauses it; the pause is the recovery, not a punishment.
+
+Three items from the third pass turned out to be already fixed and were dropped: friendly
+fire through vehicle explosions (`SparedByFriendlyFire` in `KillPedsInVehicle`, added in
+`25906e4d`), the pips for a player in a vehicle (the co-op work marks over the vehicle), and
+the camera's "keep the heading it already had" branch (entering the shared camera is a
+transition, and a transition sets `ResetStatics`, so the branch is reached).
+
 **Status (2026-10-18):** everything below is fixed except the list under "Still open". All of it
 compiles (`-fsyntax-only`, the Wii build's flags, all 250 game sources, no warnings); none of it has
 been run on a console, and the PC build was not compiled. Item 3 turned out to be wrong and needed

@@ -697,7 +697,9 @@ Recorded because each was stated as a verified fact.
   but weapons and ammo, money, packages and property are credited to player 1
   -- a partner gets the weapon back through the usual mirror -- so a money
   pickup a partner walks over is really player 1's. Health, armour, adrenaline
-  and a bribe stay with whoever walked over them.
+  and a bribe stay with whoever walked over them. A mode's payout goes there
+  too, and the result says so: `P2 WINS   PARTY +$500`. A win that lands in a
+  wallet nobody is holding used to read as a win that paid nothing.
 - **No remote speaker for the partners.** The speaker code drives one remote,
   and each partner's would need its own stream. Rumble works for everyone
   (gunfire, explosions, the car or bike they are in, thunder).
