@@ -1751,9 +1751,11 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 	// remote in their hands.  It used to be gated on the shooter being player 1,
 	// so their fire never shook anything at all.
 	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() ) {
-		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
-		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
-			shooterPlayer->GetPosition().x, shooterPlayer->GetPosition().y, shooterPlayer->GetPosition().z);
+		// A player's own shot is felt in their own hands, not measured from
+		// the shared camera.  In co-op the camera can sit between two players
+		// who are far apart, and the old distance test then swallowed player
+		// 1's rumble while the partner, nearer the camera, still felt theirs.
+		GetPadFromPlayer((CPlayerPed*)shooter)->StartShake(240, 128);
 	}
 
 	BlowUpExplosiveThings(victim);
@@ -2192,9 +2194,11 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 	// remote in their hands.  It used to be gated on the shooter being player 1,
 	// so their fire never shook anything at all.
 	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() ) {
-		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
-		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
-			shooterPlayer->GetPosition().x, shooterPlayer->GetPosition().y, shooterPlayer->GetPosition().z);
+		// A player's own shot is felt in their own hands, not measured from
+		// the shared camera.  In co-op the camera can sit between two players
+		// who are far apart, and the old distance test then swallowed player
+		// 1's rumble while the partner, nearer the camera, still felt theirs.
+		GetPadFromPlayer((CPlayerPed*)shooter)->StartShake(240, 128);
 	}
 
 	return true;
@@ -2464,11 +2468,9 @@ CWeapon::FireSniper(CEntity *shooter)
 
 	if ( shooter != nil && shooter->IsPed() && ((CPed*)shooter)->IsPlayer() )
 	{
-		CPlayerPed *shooterPlayer = (CPlayerPed*)shooter;
-		GetPadFromPlayer(shooterPlayer)->StartShake_Distance(240, 128,
-			shooterPlayer->GetPosition().x,
-			shooterPlayer->GetPosition().y,
-			shooterPlayer->GetPosition().z);
+		// The shot is in the shooter's own hands; the shared camera may be
+		// framing somebody else entirely, so distance from it is irrelevant.
+		GetPadFromPlayer((CPlayerPed*)shooter)->StartShake(240, 128);
 			
 		CParticle::HandleShootableBirdsStuff(shooter, source);
 
@@ -2624,7 +2626,8 @@ CWeapon::FireM16_1stPerson(CEntity *shooter)
 		double raisedNotFiringRate = Max(1.0, Max(0.0, notFiringRate));
 
 		uint8 shakeFreq = 80.0 * raisedNotFiringRate + 130.0;
-		CPad::GetPad(0)->StartShake(20000.0f * CTimer::GetTimeStep() / shakeFreq, shakeFreq);
+		GetPadFromPlayer((CPlayerPed*)shooter)->StartShake(
+			20000.0f * CTimer::GetTimeStep() / shakeFreq, shakeFreq);
 	}
 
 	return true;
@@ -2884,8 +2887,9 @@ CWeapon::FireInstantHitFromCar(CVehicle *shooter, CPlayerPed *shooterPed, bool l
 
 	// A drive-by shakes the shooter's pad, whoever is driving or riding.
 	if ( shooterPed != nil && shooterPed->IsPlayer() ) {
-		GetPadFromPlayer(shooterPed)->StartShake_Distance(240, 128,
-			shooter->GetPosition().x, shooter->GetPosition().y, shooter->GetPosition().z);
+		// The shooter's own hands, again: a drive-by is felt by the player
+		// who pulled the trigger, whatever the shared camera is framing.
+		GetPadFromPlayer(shooterPed)->StartShake(240, 128);
 	}
 
 	return true;

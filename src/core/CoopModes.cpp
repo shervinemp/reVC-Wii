@@ -5,15 +5,18 @@
 #include "Automobile.h"
 #include "AutoPilot.h"
 #include "Boat.h"
+#include "Camera.h"
 #include "CarCtrl.h"
 #include "CivilianPed.h"
 #include "Coop.h"
 #include "CopPed.h"
 #include "Coronas.h"
+#include "Font.h"
 #include "Frontend.h"
 #include "GameLogic.h"
 #include "General.h"
 #include "Hud.h"
+#include "Sprite.h"
 #include "maths.h"
 #include "ModelIndices.h"
 #include "Pad.h"
@@ -519,8 +522,13 @@ const MenuVenue kAirportMenu = { CVector(-1540.0f, -1110.0f, 14.0f), 0.0f };
 // gesture still uses the nearest clear patch to wherever the party stands.
 const MenuVenue kKothMenu = kAirportMenu;
 const MenuVenue kDanceMenu = { CVector(700.0f, -1450.0f, 10.0f), 0.0f };
-const MenuVenue kCnRMenu = { CVector(650.0f, -1250.0f, 10.0f), 0.0f };
-const CVector kShiftMenuBase(650.0f, -1250.0f, 10.0f);
+// The old CnR and shift venue was the boulevard in front of Ocean View
+// Hospital.  It is a landmark, but it is also a live road with traffic, and a
+// mode that starts there reads as an invisible patch of pavement rather than a
+// deliberate arena.  Both starts use the airport apron: flat, clear, and one
+// landmark the party can see and name.
+const MenuVenue kCnRMenu = kAirportMenu;
+const CVector kShiftMenuBase = kAirportMenu.pos;
 const CVector kRunMenuBase(-850.0f, -1250.0f, 0.0f);
 
 struct MenuPending
@@ -557,7 +565,7 @@ enum eExplainer
 	EXPLAIN_COUNT
 };
 
-const uint32 kExplainMs = 4500;
+const uint32 kExplainMs = 7000;
 
 struct ExplainState
 {
@@ -2087,6 +2095,84 @@ RegisterGroundRing(uintptr key, const CVector *points, int count, CRGBA colour, 
 			points[i], size, 250.0f, gpCoronaTexture[CCoronas::TYPE_STAR],
 			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
 			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+}
+
+// A marker that can be seen over a crowd and from further than a ground
+// corona: three stars stacked into a short column.  The HUD's objective tag
+// still works past the corona draw distance; this is the in-world part.
+void
+RegisterBeacon(uintptr key, const CVector &at, const CRGBA &colour, float size)
+{
+	for(int level = 0; level < 3; level++){
+		CVector point = at;
+		point.z += 2.0f + level*3.2f;
+		CCoronas::RegisterCorona(key + level, colour.r, colour.g, colour.b, 255,
+			point, size*(1.0f - level*0.18f), 250.0f,
+			gpCoronaTexture[CCoronas::TYPE_STAR],
+			CCoronas::FLARE_NONE, CCoronas::REFLECTION_OFF,
+			CCoronas::LOSCHECK_OFF, CCoronas::STREAK_OFF, 0.0f);
+	}
+}
+
+// The target each mode is actually asking the player to reach.  Kept next to
+// the update code so the blips, the in-world beacons and the HUD's arrow all
+// agree on one place instead of each choosing its own.
+void
+RegisterObjectiveBeacons(void)
+{
+	if(s_shift.active && s_shift.caseActive){
+		if(s_shift.suspectCar != nil)
+			RegisterBeacon((uintptr)&s_shift + 0x100, s_shift.suspectCar->GetPosition(),
+				CRGBA(255, 90, 80, 255), 3.5f);
+		else if(s_shift.suspectPed != nil)
+			RegisterBeacon((uintptr)&s_shift + 0x100, s_shift.suspectPed->GetPosition(),
+				CRGBA(255, 90, 80, 255), 3.5f);
+	}
+
+	if(s_run.active){
+		const CVector at = s_run.carrier >= 0 ? s_run.drop : s_run.cargoPos[s_run.leg];
+		RegisterBeacon((uintptr)&s_run + 0x100, at, CRGBA(255, 190, 90, 255), 4.0f);
+	}
+
+	if(s_derby.active && !s_derby.finished)
+		RegisterBeacon((uintptr)&s_derby + 0x100, s_derby.centre,
+			CRGBA(255, 220, 90, 255), 3.5f);
+
+	if(s_pitch.active && !s_pitch.finished)
+		RegisterBeacon((uintptr)&s_pitch + 0x100,
+			s_pitch.ball != nil ? s_pitch.ball->GetPosition() : s_pitch.centre,
+			CRGBA(255, 230, 120, 255), 3.8f);
+
+	if(s_koth.active && !s_koth.finished)
+		RegisterBeacon((uintptr)&s_koth + 0x100, s_koth.centre,
+			CRGBA(255, 215, 80, 255), 3.5f);
+
+	if(s_dance.active && !s_dance.finished)
+		RegisterBeacon((uintptr)&s_dance + 0x100, s_dance.centre,
+			CRGBA(245, 110, 210, 255), 3.0f);
+
+	if(s_cnr.active && !s_cnr.finished){
+		RegisterBeacon((uintptr)&s_cnr + 0x100, s_cnr.casePos,
+			CRGBA(255, 130, 70, 255), 3.2f);
+		RegisterBeacon((uintptr)&s_cnr + 0x110, s_cnr.getaway,
+			CRGBA(120, 255, 130, 255), 3.2f);
+	}
+
+	if(s_rc.active && !s_rc.finished){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_rc.nextGate[i] < 0)
+				continue;
+			RegisterBeacon((uintptr)&s_rc + 0x100 + i*8,
+				s_rc.gate[s_rc.nextGate[i]], kCoopColours[i], 3.0f);
+		}
+	}
+
+	// The first seconds of a mode mark the place it started.  The gesture
+	// starts are not fixed pads, so this is the only in-world proof that the
+	// pavement under the party is the start and not an invisible trigger.
+	if(s_explain.until != 0 && CTimer::GetTimeInMilliseconds() < s_explain.until)
+		RegisterBeacon((uintptr)&s_explain + 0x200, CrewCentre(),
+			CRGBA(255, 255, 255, 255), 3.2f);
 }
 
 // Lets go of a player's loaner: the world takes it back, like the suspect and
@@ -4903,6 +4989,202 @@ DrawShiftMarks(uint32 now)
 	PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(70.0f), result, colour, 1.0f, 1.5f);
 }
 
+// A label for one objective: name and distance on a dark plate, either at the
+// target itself or on the screen edge with an arrow pointing to it.  The
+// target can be a hundred metres away and still be the thing the player has
+// to reach; the radar blips alone do not say which mark is the current job.
+void
+DrawObjectiveLabel(float x, float y, const char *ascii, const CRGBA &colour, float scale)
+{
+	wchar text[64];
+	AsciiToUnicode(ascii, text);
+	const float scaleX = SCREEN_SCALE_X(0.42f*scale);
+	const float scaleY = SCREEN_SCALE_Y(0.68f*scale);
+	CFont::SetPropOn();
+	CFont::SetBackgroundOff();
+	CFont::SetScale(scaleX, scaleY);
+	CFont::SetJustifyOff();
+	CFont::SetCentreOn();
+	CFont::SetCentreSize(SCREEN_SCALE_X(560.0f));
+	CFont::SetFontStyle(FONT_STANDARD);
+	const float width = CFont::GetStringWidth(text, true);
+	const float height = 20.0f*scaleY;
+	CSprite2d::DrawRect(CRect(x - width*0.5f - 4.0f, y - 2.0f,
+		x + width*0.5f + 4.0f, y + height + 2.0f), CRGBA(0, 0, 0, 180));
+	CFont::SetDropShadowPosition(1);
+	CFont::SetDropColor(CRGBA(0, 0, 0, 255));
+	CFont::SetColor(colour);
+	CFont::PrintString(x, y, text);
+	CFont::SetCentreOff();
+}
+
+void
+DrawObjectiveTag(const CVector &target, int fromPlayer, const char *name,
+	const CRGBA &colour, float scale)
+{
+	CPlayerPed *from = CCoop::GetPlayerPed(fromPlayer);
+	if(from == nil)
+		return;
+	const CVector playerPos = PlayerCoors(fromPlayer);
+	const float distance = (target - playerPos).Magnitude2D();
+	char label[64];
+	if(distance < 2.0f)
+		sprintf(label, "%s HERE", name);
+	else
+		sprintf(label, "%s %dm", name, (int)distance);
+
+	const float left = SCREEN_SCALE_X(30.0f);
+	const float right = SCREEN_WIDTH - SCREEN_SCALE_X(30.0f);
+	const float top = SCREEN_SCALE_Y(92.0f);
+	const float bottom = SCREEN_HEIGHT - SCREEN_SCALE_Y(90.0f);
+
+	CVector screen;
+	float sw = 0.0f, sh = 0.0f;
+	const bool projected = CSprite::CalcScreenCoors(target, &screen, &sw, &sh, false);
+	const bool onScreen = projected && screen.x >= left && screen.x <= right &&
+		screen.y >= top && screen.y <= bottom;
+
+	float x, y;
+	if(onScreen){
+		x = screen.x;
+		y = screen.y - SCREEN_SCALE_Y(20.0f);
+		if(y < top)
+			y = screen.y + SCREEN_SCALE_Y(10.0f);
+	}else{
+		// Off screen or behind the camera.  The horizontal bearing relative to
+		// the camera's facing is enough to point at it; the arrow sits on a
+		// ring inside the screen edge and the label follows it.
+		CVector to = target - TheCamera.GetPosition();
+		to.z = 0.0f;
+		CVector facing = TheCamera.GetForward();
+		facing.z = 0.0f;
+		float bearing = 0.0f;
+		if(to.MagnitudeSqr() > 0.01f && facing.MagnitudeSqr() > 0.01f){
+			bearing = Atan2(to.x, to.y) - Atan2(facing.x, facing.y);
+			while(bearing >= PI) bearing -= 2.0f*PI;
+			while(bearing < -PI) bearing += 2.0f*PI;
+		}
+		const float dx = Sin(bearing);
+		const float dy = -Cos(bearing);
+		const float cx = SCREEN_WIDTH*0.5f;
+		const float cy = SCREEN_HEIGHT*0.5f;
+		x = Clamp(cx + dx*SCREEN_WIDTH*0.38f, left, right);
+		y = Clamp(cy + dy*SCREEN_HEIGHT*0.27f, top, bottom);
+
+		const float px = -dy;
+		const float py = dx;
+		const float length = SCREEN_SCALE_X(11.0f);
+		const float halfWidth = SCREEN_SCALE_Y(7.0f);
+		const float tipX = x + dx*length;
+		const float tipY = y + dy*length;
+		const float baseX = x - dx*length*0.35f;
+		const float baseY = y - dy*length*0.35f;
+		CSprite2d::DrawAnyRect(tipX, tipY,
+			baseX + px*halfWidth, baseY + py*halfWidth,
+			baseX - dx*length*0.25f, baseY - dy*length*0.25f,
+			baseX - px*halfWidth, baseY - py*halfWidth,
+			colour, colour, colour, colour);
+		// The arrow's point is the direction; the text goes above the ring.
+		y = y < top + SCREEN_SCALE_Y(28.0f) ? y + SCREEN_SCALE_Y(22.0f) : y - SCREEN_SCALE_Y(14.0f);
+	}
+
+	DrawObjectiveLabel(x, y, label, colour, scale);
+}
+
+// All the mode objectives on screen at once.  A tag is deliberately small:
+// the status line and bars already own the top and bottom, and this is the
+// missing "which way, and which mark is mine" line.
+void
+DrawObjectiveMarks(void)
+{
+	if(s_shift.active && s_shift.caseActive){
+		if(s_shift.suspectCar != nil)
+			DrawObjectiveTag(s_shift.suspectCar->GetPosition(), 0, "SUSPECT",
+				CRGBA(255, 90, 80, 255), 1.0f);
+		else if(s_shift.suspectPed != nil)
+			DrawObjectiveTag(s_shift.suspectPed->GetPosition(), 0, "SUSPECT",
+				CRGBA(255, 90, 80, 255), 1.0f);
+	}
+
+	if(s_run.active){
+		if(s_run.carrier >= 0)
+			DrawObjectiveTag(s_run.drop, 0, "DROP", CRGBA(255, 190, 90, 255), 1.0f);
+		else
+			DrawObjectiveTag(s_run.cargoPos[s_run.leg], 0, "CARGO",
+				CRGBA(255, 220, 90, 255), 1.0f);
+	}
+
+	if(s_derby.active && !s_derby.finished)
+		DrawObjectiveTag(s_derby.centre, 0, "RING", CRGBA(255, 220, 90, 255), 1.0f);
+
+	if(s_pitch.active && !s_pitch.finished)
+		DrawObjectiveTag(s_pitch.ball != nil ? s_pitch.ball->GetPosition() : s_pitch.centre,
+			0, "CADDY", CRGBA(255, 230, 120, 255), 1.0f);
+
+	if(s_koth.active && !s_koth.finished)
+		DrawObjectiveTag(s_koth.centre, 0, "HILL", CRGBA(255, 215, 80, 255), 1.0f);
+
+	if(s_dance.active && !s_dance.finished)
+		DrawObjectiveTag(s_dance.centre, 0, "STAGE", CRGBA(245, 110, 210, 255), 0.9f);
+
+	if(s_cnr.active && !s_cnr.finished){
+		if(s_cnr.carried)
+			DrawObjectiveTag(s_cnr.getaway, 0, "GETAWAY", CRGBA(120, 255, 130, 255), 1.0f);
+		else{
+			DrawObjectiveTag(s_cnr.casePos, 0, "CASE", CRGBA(255, 130, 70, 255), 1.0f);
+			DrawObjectiveTag(s_cnr.getaway, 0, "GETAWAY", CRGBA(120, 255, 130, 255), 0.9f);
+		}
+	}
+
+	if(s_rc.active && !s_rc.finished && !s_rc.grid && !s_rc.counting){
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_rc.nextGate[i] < 0)
+				continue;
+			char name[24];
+			sprintf(name, "P%d GATE", i + 1);
+			DrawObjectiveTag(s_rc.gate[s_rc.nextGate[i]], i, name, kCoopColours[i], 0.8f);
+		}
+	}
+
+	// No mode is on: say what the party can do from where it is standing.  The
+	// starts are gestures, not fixed pads, so without this a spot that happens
+	// to meet a gesture's conditions looks like an invisible trigger.
+	if(!ModeActive() && CoopMinigames && CCoop::PairActive() &&
+	   !FrontEndMenuManager.GetIsMenuActive()){
+		int present = 0, onFoot = 0, inCars = 0, inBoats = 0;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *ped = CCoop::GetPlayerPed(i);
+			if(ped == nil)
+				continue;
+			if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+				continue;
+			present++;
+			if(!ped->bInVehicle){
+				onFoot++;
+				continue;
+			}
+			if(ped->m_pMyVehicle != nil && ped->m_pMyVehicle->IsBoat())
+				inBoats++;
+			else
+				inCars++;
+		}
+		const char *hint = nil;
+		if(present >= 2 && onFoot == present)
+			hint = "START:  JUMP RC   DUCK DANCE   HOLD NOD COPS   AIM KING";
+		else if(present >= 2 && inCars == present)
+			hint = FindCrewedLawCar(true) != nil ?
+				"START:  SIREN COP SHIFT   HORN DERBY   HOLD BRAKE CADDY" :
+				"START:  HORN DERBY   HOLD BRAKE CADDY";
+		else if(present >= 2 && inBoats == present)
+			hint = "START:  HORN SMUGGLING RUN";
+		if(hint != nil){
+			DrawObjectiveLabel(SCREEN_WIDTH*0.5f,
+				SCREEN_HEIGHT - SCREEN_SCALE_Y(54.0f), hint,
+				CRGBA(255, 255, 255, 255), 0.62f);
+		}
+	}
+}
+
 // The nearest live police boat to the thing being chased, for the run's
 // warning line.  A wreck is no longer a threat; neither is a boat whose cop has
 // been thrown out.
@@ -5198,6 +5480,10 @@ DrawModeMarks(uint32 now)
 			if(CCoop::GetPlayerPed(i) != nil)
 				DrawLaneBar(i, (float)s_cnr.score[i]/(float)kCnRWinScore, kCnRWinScore);
 	}
+
+	// The way to the job, and a mark on the job itself.  Drawn after the bars
+	// and headline so a target in the middle of the screen cannot cover them.
+	DrawObjectiveMarks();
 
 	// And, the first time the mode armed this session, how it is played.
 	DrawExplainer(now);
@@ -5673,6 +5959,7 @@ CCoopModes::Update(void)
 	// A row on the minigame page arms a start; this is the first point after
 	// the menu has closed that can stream the destination and move anybody.
 	UpdateMenuPending(now);
+	RegisterObjectiveBeacons();
 
 	// A car or boat gunner needs a submachine gun to join the fight.  One kit
 	// per mode, per player; a partner who joins late is armed on their first
@@ -5882,6 +6169,36 @@ CCoopModes::CameraHint(CVector &target)
 	else
 		target = s_cnr.casePos;
 	return true;
+}
+
+bool
+CCoopModes::ArenaFocus(CVector &centre, float &radius)
+{
+	// The modes with a fixed ring are played inside it, not from behind one
+	// car's nose.  Framing the ring's centre (and opening far enough to keep
+	// its edge on screen) is what makes the camera useful in the derby, the
+	// RC race, Caddy football and King of the Hill.
+	if(s_rc.active){
+		centre = s_rc.centre;
+		radius = kRcRadius + 5.0f;
+		return true;
+	}
+	if(s_derby.active){
+		centre = s_derby.centre;
+		radius = kDerbyRadius + 5.0f;
+		return true;
+	}
+	if(s_pitch.active){
+		centre = s_pitch.centre;
+		radius = kPitchRingRadius + 4.0f;
+		return true;
+	}
+	if(s_koth.active){
+		centre = s_koth.centre;
+		radius = kKothRadius + 5.0f;
+		return true;
+	}
+	return false;
 }
 
 bool

@@ -196,6 +196,12 @@ public:
 	// False in every other mode.
 	static bool CameraHint(CVector &target);
 
+	// The fixed arena a steady-view mode is played in: the centre the shared
+	// camera should frame, and the radius that has to stay on screen.  Used by
+	// Cam.cpp for the derby, RC race, Caddy football and King of the Hill.
+	// False in every other mode.
+	static bool ArenaFocus(CVector &centre, float &radius);
+
 	// True while King of the Hill is running and player 1 is dead but the
 	// mode's four-second revive is still owed.  CGameLogic and the co-op
 	// session read this so the ordinary wasted/hospital flow does not take the

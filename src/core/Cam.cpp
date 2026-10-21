@@ -242,6 +242,7 @@ static float s_coopDistance;
 static float s_coopPitch;
 static float s_coopClip = 1.0f;
 static CVector s_coopTarget;
+static bool s_coopArena;
 
 #ifdef NINTENDO_WII
 // The shared camera can only be judged on a console, by two people, and a
@@ -1274,15 +1275,52 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			target += toHint*(Min(hintDist, kCoopHintMaxOffset)/hintDist)*kCoopHintTargetGain;
 	}
 
+	// A fixed-ring mode is about the ring, not the average of four cars.  Put
+	// the target on the arena centre and remember its radius for the framing
+	// below.  Without this the camera could sit behind whichever car happened
+	// to be furthest out, with the ring and half the players off screen.
+	CVector arenaCentre;
+	float arenaRadius = 0.0f;
+	const bool arenaView = CCoopModes::ArenaFocus(arenaCentre, arenaRadius);
+	const bool arenaStart = arenaView && !s_coopArena;
+	s_coopArena = arenaView;
+	if(arenaView){
+		target = arenaCentre;
+		separation = Max(separation, arenaRadius*1.5f);
+	}
+
+	const CVector moved = target - s_coopTarget;
+	const bool jumped = moved.MagnitudeSqr2D() > SQR(20.0f) || Abs(moved.z) > kCoopSnapHeight;
+	const bool teleported = !ResetStatics && jumped;
+	const bool snap = ResetStatics || jumped;
 	const float dt = CTimer::GetTimeStepInSeconds();
 
 	// Which way to look from.  Wherever the view was already facing when this
 	// camera took over, so switching to it does not also spin the world round.
-	if(ResetStatics){
+	// A teleport is different: the old direction belongs to the old place, so
+	// use the way the lead is facing in the new one.  An arena always takes the
+	// lead's heading as well, which puts the ring in front of the party instead
+	// of behind the camera after a menu start.
+	if(snap || arenaStart){
 		const CVector &facing = TheCamera.GetForward();
-		if(Abs(facing.x) > 0.01f || Abs(facing.y) > 0.01f)
+		if(arenaView || teleported || arenaStart){
+			CVector leadForward(0.0f, 0.0f, 0.0f);
+			bool haveLeadFacing = false;
+			if(lead->bInVehicle && lead->m_pMyVehicle != nil){
+				leadForward = lead->m_pMyVehicle->GetForward();
+				leadForward.z = 0.0f;
+				haveLeadFacing = leadForward.MagnitudeSqr() > 0.0001f;
+			}else{
+				leadForward = CVector(-Sin(lead->m_fRotationCur), Cos(lead->m_fRotationCur), 0.0f);
+				haveLeadFacing = true;
+			}
+			if(haveLeadFacing)
+				s_coopYaw = Atan2(-leadForward.x, leadForward.y);
+			else
+				s_coopYaw = lead->m_fRotationCur;
+		}else if(Abs(facing.x) > 0.01f || Abs(facing.y) > 0.01f){
 			s_coopYaw = Atan2(-facing.x, facing.y);
-		else
+		}else
 			s_coopYaw = lead->m_fRotationCur;
 	}
 	float speed = 0.0f;
@@ -1344,17 +1382,22 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		framingIndex = 1;
 	const CoopFraming &framing = kCoopFramings[framingIndex];
 	const float closeIn = Max(0.0f, kCoopSeparationFree - separation)*kCoopCloseGain;
-	const float wantedDistance = Clamp(framing.distance - closeIn +
-		Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain +
-		Min(kCoopSpeedRoom, speed*kCoopSpeedGain), kCoopMinDistance, kCoopMaxDistance);
+	// An arena has its own distance: far enough back that its whole ring is in
+	// shot, and never so far that the cars become specks.  The player's chosen
+	// framing still controls the pitch, but the ring gets a floor under it.
+	const float wantedDistance = arenaView ?
+		Clamp(arenaRadius*1.8f + 6.0f, 26.0f, 46.0f) :
+		Clamp(framing.distance - closeIn +
+			Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain +
+			Min(kCoopSpeedRoom, speed*kCoopSpeedGain), kCoopMinDistance, kCoopMaxDistance);
 
 	// Lower while a car is being followed, so driving looks down the road rather
 	// than at the roof.  The framing's own pitch comes back as the car slows.
-	const float wantedPitch = framing.pitch -
-		(driveVehicle != nil && speed > kCoopYawMinSpeed ? kCoopDrivePitch : 0.0f);
+	const float wantedPitch = arenaView ?
+		Max(framing.pitch, DEGTORAD(60.0f)) :
+		framing.pitch - (driveVehicle != nil && speed > kCoopYawMinSpeed ? kCoopDrivePitch : 0.0f);
 
-	const CVector moved = target - s_coopTarget;
-	if(ResetStatics || moved.MagnitudeSqr2D() > SQR(20.0f) || Abs(moved.z) > kCoopSnapHeight){
+	if(snap){
 		// Starting, or the players were moved somewhere else: be there, do not
 		// glide there across the map.
 		s_coopTarget = target;
@@ -1385,7 +1428,8 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// It follows the separation, not the camera's distance, because that distance
 	// also carries the speed room -- which is there to bring the road on screen,
 	// and would otherwise shrink a fast car a second time for the same reason.
-	const float separationRoom = Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain;
+	const float framingSeparation = arenaView ? Max(separation, arenaRadius*1.6f) : separation;
+	const float separationRoom = Max(0.0f, framingSeparation - kCoopSeparationFree)*kCoopSeparationGain;
 	const float zoom = Clamp(separationRoom/kCoopZoomSpan, 0.0f, 1.0f);
 	FOV = DefaultFOV + zoom*kCoopZoomFov;
 
@@ -1414,9 +1458,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// 1 answers the same as player 1 and is skipped, the prune the two-player
 	// camera did.
 	const CVector reach = view*-s_coopDistance;
-	float room = CoopRoomBehind(leadPos, reach);
+	const CVector clipBase = arenaView ? arenaCentre : leadPos;
+	float room = CoopRoomBehind(clipBase, reach);
 	for(int i = 0; i < NUMPLAYERS; i++)
-		if(present[i] && (pos[i] - leadPos).Magnitude() > kCoopSeparateClip)
+		if(present[i] && (pos[i] - clipBase).Magnitude() > kCoopSeparateClip)
 			room = Max(room, CoopRoomBehind(pos[i], reach));
 	const float clear = Min(1.0f, Max(room, kCoopMinDistance)/Max(s_coopDistance, kCoopMinDistance));
 	if(clear < s_coopClip)
