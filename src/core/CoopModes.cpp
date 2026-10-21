@@ -71,6 +71,7 @@ enum
 
 const uint32 kShiftStartDelayMs = 2000;	// beat after the siren goes on
 const uint32 kCaseCooldownMs = 4000;	// between cases
+const uint32 kShiftRearmMs = 10000;	// after a shift, before the siren arms again
 const uint32 kCaseTimeoutMs = 90000;	// a case older than this got away
 const float kCaseLeash = 250.0f;	// ...as did one further than this
 const float kSpawnDistance = 90.0f;	// how far out a case starts
@@ -142,6 +143,10 @@ struct ShiftState
 	uint32 streak;
 	uint32 nextCaseAt;
 	uint32 crewLostAt;
+	// After the shift ends, before the siren can open another one.  Without it
+	// a shift that was forfeited re-armed itself in the same frame, because
+	// the party was still sitting in the cruiser with the siren on.
+	uint32 rearmAt;
 	// an open case
 	bool caseActive;
 	bool spawnPending;
@@ -214,6 +219,7 @@ const uint32 kDerbyOutGraceMs = 3000;	// outside the ring this long = out
 const uint32 kDerbyFootGraceMs = 5000;	// out of the car this long = out
 const uint32 kDerbyIntermissionMs = 6000;
 const uint32 kDerbyRoundCapMs = 180000;	// a round that will not end
+const uint32 kDerbyMatchCapMs = 300000;	// a match that will not end either
 const uint32 kDerbyRearmMs = 10000;
 const int kDerbyWinsNeeded = 2;
 
@@ -227,6 +233,7 @@ struct DerbyState
 	uint32 countdownAt;
 	uint32 finishAt;
 	uint32 rearmAt;
+	uint32 startAt;
 	CVector centre;
 	CVector ring[kDerbyRingMarks];
 	int round;
@@ -359,6 +366,7 @@ const uint32 kRcGridHoldMs = 2000;	// seated and still this long...
 const uint32 kRcCountdownMs = 3000;	// ...then the lights
 const uint32 kRcJumpWindowMs = 1500;	// two or more jump together to arm it
 const uint32 kRcGridTimeoutMs = 30000;
+const uint32 kRcMatchCapMs = 300000;	// a race that will not end
 const uint32 kRcLingerMs = 4000;
 const uint32 kRcRearmMs = 10000;
 const int kRcPot = 300;
@@ -376,6 +384,7 @@ struct RcState
 	uint32 countdownAt;
 	uint32 finishAt;
 	uint32 rearmAt;
+	uint32 startAt;
 	CVector centre;
 	CVector forward;
 	CVector gate[kRcGates];
@@ -837,6 +846,45 @@ PlayerUsingVehicle(CVehicle *vehicle)
 	return false;
 }
 
+// A mode's own vehicle, handed back when the mode is over.
+//
+// The engine's CleanUpThisVehicle is not the right door for it.  It
+// un-missions the car and unlocks it, so the car stands there for ever as
+// ordinary traffic -- a pile of Bloodring Bangers, a Caddy, an RC toy -- and
+// the save keeps it, because it is not a mission vehicle any more.  It also
+// moves the traffic counters, which are for cars the traffic system owns: a
+// mode's car was never in that system, so every mode that ended left the
+// city one random car richer and one mission car poorer -- and the mission
+// count went below zero, which is a number the city uses to decide whether
+// it may put more cars on the street.
+//
+// So: nobody in it, out of the world; somebody in it, handed back to the
+// world, which is what happens to a mission car -- with the counters it
+// moved put back, because they count cars the traffic system owns and this
+// one it never had.
+void
+ReleaseModeVehicle(CVehicle *vehicle)
+{
+	if(vehicle == nil)
+		return;
+	if(PlayerUsingVehicle(vehicle)){
+		CTheScripts::CleanUpThisVehicle(vehicle);
+		// CleanUpThisVehicle added a random car and took a mission car off.
+		// Neither of those was ever true of this car, so both go back.
+		if(CCarCtrl::NumRandomCars > 0)
+			CCarCtrl::NumRandomCars--;
+		if(CCarCtrl::NumMissionCars < 0)
+			CCarCtrl::NumMissionCars = 0;
+		else
+			CCarCtrl::NumMissionCars++;
+		return;
+	}
+	CCarCtrl::RemoveFromInterestingVehicleList(vehicle);
+	CWorld::Remove(vehicle);
+	CWorld::RemoveReferencesToDeletedObject(vehicle);
+	delete vehicle;
+}
+
 // Whether the nod would put this player into a vehicle.  On foot the nod is
 // the enter-vehicle button: CPlayerInfo::Process (and CCoop for a partner)
 // takes the nearest car within ten metres on the flat that is neither wrecked
@@ -1198,11 +1246,6 @@ UpdateSpawnRequest(uint32 now)
 void
 UpdateCase(uint32 now)
 {
-	if(s_shift.spawnPending){
-		UpdateSpawnRequest(now);
-		return;
-	}
-
 	CVehicle *car = s_shift.suspectCar;
 	CPed *ped = s_shift.suspectPed;
 	if(car == nil && ped == nil){
@@ -1286,6 +1329,7 @@ EndShift(uint32 now, const char *why, int result)
 	s_shift.streak = 0;
 	s_shift.crewLostAt = 0;
 	s_shift.stoppedSince = 0;
+	s_shift.rearmAt = now + kShiftRearmMs;
 	// The menu's police car goes back to the traffic system with the shift.
 	for(int i = 0; i < NUMPLAYERS; i++)
 		ReleaseLoaner(i);
@@ -1313,6 +1357,8 @@ TryStartShift(uint32 now)
 	if(!CoopMinigames || !CCoop::PairActive())
 		return;
 	if(ModeActive())
+		return;
+	if(now < s_shift.rearmAt)
 		return;
 	// The law's view of the party: nobody starts a shift with a record.
 	if(PartyWanted())
@@ -1461,9 +1507,9 @@ ReleaseEscort(int player)
 {
 	CVehicle *boat = s_run.escort[player];
 	if(boat != nil){
-		CTheScripts::CleanUpThisVehicle(boat);
 		boat->CleanUpOldReference((CEntity**)&s_run.escort[player]);
 		s_run.escort[player] = nil;
+		ReleaseModeVehicle(boat);
 	}
 }
 
@@ -1677,9 +1723,12 @@ ReleasePursuers(void)
 			boat->AutoPilot.m_nCarMission = MISSION_NONE;
 			boat->AutoPilot.m_nTempAction = TEMPACT_NONE;
 			boat->AutoPilot.m_nCruiseSpeed = 0;
-			CTheScripts::CleanUpThisVehicle(boat);
 			boat->CleanUpOldReference((CEntity**)&s_run.pursuer[i]);
 			s_run.pursuer[i] = nil;
+			// Out of the world, like the rest of the mode's vehicles: a
+			// Predator left drifting in the bay is a boat for the rest of
+			// the game, and the traffic counters it moved were never right.
+			ReleaseModeVehicle(boat);
 		}
 	}
 }
@@ -2304,11 +2353,11 @@ ReleaseLoaner(int player)
 {
 	CVehicle *car = s_derby.loaner[player];
 	if(car != nil){
-		CTheScripts::CleanUpThisVehicle(car);
-		if(car->bIsLawEnforcer)
-			car->ChangeLawEnforcerState(false);
 		car->CleanUpOldReference((CEntity**)&s_derby.loaner[player]);
 		s_derby.loaner[player] = nil;
+		if(car->bIsLawEnforcer)
+			car->ChangeLawEnforcerState(false);
+		ReleaseModeVehicle(car);
 	}
 }
 
@@ -2617,6 +2666,7 @@ StartDerby(uint32 now, const CVector &centre)
 	s_derby.counting = true;
 	s_derby.finished = false;
 	s_derby.countdownAt = now + kDerbyCountdownMs;
+	s_derby.startAt = now;
 	s_derby.centre = centre;
 	// The ring, once: where it stands on the ground is a collision query, so
 	// it is worked out here and not every frame it is drawn.
@@ -2788,6 +2838,14 @@ UpdateDerby(uint32 now)
 			EndDerby(now, "over");
 		return;
 	}
+	// A match that cannot end is not a match.  There was a cap on a round but
+	// none on the match, and a round that ran out of time awarded nobody, so
+	// two careful drivers could keep it alive in three-minute loops for ever.
+	// The leader on rounds takes it.
+	if(now - s_derby.startAt >= kDerbyMatchCapMs){
+		FinishDerby(now);
+		return;
+	}
 	RegisterDerbyCoronas();
 
 	// Ramming only, for everyone, for the whole match.
@@ -2953,9 +3011,10 @@ void
 ReleasePitchBall(void)
 {
 	if(s_pitch.ball != nil){
-		CTheScripts::CleanUpThisVehicle(s_pitch.ball);
-		s_pitch.ball->CleanUpOldReference((CEntity**)&s_pitch.ball);
+		CVehicle *ball = s_pitch.ball;
+		ball->CleanUpOldReference((CEntity**)&s_pitch.ball);
 		s_pitch.ball = nil;
+		ReleaseModeVehicle(ball);
 	}
 }
 
@@ -3917,13 +3976,12 @@ ReleaseRcCars(void)
 		if(ped != nil && car != nil && ped->bInVehicle && ped->m_pMyVehicle == car)
 			CCoopModes::LeaveRcCar(ped);
 		if(car != nil){
-			CTheScripts::CleanUpThisVehicle(car);
-			// An RC model has no doors; do not leave it in the world as an
-			// enterable random car after the race.
-			car->bIsLocked = true;
-			car->m_nDoorLock = CARLOCK_LOCKED;
+			// The toy goes out of the world with the race: an RC model has
+			// no doors, and a locked one standing in the street is litter
+			// the player walks into for the rest of the game.
 			car->CleanUpOldReference((CEntity**)&s_rc.car[i]);
 			s_rc.car[i] = nil;
+			ReleaseModeVehicle(car);
 		}
 		if(ped != nil)
 			ped->bRenderPedInCar = true;
@@ -4019,11 +4077,11 @@ RespawnRcCar(int player)
 	if(old != nil){
 		if(ped->bInVehicle && ped->m_pMyVehicle == old)
 			CCoopModes::LeaveRcCar(ped);
-		CTheScripts::CleanUpThisVehicle(old);
-		old->bIsLocked = true;
-		old->m_nDoorLock = CARLOCK_LOCKED;
 		old->CleanUpOldReference((CEntity**)&s_rc.car[player]);
 		s_rc.car[player] = nil;
+		// Out of the world, not handed to the traffic: a wrecked toy used
+		// to stay in the street for the rest of the game.
+		ReleaseModeVehicle(old);
 	}
 	SpawnRcCar(player, ped->GetPosition() + ped->GetRight()*4.0f, s_rc.forward);
 	SeatRcRacer(player);
@@ -4198,6 +4256,9 @@ UpdateRc(uint32 now)
 		if(now < s_rc.countdownAt)
 			return;
 		s_rc.counting = false;
+		// The racing clock starts when the lights go down; the grid had a
+		// timeout of its own.
+		s_rc.startAt = now;
 		int racers = 0;
 		for(int i = 0; i < NUMPLAYERS; i++){
 			CVehicle *car;
@@ -4220,6 +4281,32 @@ UpdateRc(uint32 now)
 	// The race: gates in order, three laps, first across takes it.  Only the
 	// driver of their own toy is racing: a passenger in a partner's car or a
 	// player who has taken a normal car must not advance a lap.
+	//
+	// And a race that cannot end is not a race: there was a timeout on the
+	// grid but none on the racing, so a toy wedged on a kerb, or a racer
+	// stranded on foot, kept it alive for ever.  Whoever is furthest round
+	// the gates takes it.
+	if(now - s_rc.startAt >= kRcMatchCapMs){
+		int best = -1;
+		int bestProgress = -1;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_rc.nextGate[i] < 0)
+				continue;
+			const int progress = s_rc.lap[i]*kRcGates + s_rc.nextGate[i];
+			if(progress > bestProgress){
+				bestProgress = progress;
+				best = i;
+			}
+		}
+		if(best >= 0){
+			s_rc.winner = best;
+			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
+		}
+		s_rc.finished = true;
+		s_rc.finishAt = now + kRcLingerMs;
+		COOP_LOG("WII coop: rc race over on time\n");
+		return;
+	}
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil){
@@ -4239,8 +4326,13 @@ UpdateRc(uint32 now)
 			// the last toy and raised a new one, dozens a second, until the
 			// racer sat in one.  One on its way into a toy is not asking for
 			// another.  The body is drawn again while they are out of it.
-			if(s_rc.nextGate[i] < 0)
-				s_rc.nextGate[i] = 0;	// a late joiner or a returning racer
+			//
+			// Their gate is not given to them here.  A racer who was in a toy
+			// and lost it keeps the gate they had -- that is what this used
+			// to be for -- but a player who never had a toy was given gate
+			// zero, and a gate objective and a lap bar with it, while they
+			// were standing on the pavement not racing.  They get their gate
+			// when they are seated in the toy, below.
 			ped->bRenderPedInCar = true;
 			if(ped->m_nPedState == PED_SEEK_CAR || ped->EnteringCar()){
 				s_rc.footSince[i] = now;
@@ -5873,7 +5965,13 @@ MenuSpawnPolice(const CVector &at, float heading)
 	car->m_bSirenOrAlarm = true;
 	CWorld::Add(car);
 	if(!MenuStoreLoaner(car)){
-		CTheScripts::CleanUpThisVehicle(car);
+		// The spawn failed.  The car is not the mode's to keep and not the
+		// world's either: CleanUpThisVehicle handed it to the traffic
+		// system, which left a police cruiser with the siren on standing
+		// in the street.
+		CWorld::Remove(car);
+		CWorld::RemoveReferencesToDeletedObject(car);
+		delete car;
 		return nil;
 	}
 	return car;
@@ -5902,7 +6000,12 @@ MenuSpawnBoat(const CVector &at, float heading)
 	boat->m_nZoneLevel = CTheZones::GetLevelFromPosition(&pos);
 	CWorld::Add(boat);
 	if(!MenuStoreLoaner(boat)){
-		CTheScripts::CleanUpThisVehicle(boat);
+		// The spawn failed: the boat goes away with the failure, rather
+		// than being handed to the traffic system to sit in the bay for
+		// the rest of the game.
+		CWorld::Remove(boat);
+		CWorld::RemoveReferencesToDeletedObject(boat);
+		delete boat;
 		return nil;
 	}
 	return boat;
@@ -6586,6 +6689,17 @@ CCoopModes::Update(void)
 	// case or no case -- is the party standing down.
 	if(FindCrewedLawCar(false) != nil && FindCrewedLawCar(true) == nil){
 		EndShift(now, "siren off", SHIFT_RESULT_SIREN);
+		return;
+	}
+
+	// A case that is still waiting for its models to stream in has no suspect
+	// yet, so there is no case to update.  The request has to be driven from
+	// here: it used to live inside UpdateCase, which only ever runs when a
+	// case is already open, and a case is only open once the suspect exists,
+	// which only happens when the request runs.  The shift armed, and then did
+	// nothing at all, for as long as the party kept the siren on.
+	if(s_shift.spawnPending){
+		UpdateSpawnRequest(now);
 		return;
 	}
 

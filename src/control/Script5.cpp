@@ -2377,6 +2377,18 @@ void CTheScripts::ClearSpaceForMissionEntity(const CVector& pos, CEntity* pEntit
 			CVehicle* pVehicle = (CVehicle*)pFound;
 			if (pVehicle->bIsLocked || !pVehicle->CanBeDeleted())
 				break;
+			// A car with a player in it is not the population's to delete.
+			// The ped case below already refuses to touch a player; the
+			// vehicle case did not, and deleting a partner who was driving
+			// their own car left CWorld::Players pointing at freed memory.
+			if (pVehicle->pDriver && pVehicle->pDriver->IsPlayer())
+				break;
+			bool playerAboard = false;
+			for (int i = 0; i < pVehicle->m_nNumMaxPassengers; i++)
+				if (pVehicle->pPassengers[i] && pVehicle->pPassengers[i]->IsPlayer())
+					playerAboard = true;
+			if (playerAboard)
+				break;
 			if (pVehicle->pDriver) {
 				CPopulation::RemovePed(pVehicle->pDriver);
 				pVehicle->pDriver = nil;
