@@ -1483,6 +1483,8 @@ FindCarToSteal(CPlayerPed *partner)
 		CVehicle *vehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if(vehicle == nil || (!vehicle->IsCar() && !vehicle->IsBike() && !vehicle->IsBoat()))
 			continue;
+		if(CCoopModes::IsRcVehicle(vehicle) || CCoopModes::IsPitchBall(vehicle))
+			continue;
 		if(vehicle->GetStatus() == STATUS_WRECKED || vehicle->IsUpsideDown())
 			continue;
 		// A boat is in the water by definition; a car in the water is sunk.
@@ -1695,7 +1697,7 @@ NeedsRegroup(CPlayerPed *lead, CPlayerPed *partner, int player, bool leadTelepor
 	// driver, in the same car, is not.  The driver at the wheel is a player by
 	// now -- an NPC at it was dealt with above.  Everybody else, on foot or in
 	// a vehicle with nobody driving it, gets the walking one.
-	// A pursuit mode suspends the distance leash -- falls and kidnaps still
+	// A free-roam mode suspends the distance leash -- falls and kidnaps still
 	// bring a partner back, distance no longer does.
 	const float leash = (partnerVehicle != nil && partnerVehicle->pDriver != nil) ? kLeashDriving : kLeash;
 	// Ground distance, not 3D: a partner under a landing helicopter or a car

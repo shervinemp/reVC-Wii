@@ -344,7 +344,8 @@ CoopSeatForPed(CPlayerPed *ped, CVehicle *vehicle)
 		return -1;
 	if (vehicle->pDriver == ped)
 		return 0;
-	for (int i = 0; i < vehicle->m_nNumMaxPassengers; i++)
+	const int seats = Min((int)vehicle->m_nNumMaxPassengers, 8);
+	for (int i = 0; i < seats; i++)
 		if (vehicle->pPassengers[i] == ped)
 			return i + 1;
 	return -1;

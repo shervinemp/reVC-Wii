@@ -610,6 +610,10 @@ CPlayerInfo::FindClosestCarSectorList(CPtrList& carList, CPed* ped, float unk1, 
 				continue;
 
 			car->m_scanCode = CWorld::GetCurrentScanCode();
+			// RC toys have no ordinary doors, and the football is a locked,
+			// driverless Caddy.  Neither is a car the enter button should pick.
+			if (CCoopModes::IsRcVehicle(car) || CCoopModes::IsPitchBall(car))
+				continue;
 			// Couch co-op: any partner's car is a candidate now -- player 1 can
 			// ride along in it -- but a car driven by anybody else is still
 			// not.  The enter button means the driver's seat, and aiming it at

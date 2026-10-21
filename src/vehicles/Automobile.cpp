@@ -40,6 +40,7 @@
 #include "Stats.h"
 #include "Garages.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #include "PathFind.h"
 #include "Replay.h"
 #include "AnimManager.h"
@@ -6132,6 +6133,10 @@ CAutomobile::KnockPedOutCar(eWeaponType weapon, uint16 door, CPed *ped)
 	AnimationId anim = ANIM_STD_KO_FRONT;
 	if(ped == nil)
 		return nil;
+	// The RC race's toy has no ordinary doors.  If the engine tries to roll a
+	// player out of one, use the same direct detach as the exit button.
+	if(ped->IsPlayer() && CCoopModes::LeaveRcCar((CPlayerPed*)ped))
+		return ped;
 
 	ped->m_vehDoor = door;
 	ped->SetPedState(PED_IDLE);

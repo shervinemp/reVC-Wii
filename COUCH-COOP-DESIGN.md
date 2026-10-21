@@ -586,9 +586,9 @@ little astern, and the partner is put at its wheel (the way a script warps the
 player into a car); it is a mission boat, locked, and the save leaves it out. A
 partner who is already driving a boat of their own keeps it, and that boat is
 the escort: the run treats either the same. The
-partners then drive from their own pads, and the regroup that holds any driven
-boat to player 1 holds them. The crew is the lead boat and the boats a player is
-driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
+partners then drive from their own pads; the party leash stands aside so an
+escort can race for the crate. The crew is the lead boat and the boats a player
+is driving within 80 m of it; the headline says how many ("DROP 2/3  CREW 4") and
 each boat of the crew adds $50 to a drop's $100.
 
 Each leg has a crate on the water about ninety metres before the drop and sixty
@@ -611,6 +611,8 @@ change of clothes does), the boats become any other boat on the water, and the
 partners come back by the usual rules -- beside player 1 on foot, or after the
 boat ride if they are still sailing. A partner who cannot be put anywhere (no
 clear water, no room in the pools) waits for a boat ride as they always have.
+The party leash stands aside during the run so an escort boat can race for the
+crate instead of being towed back to the lead.
 
 The Predators are not passive scenery. Inside 70 m, with the carrier in the arc
 ahead of the boat, a Predator fires its twin machine guns at the carrier's hull

@@ -254,6 +254,7 @@ const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
 const uint32 kPitchGoalNoteMs = 1500;
 const uint32 kPitchFinishMs = 5000;
 const uint32 kPitchRearmMs = 10000;
+const uint32 kPitchMatchCapMs = 300000;	// a broken pitch cannot run forever
 const int kPitchGoalsToWin = 3;
 
 // Caddy football: two goals and 1v1 or 2v2, or three goals in a triangle and
@@ -265,6 +266,7 @@ struct PitchState
 	bool active;
 	bool counting;
 	bool finished;
+	uint32 startAt;
 	uint32 countdownAt;
 	uint32 resetAt;
 	uint32 finishAt;
@@ -278,6 +280,7 @@ struct PitchState
 	int goalOwner[3];	// three-goal pitch: which player defends it
 	int goalTeam[3];	// two-goal pitch: which team defends it
 	int players;		// 2, 3 or 4
+	bool inMatch[NUMPLAYERS];	// late joiners are spectators
 	int team[NUMPLAYERS];	// two-goal pitch only
 	int score[NUMPLAYERS];	// three-goal pitch only
 	int teamScore[2];	// two-goal pitch only
@@ -525,6 +528,8 @@ struct MenuPending
 MenuPending s_menuPending = { -1, 0 };
 
 void ReleaseLoaner(int player);
+void MenuLeaveVehicle(CPlayerPed *ped);
+bool SeatMenuDriver(CPlayerPed *ped, CVehicle *car);
 
 // --- what a mode tells the party when it arms --------------------------------
 
@@ -773,11 +778,22 @@ FindCrewedLawCar(bool requireSiren)
 		CVehicle *veh = ped->m_pMyVehicle;
 		if(!veh->bIsLawEnforcer || !veh->IsCar())
 			continue;
-		if(veh->pDriver == nil || !veh->pDriver->IsPlayer())
+		if(veh->GetStatus() == STATUS_WRECKED || veh->IsUpsideDown() ||
+		   veh->bIsInWater)
+			continue;
+		if(veh->pDriver == nil || !veh->pDriver->IsPlayer() ||
+		   veh->pDriver->DyingOrDead() ||
+		   veh->pDriver->m_nPedState == PED_ARRESTED)
 			continue;
 		if(requireSiren && !veh->m_bSirenOrAlarm)
 			continue;
-		const int count = CountPlayersIn(veh);
+		int count = 0;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			CPlayerPed *other = CCoop::GetPlayerPed(i);
+			if(other != nil && other->bInVehicle && other->m_pMyVehicle == veh &&
+			   !other->DyingOrDead() && other->m_nPedState != PED_ARRESTED)
+				count++;
+		}
 		if(count >= 2 && count > bestCount){
 			bestCount = count;
 			best = veh;
@@ -1165,8 +1181,7 @@ TryStartShift(uint32 now)
 	if(ModeActive())
 		return;
 	// The law's view of the party: nobody starts a shift with a record.
-	CPlayerPed *lead = FindPlayerPed();
-	if(lead == nil || lead->m_pWanted == nil || lead->m_pWanted->GetWantedLevel() > 0)
+	if(PartyWanted())
 		return;
 	if(FindCrewedLawCar(true) == nil)
 		return;
@@ -1337,9 +1352,17 @@ void
 ReleaseEscorts(void)
 {
 	bool crewed = false;
-	for(int player = 1; player < NUMPLAYERS; player++)
+	for(int player = 1; player < NUMPLAYERS; player++){
 		if(s_run.escort[player] != nil && s_run.escort[player]->pDriver != nil)
 			crewed = true;
+		// PartnerBoat() also lets a partner keep their own boat for the run.
+		// It is not in s_run.escort[], but ending the run must still lift them
+		// out of it rather than leave them stranded at sea.
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped != nil && ped->bInVehicle && ped->m_pMyVehicle != nil &&
+		   ped->m_pMyVehicle->IsBoat() && ped->m_pMyVehicle->pDriver == ped)
+			crewed = true;
+	}
 	if(crewed)
 		CCoop::Suspend("smuggling run over");
 	for(int player = 1; player < NUMPLAYERS; player++)
@@ -1524,6 +1547,11 @@ ReleasePursuers(void)
 			s_run.pursuerDriver[i] = nil;
 		}
 		if(boat != nil){
+			// Let the released Predator drift as ordinary water traffic
+			// instead of keeping the last chase order in its autopilot.
+			boat->AutoPilot.m_nCarMission = MISSION_NONE;
+			boat->AutoPilot.m_nTempAction = TEMPACT_NONE;
+			boat->AutoPilot.m_nCruiseSpeed = 0;
 			CTheScripts::CleanUpThisVehicle(boat);
 			boat->CleanUpOldReference((CEntity**)&s_run.pursuer[i]);
 			s_run.pursuer[i] = nil;
@@ -1563,6 +1591,9 @@ FirePursuer(int index, uint32 now, CVehicle *target)
 {
 	CVehicle *predator = s_run.pursuer[index];
 	if(predator == nil || target == nil || predator->pDriver == nil)
+		return;
+	if(predator->pDriver->DyingOrDead() ||
+	   predator->pDriver->m_nPedState == PED_ARRESTED)
 		return;
 	if(predator->GetStatus() == STATUS_WRECKED || now < s_run.nextFireAt[index])
 		return;
@@ -1785,6 +1816,29 @@ StartRunAt(uint32 now, CVehicle *boat)
 	return true;
 }
 
+// A world-started run has to arm the crew as well as the menu-started one.
+// Partners already driving their own boat keep it; anyone else on the dock or
+// in a car is moved to an escort boat beside player 1, the way SpawnPartner
+// does for a partner who arrives later.
+void
+SeatRunCrew(CVehicle *lead)
+{
+	for(int i = 1; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			continue;
+		CVehicle *current = ped->bInVehicle ? ped->m_pMyVehicle : nil;
+		if(current != nil && current->IsBoat() &&
+		   current->pDriver == ped)
+			continue;
+		if(ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+		CVehicle *escort = CCoopModes::EscortBoat(i, lead);
+		if(escort != nil && !SeatMenuDriver(ped, escort))
+			COOP_LOG("WII coop: could not seat run player %d\n", i + 1);
+	}
+}
+
 void
 TryStartRun(uint32 now)
 {
@@ -1803,7 +1857,8 @@ TryStartRun(uint32 now)
 	CPad *pad = GetPadFromVehicleDriver(boat);
 	if(pad == nil || !pad->GetHorn())
 		return;
-	StartRunAt(now, boat);
+	if(StartRunAt(now, boat))
+		SeatRunCrew(boat);
 }
 
 void
@@ -2091,7 +2146,9 @@ PlayerInDerbyCar(int player, CVehicle **out)
 	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
 		return false;
 	CVehicle *veh = ped->m_pMyVehicle;
-	if(!veh->IsCar() || veh->bIsLawEnforcer || veh->pDriver != ped)
+	if(veh == s_pitch.ball || !veh->IsCar() || veh->bIsLawEnforcer ||
+	   veh->pDriver != ped || veh->GetStatus() == STATUS_WRECKED ||
+	   veh->IsUpsideDown() || veh->bIsInWater)
 		return false;
 	*out = veh;
 	return true;
@@ -2542,12 +2599,15 @@ UpdateDerby(uint32 now)
 			s_derby.running[i] = false;
 			continue;
 		}
-		CVehicle *veh = nil;
-		const bool inOwnCar = PlayerInDerbyCar(i, &veh);
-		if(inOwnCar && veh->GetStatus() == STATUS_WRECKED){
+		CVehicle *rawVeh = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
+			ped->m_pMyVehicle : nil;
+		if(rawVeh != nil && (rawVeh->GetStatus() == STATUS_WRECKED ||
+		   rawVeh->IsUpsideDown() || rawVeh->bIsInWater)){
 			s_derby.running[i] = false;
 			continue;
 		}
+		CVehicle *veh = nil;
+		const bool inOwnCar = PlayerInDerbyCar(i, &veh);
 		const CVector pos = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
 			ped->m_pMyVehicle->GetPosition() : ped->GetPosition();
 		if((pos - s_derby.centre).Magnitude2D() > kDerbyRadius){
@@ -2574,15 +2634,19 @@ UpdateDerby(uint32 now)
 			s_derby.footSince[i] = 0;
 		}
 		alive++;
-		survivor = i;
+		// Only a driver in their own car can take the round.  A player in the
+		// foot-grace period is still counted so a round does not end the
+		// instant they step out, but they cannot inherit the win in that gap.
+		if(inOwnCar)
+			survivor = i;
 	}
 
 	if(alive > 1 && now - s_derby.roundStartAt <= kDerbyRoundCapMs)
 		return;
 
 	// The round is over: the survivor takes it, a round that ran out of time
-	// takes nobody.
-	if(alive == 1){
+	// or ends with only a player in their foot-grace takes nobody.
+	if(alive == 1 && survivor >= 0){
 		s_derby.roundWins[survivor]++;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 150;
 		COOP_LOG("WII coop: derby round to player %d\n", survivor + 1);
@@ -2602,8 +2666,13 @@ UpdateDerby(uint32 now)
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
-		CVehicle *veh = ped->bInVehicle ? ped->m_pMyVehicle : nil;
-		if((veh == nil || veh->GetStatus() == STATUS_WRECKED) &&
+		CVehicle *own = nil;
+		const bool inOwnCar = PlayerInDerbyCar(i, &own);
+		CVehicle *raw = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
+			ped->m_pMyVehicle : nil;
+		const bool needsLoaner = !inOwnCar || raw == nil ||
+			raw->GetStatus() == STATUS_WRECKED || raw->IsUpsideDown();
+		if(needsLoaner &&
 		   (ped->GetPosition() - s_derby.centre).Magnitude2D() <= kDerbyJoinRange + 20.0f)
 			SpawnLoaner(i);
 	}
@@ -2682,8 +2751,11 @@ SpawnPitchBall(void)
 {
 	if(s_pitch.ball != nil)
 		return true;
-	if(!CStreaming::HasModelLoaded(MI_CADDY))
+	if(!CStreaming::HasModelLoaded(MI_CADDY)){
+		// The model can be evicted while the pitch is waiting for it.
+		CStreaming::RequestModel(MI_CADDY, 0);
 		return false;
+	}
 
 	CVector pos = PitchBallSpot();
 	bool found = false;
@@ -2786,6 +2858,7 @@ StartPitch(uint32 now, const CVector &centre, const CVector &forward, int player
 	s_pitch.active = true;
 	s_pitch.counting = true;
 	s_pitch.finished = false;
+	s_pitch.startAt = now;
 	s_pitch.countdownAt = now + kPitchCountdownMs;
 	s_pitch.resetAt = 0;
 	s_pitch.finishAt = 0;
@@ -2801,10 +2874,17 @@ StartPitch(uint32 now, const CVector &centre, const CVector &forward, int player
 	s_pitch.winnerTeam = -1;
 	s_pitch.teamScore[0] = 0;
 	s_pitch.teamScore[1] = 0;
+	int teamSlot = 0;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_pitch.brakeSince[i] = 0;
 		s_pitch.brakeSpent[i] = false;
-		s_pitch.team[i] = players == 3 ? i : i % 2;
+		s_pitch.inMatch[i] = CCoop::GetPlayerPed(i) != nil;
+		// Team numbers follow the players actually present, not their world
+		// slot: with player 2 absent, player 1 and player 3 are still a 1v1.
+		s_pitch.team[i] = s_pitch.inMatch[i] ?
+			(players == 3 ? i : teamSlot % 2) : -1;
+		if(s_pitch.inMatch[i])
+			teamSlot++;
 		s_pitch.score[i] = 0;
 	}
 	for(int g = 0; g < 3; g++){
@@ -2992,6 +3072,10 @@ UpdatePitch(uint32 now)
 			EndPitch(now, "over");
 		return;
 	}
+	if(now - s_pitch.startAt >= kPitchMatchCapMs){
+		FinishPitch(now, -1, -1);
+		return;
+	}
 
 	// Ramming only, as in the derby: the fire button belongs to the match,
 	// countdown included.
@@ -3035,7 +3119,8 @@ UpdatePitch(uint32 now)
 	float bestDist = kPitchTouchRange;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+		if(ped == nil || !s_pitch.inMatch[i] || ped->DyingOrDead() ||
+		   ped->m_nPedState == PED_ARRESTED)
 			continue;
 		// The last touch belongs to a driver in an eligible car.  A
 		// passenger in a partner's car, or somebody who has climbed into a
@@ -3113,8 +3198,8 @@ UpdatePitch(uint32 now)
 // A hill centre needs real ground under the whole ring, must not be in water,
 // and should not be the middle of a car path.  The road test uses the path
 // graph's car nodes: a point within a few metres of one is roadway, while a
-// beach, park or broad forecourt is clear.  The distance is Manhattan because
-// that is how FindNodeClosestToCoors measures it.
+// beach, park or broad forecourt is clear.  The node is chosen by the path
+// graph's own metric; the distance kept is ordinary ground distance.
 bool
 KothSpot(const CVector &at, float &roadDistance, CVector &out)
 {
@@ -3133,8 +3218,11 @@ KothSpot(const CVector &at, float &roadDistance, CVector &out)
 		const float angle = 2.0f*PI*(float)i/(float)kKothRingMarks;
 		const CVector mark = at + CVector(Cos(angle), Sin(angle), 0.0f)*kKothRadius;
 		bool markFound = false;
-		CWorld::FindGroundZFor3DCoord(mark.x, mark.y, at.z + 3.0f, &markFound);
+		const float markGround = CWorld::FindGroundZFor3DCoord(mark.x, mark.y, at.z + 3.0f, &markFound);
 		if(!markFound)
+			return false;
+		float markWater = 0.0f;
+		if(CWaterLevel::GetWaterLevel(mark, &markWater, true) && markGround < markWater + 0.4f)
 			return false;
 	}
 
@@ -3219,7 +3307,8 @@ TryStartKoth(uint32 now, bool menuStart)
 		for(int i = 0; i < NUMPLAYERS; i++){
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
 			if(ped != nil &&
-			   (ped->GetPosition() - centre).Magnitude2D() > kKothGatherRange + kKothShiftLimit)
+			   ((ped->GetPosition() - centre).Magnitude2D() > kKothGatherRange + kKothShiftLimit ||
+			    Abs(ped->GetPosition().z - centre.z) > 4.0f))
 				return;
 		}
 	}
@@ -3399,23 +3488,25 @@ EndKoth(uint32 now, const char *why)
 void
 UpdateKoth(uint32 now)
 {
-	// Every present player holds aim: the group gesture.  The nod in a car is
-	// the exit-vehicle button, so it would empty the cars the hill is meant to
-	// allow; aim means the same thing on foot, in a car and in a Rhino.  It is
-	// also counted here so the one-player nod modes wait while a group is
-	// clearly asking for the hill instead.
+	// Every present player holds aim on foot: the group gesture.  RightShoulder1
+	// is also the car brake, so a party sitting in cars with the brake on is
+	// not asking for the hill.  Keeping the gesture on foot also leaves the
+	// brake free to arm Caddy football.
 	int present = 0;
 	int holding = 0;
+	bool allOnFoot = true;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
 		present++;
+		if(ped->bInVehicle)
+			allOnFoot = false;
 		if(GetPadFromPlayer(ped)->NewState.RightShoulder1 != 0)
 			holding++;
 	}
 	s_koth.groupHold = holding;
-	s_koth.groupAll = present >= 2 && holding == present;
+	s_koth.groupAll = present >= 2 && holding == present && allOnFoot;
 
 	if(!s_koth.active){
 		if(holding == 0)
@@ -3512,7 +3603,9 @@ UpdateKoth(uint32 now)
 			continue;
 		if(ped->bInVehicle)
 			continue;
-		if((ped->GetPosition() - s_koth.centre).Magnitude2D() <= kKothRadius){
+		const CVector at = ped->GetPosition();
+		if((at - s_koth.centre).Magnitude2D() <= kKothRadius &&
+		   Abs(at.z - s_koth.centre.z) <= 3.0f){
 			inside++;
 			occupant = i;
 		}
@@ -3542,12 +3635,12 @@ PlayerInRcCar(int player, CVehicle **out)
 	CPlayerPed *ped = CCoop::GetPlayerPed(player);
 	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
 		return false;
-	for(int i = 0; i < NUMPLAYERS; i++)
-		if(s_rc.car[i] == ped->m_pMyVehicle){
-			*out = ped->m_pMyVehicle;
-			return true;
-		}
-	return false;
+	// Each racer is the driver of their own toy.  A passenger in somebody
+	// else's car, or a player who has taken a normal car, is not a racer.
+	if(s_rc.car[player] != ped->m_pMyVehicle || ped->m_pMyVehicle->pDriver != ped)
+		return false;
+	*out = ped->m_pMyVehicle;
+	return true;
 }
 
 // A normal-sized ped in a toy car is a normal-sized ped through a toy car's
@@ -3568,8 +3661,8 @@ SeatRcRacer(int player)
 {
 	CPlayerPed *ped = CCoop::GetPlayerPed(player);
 	CVehicle *car = s_rc.car[player];
-	if(ped == nil || car == nil || ped->bInVehicle || ped->DyingOrDead() ||
-	   ped->m_nPedState == PED_ARRESTED)
+	if(ped == nil || car == nil || ped->bInVehicle || car->pDriver != nil ||
+	   ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
 		return;
 	// WarpPedIntoCar only takes a seat when the objective says which one.
 	ped->SetObjective(OBJECTIVE_ENTER_CAR_AS_DRIVER, car);
@@ -3586,12 +3679,21 @@ ReleaseRcCars(void)
 {
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CVehicle *car = s_rc.car[i];
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		// A player still in a toy must come out before the toy is handed back.
+		// Otherwise EndRc leaves them seated in a random RC car, body hidden,
+		// and the next race cannot seat them in a new one.
+		if(ped != nil && car != nil && ped->bInVehicle && ped->m_pMyVehicle == car)
+			CCoopModes::LeaveRcCar(ped);
 		if(car != nil){
 			CTheScripts::CleanUpThisVehicle(car);
+			// An RC model has no doors; do not leave it in the world as an
+			// enterable random car after the race.
+			car->bIsLocked = true;
+			car->m_nDoorLock = CARLOCK_LOCKED;
 			car->CleanUpOldReference((CEntity**)&s_rc.car[i]);
 			s_rc.car[i] = nil;
 		}
-		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped != nil)
 			ped->bRenderPedInCar = true;
 	}
@@ -3638,6 +3740,7 @@ SpawnRcCar(int player, const CVector &slot, const CVector &forward)
 	car->UpdateRwFrame();
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
+	car->m_nDoorLock = CARLOCK_LOCKED;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
 	car->AutoPilot.m_nTempAction = TEMPACT_NONE;
 	car->bEngineOn = true;
@@ -3683,7 +3786,11 @@ RespawnRcCar(int player)
 		return;
 	CVehicle *old = s_rc.car[player];
 	if(old != nil){
+		if(ped->bInVehicle && ped->m_pMyVehicle == old)
+			CCoopModes::LeaveRcCar(ped);
 		CTheScripts::CleanUpThisVehicle(old);
+		old->bIsLocked = true;
+		old->m_nDoorLock = CARLOCK_LOCKED;
 		old->CleanUpOldReference((CEntity**)&s_rc.car[player]);
 		s_rc.car[player] = nil;
 	}
@@ -3879,25 +3986,30 @@ UpdateRc(uint32 now)
 		return;
 	}
 
-	// The race: gates in order, three laps, first across takes it.
+	// The race: gates in order, three laps, first across takes it.  Only the
+	// driver of their own toy is racing: a passenger in a partner's car or a
+	// player who has taken a normal car must not advance a lap.
 	for(int i = 0; i < NUMPLAYERS; i++){
-		if(s_rc.nextGate[i] < 0)
-			continue;
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil){
 			s_rc.nextGate[i] = -1;
 			continue;
 		}
-		CVehicle *car = ped->bInVehicle ? ped->m_pMyVehicle : nil;
-		if(car != nil && car->GetStatus() == STATUS_WRECKED)
-			continue;	// the driver gets out first; the replacement waits
-		if(car == nil){
+		CVehicle *car = nil;
+		const bool inOwnCar = PlayerInRcCar(i, &car);
+		if(!inOwnCar){
+			// A player in a car that is not their toy is not racing.  They
+			// can get out and their own toy will be brought back below.
+			if(ped->bInVehicle)
+				continue;
 			// On foot.  A toy is put beside the racer once -- at once if theirs
 			// is gone or wrecked, after a few seconds of walking if it is not --
 			// and then they are seated in it.  Doing this every frame released
 			// the last toy and raised a new one, dozens a second, until the
 			// racer sat in one.  One on its way into a toy is not asking for
 			// another.  The body is drawn again while they are out of it.
+			if(s_rc.nextGate[i] < 0)
+				s_rc.nextGate[i] = 0;	// a late joiner or a returning racer
 			ped->bRenderPedInCar = true;
 			if(ped->m_nPedState == PED_SEEK_CAR || ped->EnteringCar()){
 				s_rc.footSince[i] = now;
@@ -3914,6 +4026,10 @@ UpdateRc(uint32 now)
 			}
 			continue;
 		}
+		if(s_rc.nextGate[i] < 0)
+			s_rc.nextGate[i] = 0;
+		if(car->GetStatus() == STATUS_WRECKED)
+			continue;	// the driver gets out first; the replacement waits
 		s_rc.footSince[i] = 0;
 		SuppressRcBody(ped);
 		if((car->GetPosition() - s_rc.gate[s_rc.nextGate[i]]).Magnitude2D() < kRcGateRange){
@@ -4322,6 +4438,8 @@ TryStartCnR(uint32 now, bool held)
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
 			continue;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+			return;
 		if(ped->bInVehicle)
 			return;
 		sum += ped->GetPosition();
@@ -4405,7 +4523,8 @@ UpdateCnR(uint32 now)
 	// drops it where it was.
 	if(s_cnr.carried){
 		CPlayerPed *carrier = s_cnr.carrier >= 0 ? CCoop::GetPlayerPed(s_cnr.carrier) : nil;
-		if(carrier == nil || carrier->DyingOrDead())
+		if(carrier == nil || carrier->DyingOrDead() ||
+		   carrier->m_nPedState == PED_ARRESTED)
 			DropCase();
 		else
 			s_cnr.casePos = PlayerCoors(s_cnr.carrier);
@@ -4417,7 +4536,8 @@ UpdateCnR(uint32 now)
 		float bestDist = 0.0f;
 		for(int i = 0; i < NUMPLAYERS; i++){
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
-			if(ped == nil || ped->DyingOrDead())
+			if(ped == nil || ped->DyingOrDead() ||
+			   ped->m_nPedState == PED_ARRESTED)
 				continue;
 			// Just busted: not straight off their own feet, where they are the
 			// nearest player by definition and would take it back on the next
@@ -4471,7 +4591,8 @@ UpdateCnR(uint32 now)
 			if(i == s_cnr.carrier)
 				continue;
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
-			if(ped == nil || ped->DyingOrDead())
+			if(ped == nil || ped->DyingOrDead() ||
+			   ped->m_nPedState == PED_ARRESTED)
 				continue;
 			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
 			if(dist < pinDist){
@@ -4670,7 +4791,7 @@ DrawExplainer(uint32 now)
 		"CHASE THE RADAR BLIP. ONE DRIVES, ONE SHOOTS; STOP OR WRECK IT. SIREN OFF TO QUIT",
 		"RACE FOR THE CARGO. FIRST TO THE CRATE CARRIES IT TO THE RING; THE OTHER COVERS WITH SMG/RAM. 3 DROPS. P1 ASHORE QUITS",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
-		"BOTH PLAYERS RACE THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
+		"EVERY RACER DRIVES THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
 		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
 		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
@@ -4898,7 +5019,7 @@ DrawModeMarks(uint32 now)
 	// games both members of a team carry the team's.
 	if(s_pitch.active){
 		if(s_pitch.finished){
-			if(s_pitch.players == 3){
+			if(s_pitch.players == 3 || s_pitch.winnerTeam < 0){
 				DrawWinner(s_pitch.winner);
 			}else{
 				sprintf(line, "TEAM %d WINS", s_pitch.winnerTeam + 1);
@@ -4911,7 +5032,7 @@ DrawModeMarks(uint32 now)
 			if(s_pitch.players == 3){
 				line[0] = '\0';
 				for(int i = 0; i < NUMPLAYERS; i++){
-					if(CCoop::GetPlayerPed(i) == nil)
+					if(CCoop::GetPlayerPed(i) == nil || !s_pitch.inMatch[i])
 						continue;
 					char part[16];
 					sprintf(part, "P%d %d  ", i + 1, s_pitch.score[i]);
@@ -4936,7 +5057,7 @@ DrawModeMarks(uint32 now)
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
-			if(ped == nil)
+			if(ped == nil || !s_pitch.inMatch[i])
 				continue;
 			const int score = s_pitch.players == 3 ? s_pitch.score[i] : s_pitch.teamScore[s_pitch.team[i]];
 			DrawLaneBar(i, (float)score/(float)kPitchGoalsToWin, kPitchGoalsToWin);
@@ -5392,6 +5513,22 @@ UpdateMenuPending(uint32 now)
 // and lets UpdateRc bring a replacement on its usual five-second clock.  It is
 // also the last line of defence for any other caller of SetExitCar.
 bool
+CCoopModes::IsRcVehicle(const CVehicle *vehicle)
+{
+	if(vehicle == nil)
+		return false;
+	const int model = vehicle->GetModelIndex();
+	return model == MI_RCBANDIT || model == MI_RCBARON ||
+	       model == MI_RCGOBLIN || model == MI_RCRAIDER;
+}
+
+bool
+CCoopModes::IsPitchBall(const CVehicle *vehicle)
+{
+	return vehicle != nil && vehicle == s_pitch.ball;
+}
+
+bool
 CCoopModes::LeaveRcCar(CPlayerPed *ped)
 {
 	if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
@@ -5403,10 +5540,8 @@ CCoopModes::LeaveRcCar(CPlayerPed *ped)
 	// toy that is already on its way out of the mode, when its slot has been
 	// cleared but the player is still seated for a frame, and the other RC
 	// models have the same missing-door problem as the Bandit.
-	const int model = ped->m_pMyVehicle->GetModelIndex();
-	const bool rcModel = model == MI_RCBANDIT || model == MI_RCBARON ||
-	                     model == MI_RCGOBLIN || model == MI_RCRAIDER;
-	if(s_rc.car[player] != ped->m_pMyVehicle && !rcModel)
+	if(s_rc.car[player] != ped->m_pMyVehicle &&
+	   !IsRcVehicle(ped->m_pMyVehicle))
 		return false;
 
 	CVehicle *toy = ped->m_pMyVehicle;

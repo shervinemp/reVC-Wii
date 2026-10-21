@@ -38,10 +38,10 @@ class CVector;
 // are each given a boat of their own: as a partner comes into the world with
 // player 1 at sea, CCoop asks EscortBoat, which makes a boat of the lead's own
 // model on the water beside it, and the partner is put at its wheel.  They
-// are the crew while they keep within range of the lead boat, and the regroup
-// that holds a driven boat to player 1 holds them.  Three drops are planned
-// along the coast on water path nodes, each marked by a radar blip and a
-// corona, and each unloads by holding the lead boat in the ring at rest.
+// are the crew while they keep within range of the lead boat; the party leash
+// stands aside so an escort can race the lead to a crate.  Three drops are
+// planned along the coast on water path nodes, each marked by a radar blip and
+// a corona, and each unloads by holding the lead boat in the ring at rest.
 // Every drop pays (more for each boat of the crew), raises the party's wanted
 // level by one, and brings heat: a Predator, the game's own police boat, with
 // a cop at the wheel, chasing the lead boat on the same drive-to-coords
@@ -60,9 +60,9 @@ class CVector;
 // The fourth is the toy race.  The party on foot in a knot and somebody jumps:
 // RC Bandits are placed in a grid on the spot, a ring of four gates glows
 // around them -- each driver's own next gate in their own colour -- and three
-// laps take the pot.  A wrecked toy is replaced back at the middle with the
-// laps kept, and the driver inside is not drawn, because a normal-sized ped in
-// a toy is a normal-sized ped through its roof.
+// laps take the pot.  A wrecked toy is replaced beside its racer with the laps
+// kept, and the driver inside is not drawn, because a normal-sized ped in a
+// toy is a normal-sized ped through its roof.
 //
 // The fifth is the dance-off.  The party on foot in a knot and every one of
 // them ducking together: sixty seconds on a spot, a beat that climbs from a
@@ -150,6 +150,15 @@ public:
 	// SetExitCar itself as the last line of defence.  False when the ped is not
 	// in one of the race's toys.
 	static bool LeaveRcCar(CPlayerPed *ped);
+
+	// Whether this is one of the remote-control models.  They have no normal
+	// door frames and are not enterable by the ordinary car search, even after
+	// the race has handed one back to the world.
+	static bool IsRcVehicle(const CVehicle *vehicle);
+
+	// The driverless Caddy that is the football.  It is locked and is not a car
+	// anybody may enter or steal.
+	static bool IsPitchBall(const CVehicle *vehicle);
 
 	// The menu's shortcuts into the modes.  Each one teleports the party to a
 	// clear piece of the map and puts them in whatever the mode needs -- cars
