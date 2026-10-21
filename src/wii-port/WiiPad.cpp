@@ -1168,6 +1168,10 @@ WiiPadScan(void)
 		const bool nunchukReady = wd != nullptr && wd->err == WPAD_ERR_NONE &&
 			wd->exp.type == WPAD_EXP_NUNCHUK;
 		const bool onFoot = ped != nullptr && !ped->bInVehicle;
+		// Walking and steering shake the Nunchuk.  The detector is deliberately
+		// deaf unless the stick is at rest, as the comment above says it should
+		// be; without this test ordinary movement could read as a jump.
+		const bool stickCentered = nunchukReady && wd->exp.nunchuk.js.mag < 0.20f;
 		// Menus run with the player ped still alive on foot, so without this the
 		// flick would pulse Square behind an open menu.  Gameplay input is paused
 		// in menus anyway, so the pulse would go nowhere -- this just keeps the
@@ -1181,7 +1185,7 @@ WiiPadScan(void)
 		// written so that a NaN fails it too.
 		float ax = 0.0f, ay = 0.0f, az = 0.0f, mag = 0.0f;
 		bool readable = false;
-		if(nunchukReady && onFoot && !inMenu){
+		if(nunchukReady && onFoot && !inMenu && stickCentered){
 			ax = wd->exp.nunchuk.gforce.x;
 			ay = wd->exp.nunchuk.gforce.y;
 			az = wd->exp.nunchuk.gforce.z;

@@ -375,16 +375,22 @@ WiiSpeakerBeginCall(u32 lengthMs, u32 sampleRate)
 	if(!WiiRemoteSpeakerEnabled || !WiiPhoneRemoteMode || sampleRate < kSampleRate)
 		return false;
 	releaseCallBuffer();
-	// Only a speaker that is already up, and nothing else still streaming: a line
-	// that cannot start at its first word is better left on the TV than joined late.
 	// Waiting for the speaker to finish powering up is allowed: the line is buffered and
-	// starts streaming the moment it is up (see encodeCall).  Refusing a warming speaker
-	// here is what a call arriving during power-up used to hit.
-	if(s_call.active || s_call.buffer != nullptr || s_state == STATE_OFF || gettime() < s_clipEnd)
+	// starts streaming the moment it is up (see encodeCall).  A ring or another clip
+	// still occupying the one stream is also fine: the line waits for its turn instead
+	// of being left on the TV, which is what made a call right after pickup silent.
+	if(s_call.active || s_call.buffer != nullptr)
 		return false;
 	u32 expansion;
 	if(WPAD_Probe(kChannel, &expansion) != WPAD_ERR_NONE)
 		return false;
+	if(s_state == STATE_OFF){
+		WPAD_ControlSpeaker(kChannel, 1);
+		s_state = STATE_WARMING;
+		s_deadline = gettime() + millisecs_to_ticks(kWarmupTimeoutMs);
+		s_wakeUntil = gettime() + millisecs_to_ticks(kWakeLingerMs);
+		WiiTraceReport("WII speaker: call woke speaker\n");
+	}
 
 	u32 bytes = lengthMs*kCallBytesPerMs + kCallSlackBytes;
 	if(bytes > kCallMaxBytes)
