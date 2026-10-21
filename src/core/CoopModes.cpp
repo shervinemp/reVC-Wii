@@ -5529,8 +5529,13 @@ DrawModeMarks(uint32 now)
 		s_laneNote[i] = nil;
 	if(s_cnr.active && !s_cnr.finished && s_cnr.carried &&
 	   s_cnr.carrier >= 0 && s_cnr.carrier < NUMPLAYERS){
-		sprintf(s_laneNoteText[s_cnr.carrier], "P%d ROBBER", s_cnr.carrier + 1);
-		s_laneNote[s_cnr.carrier] = s_laneNoteText[s_cnr.carrier];
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil)
+				continue;
+			const bool robber = i == s_cnr.carrier;
+			sprintf(s_laneNoteText[i], "P%d %s", i + 1, robber ? "ROBBER" : "COP");
+			s_laneNote[i] = s_laneNoteText[i];
+		}
 	}
 	if(s_derby.active && !s_derby.finished && !s_derby.counting && s_derby.round > 0){
 		for(int i = 0; i < NUMPLAYERS; i++){
