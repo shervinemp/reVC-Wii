@@ -124,6 +124,15 @@ const uint32 kRetryMs = 400;
 // tether is the lever, not the zoom (see COUCH-COOP-DESIGN.md).
 const float kTetherStart = 18.0f;
 const float kTetherMax = 24.0f;
+// Two partners are held to each other by a wider band than the lead and a
+// partner are.  The wall is a star -- player 1 is in the middle of it -- and
+// the camera can only zoom out so far: 40 m, and no further.  Two partners
+// on opposite sides of player 1 could therefore be 48 m apart, which is
+// more than the shared view can frame, and one of them went off the screen
+// with no reticle and nothing to say so.  A wider band still leaves room to
+// spread out.
+const float kPairTetherStart = 26.0f;
+const float kPairTetherMax = 34.0f;
 const float kLeash = 28.0f;
 // And the longer one anyone in a vehicle a player is driving gets, the driver
 // and their passengers.  A car covers ground far faster than a walk, and a
@@ -308,6 +317,12 @@ uint32 s_skinWaitSince[NUMPLAYERS];
 // And the last time they were tried for, so a wait that was dropped half-way --
 // the controller went, the session stood down -- does not count against the next.
 uint32 s_skinWaitLast[NUMPLAYERS];
+// Whether this partner's skin has been given up on.  It has to be remembered:
+// the give-up used to clear the wait, which is the same value as "not waiting
+// at all", so the next arrival started the whole six seconds again -- and the
+// one after that.  A skin that would not stream in made that partner late to
+// every single arrival from then on.
+bool s_skinGivenUp[NUMPLAYERS];
 // Whether a partner's next arrival is news.  Coming back from the dead or
 // from the far end of the street is not; a controller being picked up is.
 bool s_announceJoin[NUMPLAYERS];
@@ -892,8 +907,22 @@ bool
 FindReviveSpot(CPlayerPed *partner, CVector &at)
 {
 	at = partner->GetPosition();
-	if(!partner->bInVehicle || partner->m_pMyVehicle == nil)
+	if(!partner->bInVehicle || partner->m_pMyVehicle == nil){
+		// Not the raw coordinate.  A body that fell in a wall, in a sewer or
+		// under a bridge would put the partner back inside it -- and neither
+		// the wall nor the leash moves them, because nothing about them is
+		// "too far".  Every other placement in this file snaps to the ground
+		// and checks the space first.
+		CVector spot;
+		if(FindSpotBeside(at, CVector(1.0f, 0.0f, 0.0f), CVector(0.0f, 1.0f, 0.0f), 1.0f, spot)){
+			at = spot;
+			return true;
+		}
+		CVector ground = at;
+		if(CPedPlacement::FindZCoorForPed(&ground))
+			at = ground;
 		return true;
+	}
 	CVehicle *vehicle = partner->m_pMyVehicle;
 	if(!vehicle->bIsInWater && VehicleSafeForPartner(vehicle) &&
 	   FindSpotBeside(vehicle->GetPosition(), vehicle->GetRight(), vehicle->GetForward(), 2.0f, at))
@@ -1029,6 +1058,12 @@ RemovePartner(int player, const char *why, bool carry)
 	// And so does the count of how long they have held player 1 at the wall.
 	s_wallSince[player] = 0;
 	s_wallLast[player] = 0;
+	// A camera focus does not outlive the player who asked for it.  It used
+	// to: the partner was removed, a new one took the slot, and the shared
+	// camera followed the new partner's car from then on -- a driver who
+	// never asked, and never said so.
+	if(CCoop::ms_nCameraFocus == player)
+		CCoop::ms_nCameraFocus = -1;
 	if(why != nil && strcmp(why, "holding player 1 at the wall") == 0)
 		s_wallRegroupAt[player] = CTimer::GetTimeInMilliseconds();
 	s_aim[player].active = false;
@@ -1245,15 +1280,21 @@ SpawnPartner(CPlayerPed *lead, int player)
 		if(CStreaming::HasModelLoaded(MI_SPECIAL01 + charId)){
 			skinModel = MI_SPECIAL01 + charId;
 			s_skinWaitSince[player] = 0;
-		}else{
+			s_skinGivenUp[player] = false;
+		}else if(!s_skinGivenUp[player]){
 			const uint32 now = CTimer::GetTimeInMilliseconds();
 			if(s_skinWaitSince[player] == 0 || now - s_skinWaitLast[player] > 3*kRetryMs)
 				s_skinWaitSince[player] = now;
 			s_skinWaitLast[player] = now;
 			if(now - s_skinWaitSince[player] < kSkinWaitMs)
 				return false;
-			// Given up on: they come in as the ordinary player model.
+			// Given up on: they come in as the ordinary player model, and
+			// they keep coming in as the ordinary player model.  The wait used
+			// to be cleared here, which is the same value as "not waiting at
+			// all", so the next arrival began the whole six seconds again --
+			// and the one after that.
 			COOP_LOG("WII coop: player %d's skin did not stream in\n", player + 1);
+			s_skinGivenUp[player] = true;
 			s_skinWaitSince[player] = 0;
 		}
 	}
@@ -1618,8 +1659,12 @@ UpdatePartnerVehicle(int player, CPlayerPed *partner, CPad *pad, CVehicle *&ride
 		// drive-by code looks up its rider without asking whether there is
 		// one.
 		if(vehicle->IsBike()){
+			// A bike this partner cannot ride along on is not a reason to give
+			// up on every other seat: it used to end the whole search, so a
+			// bike parked next to them meant they could not take the empty
+			// car beside it either.
 			if(!CanRideAlong(other, vehicle))
-				return false;
+				continue;
 			rideInto = vehicle;
 			return true;
 		}
@@ -1975,6 +2020,8 @@ CCoop::Init(void)
 		s_wallSince[i] = 0;
 		s_wallLast[i] = 0;
 		s_skinWaitSince[i] = 0;
+		s_skinWaitLast[i] = 0;
+		s_skinGivenUp[i] = false;
 		s_announceJoin[i] = true;
 		s_announceReturn[i] = false;
 		s_situationAt[i] = 0;
@@ -2393,7 +2440,11 @@ CCoop::Update(void)
 				}
 			}else{
 				s_reviveTime[player] = 0;
-				if(now - s_downTime[player] > kDownedBleedMs){
+				// The same clock the HUD's down bar counts.  A mode that
+				// brings a partner back sooner -- the hill does -- has to
+				// take them away sooner too, or the bar empties and they are
+				// still lying there with nothing to say about it.
+				if(now - s_downTime[player] > (uint32)CCoopModes::DownedBleedMs((int)kDownedBleedMs)){
 					RemovePartner(player, busted ? "busted" : "wasted", false);
 					s_spawnTime[player] = now;
 					// Back beside player 1 in a moment, with nothing on screen to say
@@ -2658,19 +2709,26 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 	// players who are both up and both on foot.  Someone in a car is not held
 	// by this -- the leash deals with them -- and someone lying dead in the
 	// road does not get to keep the others standing over them.
+	//
+	// Two partners are held to each other as well, by the wider band: the
+	// camera is the other half of this.  It centres on the middle of the
+	// party and zooms out to 40 m and no further, so a star can put two
+	// partners 48 m apart and lose one of them off the screen.
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(i == index)
 			continue;
-		// Partners are not held to each other, only to player 1.
-		if(index != LEAD && i != LEAD)
-			continue;
+		// The lead and a partner are held to each other by the walking band;
+		// two partners by the wider one.
+		const bool withLead = (index == LEAD) || (i == LEAD);
+		const float bandStart = withLead ? kTetherStart : kPairTetherStart;
+		const float bandMax = withLead ? kTetherMax : kPairTetherMax;
 		CPlayerPed *other = CWorld::Players[i].m_pPed;
 		if(other == nil || other->bInVehicle || other->DyingOrDead() || other->m_nPedState == PED_ARRESTED)
 			continue;
 
 		CVector2D apart(ped->GetPosition().x - other->GetPosition().x, ped->GetPosition().y - other->GetPosition().y);
 		const float distance = apart.Magnitude();
-		if(distance <= kTetherStart)
+		if(distance <= bandStart)
 			continue;
 		apart = apart*(1.0f/distance);
 		const float outward = moved.x*apart.x + moved.y*apart.y;
@@ -2679,7 +2737,7 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 
 		// All of the outward speed at the start of the band, none of it at the
 		// end, so the wall is something a player runs out of rather than into.
-		const float allowed = Clamp((kTetherMax - distance)/(kTetherMax - kTetherStart), 0.0f, 1.0f);
+		const float allowed = Clamp((bandMax - distance)/(bandMax - bandStart), 0.0f, 1.0f);
 		moved.x -= apart.x*outward*(1.0f - allowed);
 		moved.y -= apart.y*outward*(1.0f - allowed);
 

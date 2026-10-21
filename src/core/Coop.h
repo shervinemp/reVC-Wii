@@ -137,14 +137,16 @@ public:
 	// Where to draw a player's reticle, as fractions of the screen.  False when
 	// that player has none.  engaged is true while it is on a target.
 	static bool GetReticle(int player, float &x, float &y, bool &engaged);
-	// For the HUD's marks: whether a partner is down right now -- dead, arrested,
-	// or at their last point of health in a car -- and not yet back or out of the
-	// party.  bleedLeft is how much of the ten-second bleed-out remains, 1 just
-	// after they fell and 0 as they are taken back to player 1; reviveProgress is
-	// how far another player standing by has got through the hold that brings them
-	// back, 0 to 1, and 0 when nobody is.  False, and the two untouched, for anyone
-	// who is not down, and always for player 1: his going down ends the session's
-	// run rather than starting a countdown.  Read-only.
+	// For the HUD's marks: whether a partner is down right now -- dead or
+	// arrested -- and not yet back or out of the party.  A player at their
+	// last point of health in a car is not reported here: they are alive,
+	// and the engine's own leave-car-and-die order is what deals with them.
+	// bleedLeft is how much of the bleed-out remains, 1 just after they fell
+	// and 0 as they are taken back to player 1; reviveProgress is how far
+	// another player standing by has got through the hold that brings them
+	// back, 0 to 1, and 0 when nobody is.  False, and the two untouched, for
+	// anyone who is not down, and always for player 1: his going down ends
+	// the session's run rather than starting a countdown.  Read-only.
 	static bool GetDownedState(int player, float &bleedLeft, float &reviveProgress);
 	// Brings a downed or arrested partner back at the body, through the same
 	// removal and arrival as an ordinary revive.  King of the Hill calls this

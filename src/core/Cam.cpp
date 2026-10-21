@@ -1238,6 +1238,17 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		present[i] = other != nil;
 		if(!present[i])
 			continue;
+		// A player who is down is not in the game.  They lie where they fell
+		// for the length of their bleed-out, and the shared view counted
+		// them: the frame centred on the body and the separation -- which
+		// sets how far back the camera sits and how wide it looks -- was
+		// measured to it, so the two players who could still act became
+		// specks in the middle of the screen.  The leash and the aiming
+		// both leave a downed player out; the camera did not.
+		if(other->DyingOrDead() || other->m_nPedState == PED_ARRESTED){
+			present[i] = false;
+			continue;
+		}
 		CVehicle *vehicle = other->bInVehicle ? other->m_pMyVehicle : nil;
 		if(CWorld::Players[i].m_pRemoteVehicle != nil)
 			vehicle = CWorld::Players[i].m_pRemoteVehicle;
@@ -1247,6 +1258,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	}
 	if(here > 0)
 		target = target / (float)here;
+	else
+		// Nobody to look at: every player is down, or gone.  The view stays
+		// where it is rather than jumping to the world origin.
+		target = s_coopTarget;
 	const CVector leadPos = present[0] ? pos[0] : target;
 
 	float separation = 0.0f;
