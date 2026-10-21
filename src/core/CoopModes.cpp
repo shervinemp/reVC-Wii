@@ -2134,7 +2134,8 @@ SpawnLoaner(int player)
 	car->SetOrientation(0.0f, 0.0f, 0.0f);
 	car->GetMatrix().UpdateRW();
 	car->UpdateRwFrame();
-	CTheScripts::ClearSpaceForMissionEntity(pos, car);
+	// Not ClearSpaceForMissionEntity: an empty player car on this square is
+	// not a reason to delete it.  The loaner can settle against the collision.
 	car->SetStatus(STATUS_ABANDONED);
 	car->bIsLocked = true;
 	car->AutoPilot.m_nCarMission = MISSION_NONE;
@@ -2776,7 +2777,8 @@ SpawnPitchBall(void)
 	pos.z += ball->GetDistanceFromCentreOfMassToBaseOfModel();
 	ball->SetPosition(pos);
 	ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
-	CTheScripts::ClearSpaceForMissionEntity(pos, ball);
+	// The pitch spot is chosen clear of the players.  Do not delete an empty
+	// player car that happens to be parked in it.
 	ball->GetMatrix().UpdateRW();
 	ball->UpdateRwFrame();
 	ball->SetStatus(STATUS_ABANDONED);
