@@ -2642,8 +2642,8 @@ CCoop::LimitSeparation(CPed *ped, CVector2D &moved)
 {
 	if(!ms_bRunning)
 		return;
-	// A mode that needs room -- a pursuit, the toy race, the hill -- stands the
-	// wall aside; the parties in it have to be able to separate.
+	// A mode that needs room -- a pursuit, the run, the toy race, the hill --
+	// stands the wall aside; the parties in it have to be able to separate.
 	if(CCoopModes::FreeRoam())
 		return;
 	const int index = GetPlayerIndex(ped);

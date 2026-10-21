@@ -640,10 +640,11 @@ player drives and the other shoots from the passenger seat.
 
 The camera holds still for the derby and the toy race (`SteadyView` -- spinning
 and twitchy cars would whip the shared view around), and the wall and leash
-stand aside for cops & robbers, the RC race and King of the Hill (`FreeRoam` --
-a pursuit nobody can outrun is not a pursuit, a toy race whose cars are leashed
-is not a race, and a hill whose ring is smaller than the tether is not a
-fight). The cop shift's takedown exemption reaches the crime reporter
+stand aside for the cop shift, cops & robbers, the smuggling run, the RC race
+and King of the Hill (`FreeRoam` -- a pursuit nobody can outrun is not a
+pursuit, a run whose escort is towed back cannot race for the crate, a toy race
+whose cars are leashed is not a race, and a hill whose ring is smaller than the
+tether is not a fight). The cop shift's takedown exemption reaches the crime reporter
 through `OnDuty`.
 
 ## What the first draft got wrong

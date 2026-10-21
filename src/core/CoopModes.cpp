@@ -2401,10 +2401,15 @@ StartDerbyRound(uint32 now)
 		s_derby.outSince[i] = 0;
 		s_derby.footSince[i] = 0;
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+		if(ped == nil)
 			continue;
-		CVehicle *veh = ped->m_pMyVehicle;
-		if(!veh->IsCar() || veh->bIsLawEnforcer || veh->GetStatus() == STATUS_WRECKED)
+		// The driver of their own eligible car is the entry.  A passenger in
+		// somebody else's car is not a second running car, exactly as in the
+		// Caddy pitch.
+		CVehicle *veh = nil;
+		if(!PlayerInDerbyCar(i, &veh))
+			continue;
+		if(veh->GetStatus() == STATUS_WRECKED)
 			continue;
 		if((veh->GetPosition() - s_derby.centre).Magnitude2D() > kDerbyJoinRange)
 			continue;
@@ -2537,12 +2542,14 @@ UpdateDerby(uint32 now)
 			s_derby.running[i] = false;
 			continue;
 		}
-		CVehicle *veh = ped->bInVehicle ? ped->m_pMyVehicle : nil;
-		if(veh != nil && veh->GetStatus() == STATUS_WRECKED){
+		CVehicle *veh = nil;
+		const bool inOwnCar = PlayerInDerbyCar(i, &veh);
+		if(inOwnCar && veh->GetStatus() == STATUS_WRECKED){
 			s_derby.running[i] = false;
 			continue;
 		}
-		const CVector pos = veh != nil ? veh->GetPosition() : ped->GetPosition();
+		const CVector pos = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
+			ped->m_pMyVehicle->GetPosition() : ped->GetPosition();
 		if((pos - s_derby.centre).Magnitude2D() > kDerbyRadius){
 			if(s_derby.outSince[i] == 0)
 				s_derby.outSince[i] = now;
@@ -2553,7 +2560,10 @@ UpdateDerby(uint32 now)
 		}else{
 			s_derby.outSince[i] = 0;
 		}
-		if(veh == nil){
+		// A passenger in a partner's car, or somebody in a law car, is not
+		// driving a derby car.  Give them the same moment to get back to their
+		// own wheel as somebody who stepped out on foot.
+		if(!inOwnCar){
 			if(s_derby.footSince[i] == 0)
 				s_derby.footSince[i] = now;
 			else if(now - s_derby.footSince[i] >= kDerbyFootGraceMs){
@@ -3975,20 +3985,24 @@ FinishDance(uint32 now)
 	int totalHits = 0;
 	int best = -1;
 	int bestScore = 0;
+	bool tie = false;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		totalHits += s_dance.score[i];
 		if(s_dance.score[i] > bestScore){
 			bestScore = s_dance.score[i];
 			best = i;
-		}
+			tie = false;
+		}else if(s_dance.score[i] == bestScore && s_dance.score[i] > 0)
+			tie = true;
 	}
-	s_dance.winner = best;
+	s_dance.winner = tie ? -1 : best;
 	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceHitPay*totalHits;
 	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
-	if(best >= 0){
+	if(best >= 0 && !tie){
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceWinPot;
 		COOP_LOG("WII coop: dance-off to player %d\n", best + 1);
-	}
+	}else if(tie)
+		COOP_LOG("WII coop: dance-off draw\n");
 	s_dance.finished = true;
 	s_dance.finishAt = now + kDanceLingerMs;
 }
@@ -5387,9 +5401,12 @@ CCoopModes::LeaveRcCar(CPlayerPed *ped)
 		return false;
 	// The race's toy is the usual case.  Checking the model as well catches a
 	// toy that is already on its way out of the mode, when its slot has been
-	// cleared but the player is still seated for a frame.
-	if(s_rc.car[player] != ped->m_pMyVehicle &&
-	   ped->m_pMyVehicle->GetModelIndex() != MI_RCBANDIT)
+	// cleared but the player is still seated for a frame, and the other RC
+	// models have the same missing-door problem as the Bandit.
+	const int model = ped->m_pMyVehicle->GetModelIndex();
+	const bool rcModel = model == MI_RCBANDIT || model == MI_RCBARON ||
+	                     model == MI_RCGOBLIN || model == MI_RCRAIDER;
+	if(s_rc.car[player] != ped->m_pMyVehicle && !rcModel)
 		return false;
 
 	CVehicle *toy = ped->m_pMyVehicle;
@@ -5688,14 +5705,17 @@ CCoopModes::MenuStart(int mode)
 bool
 CCoopModes::FreeRoam(void)
 {
-	// Cops & robbers is a pursuit: the wall that holds the party together has
-	// to stand aside or nobody can outrun anybody.  The RC race needs the same
+	// The cop shift, cops & robbers and the smuggling run are all pursuits:
+	// the wall that holds the party together has to stand aside or nobody can
+	// outrun anybody, and an escort boat must be able to race the lead to a
+	// crate instead of being towed back at 50 m.  The RC race needs the same
 	// room: a toy can be a hundred metres from player 1 on the far side of the
 	// ring, and the leash must not pull it back mid-lap.  King of the Hill is a
 	// fight over a 12 m ring; two players at opposite edges are already at the
 	// walking tether's limit, so the wall must not settle the fight for them.
 	// See CCoop::LimitSeparation and NeedsRegroup.
-	return s_cnr.active || s_rc.active || s_koth.active;
+	return s_shift.active || s_run.active || s_cnr.active ||
+	       s_rc.active || s_koth.active;
 }
 
 bool

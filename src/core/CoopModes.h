@@ -172,12 +172,13 @@ public:
 	// King of the Hill.
 	static bool SteadyView(void);
 
-	// Whether a mode is running that needs the party able to separate: cops &
-	// robbers, whose pursuit the leash would otherwise catch; the RC race,
-	// whose cars have to get away from player 1 to race; and King of the Hill,
-	// whose 12 m ring leaves two players at opposite edges past the walking
-	// tether.  The wall would hold a partner on foot and the leash would pull a
-	// partner's toy back mid-lap.
+	// Whether a mode is running that needs the party able to separate: the cop
+	// shift and cops & robbers, whose pursuits the leash would otherwise
+	// catch; the smuggling run, whose escort boats have to race the lead to a
+	// crate; the RC race, whose cars have to get away from player 1 to race;
+	// and King of the Hill, whose 12 m ring leaves two players at opposite
+	// edges past the walking tether.  The wall would hold a partner on foot and
+	// the leash would pull a partner's vehicle back mid-run.
 	static bool FreeRoam(void);
 
 	// Where the action is in Cops & Robbers: the case carrier while it is
