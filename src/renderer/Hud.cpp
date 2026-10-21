@@ -411,6 +411,10 @@ DrawCoopMarks(void)
 				    CoopPlayersInVehicle(vehicle) > 1) {
 					const bool right = (seat & 1) != 0;	// RF and RR are odd
 					screen.x += SCREEN_SCALE_X(right ? 14.0f : -14.0f);
+					// A rear seat on the same side as the driver would put
+					// the two plates on top of each other.  Stack the back row.
+					if (seat >= 2)
+						screen.y -= SCREEN_SCALE_Y(14.0f);
 				}
 			}
 			const float ry = SCREEN_SCALE_Y(3.0f);
