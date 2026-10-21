@@ -5173,7 +5173,7 @@ DrawObjectiveMarks(void)
 			hint = "START:  JUMP RC   DUCK DANCE   HOLD NOD COPS   AIM KING";
 		else if(present >= 2 && inCars == present)
 			hint = FindCrewedLawCar(true) != nil ?
-				"START:  SIREN COP SHIFT   HORN DERBY   HOLD BRAKE CADDY" :
+				"START:  SIREN COP   HORN DERBY   HOLD BRAKE CADDY" :
 				"START:  HORN DERBY   HOLD BRAKE CADDY";
 		else if(present >= 2 && inBoats == present)
 			hint = "START:  HORN SMUGGLING RUN";
