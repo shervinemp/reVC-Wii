@@ -209,6 +209,14 @@ PadDevice s_devices[NUM_PLAYERS];
 constexpr int kDeviceReleaseScans = 20;
 // Per partner: consecutive scans the controller they were given has been missing.
 int s_deviceAbsent[NUM_PLAYERS];
+// How long player 1's controller may be gone before the game stops and waits
+// for it.  Long enough that a dropped report, a remote that has gone to sleep
+// and come back, or one that has just been switched on again is not a dead
+// controller; short enough that the pause is not the player's problem for
+// long.  Scans are once per frame.
+constexpr int kLeadDeadScans = 180;
+// Consecutive scans player 1's controller has been gone.
+int s_leadAbsentScans;
 // Per Wii Remote channel: when it first became playable, as a monotonic sequence
 // number.  Player 1 is the earliest remote, not simply channel 0, so the remote
 // connected first is the one that starts the game.  An order is kept through a
@@ -1906,6 +1914,32 @@ WiiPadScan(void)
 	// remote may be on any channel, and one frame of the old assignment would
 	// point the speaker at the wrong hands.
 	resolveDevices();
+
+	// Player 1's controller going quiet stops the game.
+	//
+	// There is no other way back in: the pause button is on that controller,
+	// the HOME button is on it, and the Quit in the pause menu needs a
+	// controller to open the menu at all.  A game that carries on without it
+	// is a game somebody has to stop at the wall -- and the world keeps
+	// going while they find the remote: a car runs on, a partner bleeds
+	// out, a mission fails, and there is nobody who can do anything about
+	// any of it.
+	//
+	// The pause is the recovery, not a punishment: the remote comes back
+	// and Start opens the menu again, and the game goes on where it was.  A
+	// partner's controller can open the menu too, so a party of two can pick
+	// up a player of one.
+	if(s_devices[PLAYER_ONE].kind == PadDevice::NONE){
+		if(++s_leadAbsentScans > kLeadDeadScans &&
+		   !FrontEndMenuManager.GetIsMenuActive() &&
+		   !FrontEndMenuManager.m_bGameNotLoaded &&
+		   !s_returnToMenu){
+			s_leadAbsentScans = 0;
+			WiiTraceReport("WII pad: player 1's controller is gone, pausing the game\n");
+			FrontEndMenuManager.RequestFrontEndStartUp();
+		}
+	}else
+		s_leadAbsentScans = 0;
 
 	WiiSpeakerService();
 	WiiTraceService();

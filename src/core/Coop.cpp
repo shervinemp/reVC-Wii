@@ -1097,8 +1097,14 @@ RemovePartner(int player, const char *why, bool carry)
 	// a gun.  The engine abandons the car when it removes a player from one
 	// (CPed::FlagToDestroyWhenNextProcessed); so does this.
 	CVehicle *vehicle = partner->m_pMyVehicle;
-	if(partner->InVehicle() && vehicle->pDriver == partner && vehicle->GetStatus() != STATUS_WRECKED)
+	if(partner->InVehicle() && vehicle->pDriver == partner && vehicle->GetStatus() != STATUS_WRECKED){
+		// A car frozen by the handbrake -- by an arrest, or by a driver who
+		// died at the wheel -- is let go of as well, or it stands where it
+		// was with the dead driver in it for the rest of the game.
+		if(vehicle->GetStatus() == STATUS_PLAYER_DISABLED)
+			vehicle->bIsHandbrakeOn = false;
 		vehicle->SetStatus(STATUS_ABANDONED);
+	}
 	// A partner busted as a passenger froze the car they were in (CCopPed::
 	// SetArrestPlayer: handbrake on, STATUS_PLAYER_DISABLED), and with them gone
 	// nothing lets it go.  If a player is at the wheel and is not being arrested
@@ -1905,7 +1911,16 @@ UpdateAim(int index)
 		CColPoint col;
 		CEntity *hit = nil;
 		CWorld::pIgnoreEntity = ped;
-		const bool found = CWorld::ProcessLineOfSight(camPos, camPos + ray*Min(kReticleRay, toLevel + kReticleRayPast),
+		// The ray is followed to the level of the player's own chest and a
+		// little past it.  When the player is standing above the camera --
+		// on a balcony, or in a room the camera has been squeezed into --
+		// that plane is behind the camera and the distance to it comes out
+		// negative: the ray was traced backwards, out of the back of the
+		// view, and the shot left the muzzle pointing away from the screen.
+		// The ray is then followed only as far as it goes in front.
+		const bool levelAhead = toLevel > 0.0f;
+		const float ahead = levelAhead ? Min(kReticleRay, toLevel + kReticleRayPast) : kReticleRay;
+		const bool found = CWorld::ProcessLineOfSight(camPos, camPos + ray*ahead,
 			col, hit, true, true, true, true, false, false, false);
 		CWorld::pIgnoreEntity = nil;
 
@@ -1914,7 +1929,7 @@ UpdateAim(int index)
 			aim.point = col.point;
 			aim.hasTarget = true;
 			aim.engaged = hit->IsPed() && !((CPed*)hit)->DyingOrDead();
-		}else{
+		}else if(levelAhead){
 			// On the scenery.  What the player means then is a direction, and the
 			// ground under the reticle is the wrong way to get one: seen from
 			// above and behind, a reticle laid over someone's chest lands on the
@@ -1923,6 +1938,11 @@ UpdateAim(int index)
 			// height is used instead, where a reticle on a chest and the chest
 			// itself are the same place.
 			aim.point = camPos + ray*toLevel;
+		}else{
+			// Nothing in front of the camera, and no level of the player's own
+			// to aim on.  The direction of the reticle is all there is, so the
+			// shot goes that way: forward, not backwards out of the view.
+			aim.point = camPos + ray*kReticleRay;
 		}
 		aim.reticleX = aim.pointerX;
 		aim.reticleY = aim.pointerY;

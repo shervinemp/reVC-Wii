@@ -571,6 +571,12 @@ LobbyState s_lobby;
 const char *s_startNotice;
 uint32 s_startNoticeUntil;
 
+// What the last mode paid out, so the result can say so.  The money goes to
+// the party's one wallet -- player 1's, as the wanted level and the arsenal
+// are -- and a player who won it used to see a name and no number, which
+// read as "the other one got paid".
+int s_resultPot;
+
 void
 SetStartNotice(const char *notice, uint32 now)
 {
@@ -2104,7 +2110,13 @@ CompleteDrop(uint32 now, CVehicle *boat)
 	// The partner joins on the second drop.  A boat that has already been sent
 	// is not replaced if the escort put it down; the pair is the run's heat,
 	// not an endless supply.
-	SpawnPursuer(now, boat, s_run.leg - 1);
+	//
+	// The second Predator, in the second slot.  The index used to be the leg
+	// that had just finished -- which was the slot the first Predator had
+	// already taken -- so the second boat only ever turned up for the last
+	// drop, a whole leg late.
+	if(s_run.leg == 1)
+		SpawnPursuer(now, boat, 1);
 }
 
 void
@@ -2706,6 +2718,7 @@ FinishDerby(uint32 now)
 		}
 	if(best >= 0){
 		s_derby.matchWinner = best;
+		s_resultPot = 500;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
 		COOP_LOG("WII coop: derby to player %d\n", best + 1);
 	}
@@ -3119,6 +3132,7 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 	s_pitch.finishAt = now + kPitchFinishMs;
 	s_pitch.winner = winner;
 	s_pitch.winnerTeam = winnerTeam;
+	s_resultPot = 500;
 	// A team whose last player left before the whistle has no one to pay.
 	if(winner >= 0)
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
@@ -3673,6 +3687,7 @@ FinishKoth(uint32 now)
 	}
 	if(!tie && best >= 0){
 		s_koth.winner = best;
+		s_resultPot = kKothPay;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kKothPay;
 		COOP_LOG("WII coop: king of the hill to player %d (%u/%u ms)\n",
 		         best + 1, s_koth.scoreMs[0], s_koth.scoreMs[1]);
@@ -4049,6 +4064,12 @@ RcSlot(int player, CVector &out)
 	// at the airport the line put some cars behind the camera, and a car on the
 	// apron markings looked like it had spawned sideways.  The player is already
 	// on the grid square, so this is both visible and immediately reachable.
+	//
+	// Two racers standing in a knot would have had their toys dropped on the
+	// same square: a toy is longer than the gap between them, so the collision
+	// resolver threw them apart -- or flipped them -- on the first physics
+	// step, and the grid, which waits for the toys to be still, never settled.
+	// A toy whose square is taken is put to one side of it.
 	CPlayerPed *ped = CCoop::GetPlayerPed(player);
 	if(ped != nil){
 		CVector forward = ped->GetForward();
@@ -4056,7 +4077,26 @@ RcSlot(int player, CVector &out)
 		if(forward.Magnitude() < 0.1f)
 			forward = s_rc.forward;
 		forward.Normalise();
-		out = ped->GetPosition() + forward*2.5f;
+		const CVector right(forward.y, -forward.x, 0.0f);
+		const CVector base = ped->GetPosition() + forward*2.5f;
+		static const float kOffsets[] = { 0.0f, -3.5f, 3.5f, -7.0f, 7.0f };
+		for(uint32 attempt = 0; attempt < ARRAY_SIZE(kOffsets); attempt++){
+			out = base + right*kOffsets[attempt];
+			bool clear = true;
+			for(int other = 0; other < NUMPLAYERS; other++){
+				if(other == player)
+					continue;
+				CPlayerPed *rival = CCoop::GetPlayerPed(other);
+				if(rival == nil)
+					continue;
+				if((rival->GetPosition() - out).Magnitude2D() < 4.0f){
+					clear = false;
+					break;
+				}
+			}
+			if(clear)
+				break;
+		}
 		return;
 	}
 	const CVector right(s_rc.forward.y, -s_rc.forward.x, 0.0f);
@@ -4300,6 +4340,7 @@ UpdateRc(uint32 now)
 		}
 		if(best >= 0){
 			s_rc.winner = best;
+			s_resultPot = kRcPot;
 			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
 		}
 		s_rc.finished = true;
@@ -4362,6 +4403,7 @@ UpdateRc(uint32 now)
 				s_rc.lap[i]++;
 				if(s_rc.lap[i] >= kRcLaps){
 					s_rc.winner = i;
+					s_resultPot = kRcPot;
 					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
 					s_rc.finished = true;
 					s_rc.finishAt = now + kRcLingerMs;
@@ -4439,6 +4481,7 @@ FinishDance(uint32 now)
 	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
 	if(best >= 0 && !tie){
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceWinPot;
+		s_resultPot = kDanceWinPot;
 		COOP_LOG("WII coop: dance-off to player %d\n", best + 1);
 	}else if(tie)
 		COOP_LOG("WII coop: dance-off draw\n");
@@ -4680,6 +4723,7 @@ FinishCnR(uint32 now, int winner)
 {
 	if(winner >= 0){
 		s_cnr.winner = winner;
+		s_resultPot = kCnRPot;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kCnRPot;
 		COOP_LOG("WII coop: cops & robbers to player %d\n", winner + 1);
 	}
@@ -5104,8 +5148,11 @@ DrawWinner(int winner)
 		DrawStatus("NO WINNER", CRGBA(255, 255, 255, 255));
 		return;
 	}
-	char line[16];
-	sprintf(line, "P%d WINS", winner + 1);
+	char line[32];
+	if(s_resultPot > 0)
+		sprintf(line, "P%d WINS   PARTY +$%d", winner + 1, s_resultPot);
+	else
+		sprintf(line, "P%d WINS", winner + 1);
 	DrawStatus(line, kCoopColours[winner]);
 }
 
@@ -5814,7 +5861,7 @@ DrawModeMarks(uint32 now)
 		if(s_koth.finished){
 			char koth[48];
 			if(s_koth.winner >= 0){
-				sprintf(koth, "KING OF THE HILL  P%d WINS", s_koth.winner + 1);
+				sprintf(koth, "KING OF THE HILL  P%d WINS  +$%d", s_koth.winner + 1, s_resultPot);
 				DrawStatus(koth, kCoopColours[s_koth.winner]);
 			}else
 				DrawStatus("KING OF THE HILL  DRAW", white);
