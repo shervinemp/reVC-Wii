@@ -122,6 +122,7 @@ const uint32 kPursuerFireMs = 600;		// a burst every this often while lined up
 const int kPursuerFireDamage = 7;		// per round; two rounds per burst
 const float kPursuerWarnRange = 120.0f;	// the HUD names a police boat this near
 const uint32 kCrewGraceMs = 5000;	// the skipper may be out of the boat this long
+const uint32 kRunResultMs = 4000;
 const float kEscortRange = 80.0f;	// a partner's boat this near the lead's is the crew
 const float kEscortGap = 14.0f;		// an escort appears this far to the side of the lead boat...
 const float kEscortBack = 8.0f;		// ...and this far astern, a boat length more for each partner
@@ -186,6 +187,8 @@ struct RunState
 	int32 unloadBoat;	// pool index of the boat the timer belongs to
 	uint32 unloadSince;
 	uint32 crewLostAt;
+	uint32 resultAt;
+	int resultKind;		// 0 none, 1 delivered, 2 lost
 	uint32 nextRetargetAt;
 	uint32 nextFireAt[2];
 	int32 pursuerBlip[2];
@@ -1806,6 +1809,8 @@ StartRunAt(uint32 now, CVehicle *boat)
 	s_run.unloadSince = 0;
 	s_run.unloadBoat = -1;
 	s_run.crewLostAt = 0;
+	s_run.resultAt = 0;
+	s_run.resultKind = 0;
 	s_run.nextRetargetAt = now;
 	s_run.nextFireAt[0] = 0;
 	s_run.nextFireAt[1] = 0;
@@ -1877,6 +1882,8 @@ EndRun(uint32 now, const char *why)
 	// player's own boat was never in this slot and is left alone.
 	ReleaseLoaner(0);
 	s_run.active = false;
+	s_run.resultAt = now;
+	s_run.resultKind = strcmp(why, "delivered") == 0 ? 1 : 2;
 	s_run.rearmAt = now + kRearmMs;
 	s_run.unloadSince = 0;
 	s_run.crewLostAt = 0;
@@ -4987,6 +4994,16 @@ DrawModeMarks(uint32 now)
 			PrintCentred(SCREEN_WIDTH*0.5f, SCREEN_SCALE_Y(58.0f), sub,
 				away ? CRGBA(255, 200, 90, 255) : white, 0.45f, 0.7f);
 		}
+	}
+
+	// A run that just ended leaves its result on screen for a moment; the HUD
+	// proper has no other place to say whether the third drop was delivered.
+	if(!s_run.active && s_run.resultAt != 0 &&
+	   now - s_run.resultAt < kRunResultMs){
+		if(s_run.resultKind == 1)
+			DrawStatus("SMUGGLING RUN COMPLETE", CRGBA(120, 255, 130, 255));
+		else
+			DrawStatus("SMUGGLING RUN OVER", CRGBA(255, 200, 90, 255));
 	}
 
 	// The derby: the round and the bell, then how many cars are still running;
