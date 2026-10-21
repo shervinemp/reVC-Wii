@@ -43,6 +43,21 @@ float fTimeMult = 1.2f/CBoat::WAKE_LIFETIME;
 
 CBoat *CBoat::apFrameWakeGeneratingBoats[4];
 
+// The vehicles the engine's allowances for "the player's boat" were written
+// for: player 1's, in whichever seat they are in, and in couch co-op one a
+// partner has the wheel of.  The engine only ever asked for player 1's, so a
+// partner in a boat of their own got none of them -- the boat took twice the
+// collision damage of a party car and never made the same noise.  With one
+// player nobody else is a player, so this is exactly FindPlayerVehicle().
+static bool
+IsPartyVehicle(CVehicle *vehicle)
+{
+	if(vehicle == FindPlayerVehicle())
+		return true;
+	CPed *driver = vehicle->pDriver;
+	return driver != nil && driver != FindPlayerPed() && driver->IsPlayer();
+}
+
 const uint32 CBoat::nSaveStructSize =
 #ifdef COMPATIBLE_SAVES
 	1216;
@@ -241,7 +256,11 @@ CBoat::ProcessControl(void)
 			if(GetStatus() == STATUS_PLAYER && CStats::GetPercentageProgress() >= 100.0f)
 				collisionDamage *= 0.5f;
 #endif
-			if(this == FindPlayerVehicle()){
+			// A boat a player is driving is a party boat, whichever player it
+			// is: the same allowance the car gives the party, so a partner's
+			// boat is not twice as tough as player 1's and not twice as
+			// fragile as their own car.
+			if(IsPartyVehicle(this)){
 				if(bTakeLessDamage)
 					m_fHealth -= (collisionDamage-25.0f)/6.0f;
 				else

@@ -73,7 +73,7 @@ public:
 	static void MakePedsJumpAtShot(CPhysical *shooter, CVector *source, CVector *target);
 	
 	bool HitsGround(CEntity *holder, CVector *fireSource, CEntity *aimingTo);
-	static void BlowUpExplosiveThings(CEntity *thing);
+	static void BlowUpExplosiveThings(CEntity *thing, CEntity *culprit);
 	bool HasWeaponAmmoToBeUsed(void);
 	
 	static bool IsShotgun(int weapon) { return weapon == WEAPONTYPE_SHOTGUN || weapon == WEAPONTYPE_SPAS12_SHOTGUN || weapon == WEAPONTYPE_STUBBY_SHOTGUN; }

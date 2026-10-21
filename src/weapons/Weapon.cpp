@@ -1758,7 +1758,7 @@ CWeapon::DoBulletImpact(CEntity *shooter, CEntity *victim,
 		GetPadFromPlayer((CPlayerPed*)shooter)->StartShake(240, 128);
 	}
 
-	BlowUpExplosiveThings(victim);
+	BlowUpExplosiveThings(victim, shooter);
 }
 
 
@@ -1922,7 +1922,7 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 		if ( victim )
 		{
 			CGlass::WasGlassHitByBullet(victim, point.point);
-			CWeapon::BlowUpExplosiveThings(victim);
+			CWeapon::BlowUpExplosiveThings(victim, shooter);
 			if (i == checkObstacleOnShootNo)
 			{
 				if (shooter)
@@ -1985,7 +1985,10 @@ CWeapon::FireShotgun(CEntity *shooter, CVector *fireSource)
 					CVector2D posOffset((*fireSource).x-pos.x, (*fireSource).y-pos.y);
 					int32 localDir = victimPed->GetLocalDirection(posOffset);
 
-					victimPed->ReactToAttack(FindPlayerPed());
+					// The one who shot them, not player 1: the instant-hit path
+					// below already does this, and a partner's shotgun used
+					// to turn the victim on player 1 whatever the partner did.
+					victimPed->ReactToAttack(shooter);
 
 					posOffset.Normalise();
 
@@ -3415,7 +3418,7 @@ CWeapon::HitsGround(CEntity *holder, CVector *fireSource, CEntity *aimingTo)
 }
 
 void
-CWeapon::BlowUpExplosiveThings(CEntity *thing)
+CWeapon::BlowUpExplosiveThings(CEntity *thing, CEntity *culprit)
 {
 #ifdef FIX_BUGS
 	if ( thing && thing->IsObject() )
@@ -3429,7 +3432,16 @@ CWeapon::BlowUpExplosiveThings(CEntity *thing)
 		{
 			object->bHasBeenDamaged = true;
 
-			CExplosion::AddExplosion(object, FindPlayerPed(), EXPLOSION_BARREL, object->GetPosition()+CVector(0.0f,0.0f,0.5f), 100);
+			// Whose blast it is: the one who pulled the trigger.  It used to
+			// be player 1 whatever happened, so a partner who shot a barrel
+			// next to player 1 hurt player 1 -- the culprit and the victim
+			// were the same ped, and the friendly-fire rule cannot block a
+			// ped hurting itself -- while the partner was spared by their
+			// own blast, because the blast was player 1's.
+			if(culprit == nil)
+				culprit = FindPlayerPed();
+
+			CExplosion::AddExplosion(object, culprit, EXPLOSION_BARREL, object->GetPosition()+CVector(0.0f,0.0f,0.5f), 100);
 
 			if ( MI_EXPLODINGBARREL == mi )
 				object->m_vecMoveSpeed.z += 0.55f;

@@ -3,6 +3,8 @@
 
 //file done
 
+class CPed;
+
 class CSpecialFX
 {
 public:
@@ -16,6 +18,11 @@ public:
 	static void Init(void);
 	static void Shutdown(void);
 	static void AddWeaponStreak(int type);
+	// The streak belongs to whoever is swinging.  Without the ped it is
+	// drawn from player 1's weapon model, so a partner's bat got no trail
+	// at all -- and one drawn from player 1's model would have put the
+	// partner's swing in the wrong pair of hands.
+	static void AddWeaponStreak(int type, CPed *swinger);
 	static void Render2DFXs();
 };
 

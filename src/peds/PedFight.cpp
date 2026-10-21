@@ -999,18 +999,18 @@ CPed::Attack(void)
 		}
 	}
 
-	// The focus player only: CSpecialFX::AddWeaponStreak draws on
-	// FindPlayerPed()'s weapon whoever asks, so a second player's swing would
-	// put the streak in the first player's hand.
-	if (this == FindPlayerPed()) {
-		if (GetWeapon()->m_eWeaponType == WEAPONTYPE_BASEBALLBAT || GetWeapon()->m_eWeaponType == WEAPONTYPE_GOLFCLUB || GetWeapon()->m_eWeaponType == WEAPONTYPE_KATANA) {
-			float loopEndWithDelay = animLoopEnd;
-			if (loopEndWithDelay >= 98.0f)
-				loopEndWithDelay = (14.0f / 30.0f) + delayBetweenAnimAndFire;
-			if (weaponAnimAssoc->flags & ASSOC_RUNNING) {
-				if (weaponAnimAssoc->currentTime >= animLoopStart && weaponAnimAssoc->currentTime <= loopEndWithDelay)
-					CSpecialFX::AddWeaponStreak(GetWeapon()->m_eWeaponType);
-			}
+	// The streak belongs to whoever is swinging: it is drawn from the
+	// weapon model of the ped doing the swinging.  It used to be player 1
+	// only, because the drawing was done from player 1's weapon model
+	// whoever asked -- so a partner's swing had no trail at all, and a trail
+	// in player 1's hand would have been worse.
+	if (GetWeapon()->m_eWeaponType == WEAPONTYPE_BASEBALLBAT || GetWeapon()->m_eWeaponType == WEAPONTYPE_GOLFCLUB || GetWeapon()->m_eWeaponType == WEAPONTYPE_KATANA) {
+		float loopEndWithDelay = animLoopEnd;
+		if (loopEndWithDelay >= 98.0f)
+			loopEndWithDelay = (14.0f / 30.0f) + delayBetweenAnimAndFire;
+		if (weaponAnimAssoc->flags & ASSOC_RUNNING) {
+			if (weaponAnimAssoc->currentTime >= animLoopStart && weaponAnimAssoc->currentTime <= loopEndWithDelay)
+				CSpecialFX::AddWeaponStreak(GetWeapon()->m_eWeaponType, this);
 		}
 	}
 
@@ -1489,13 +1489,14 @@ CPed::Fight(void)
 	if (m_curFightMove == FIGHTMOVE_SHUFFLE_F && !currentAssoc)
 		currentAssoc = RpAnimBlendClumpGetAssociation(GetClump(), ANIM_STD_FIGHT_SHUFFLE_B);
 
-	if (this == FindPlayerPed() && currentAssoc && weapon == WEAPONTYPE_KATANA) {
+	// The katana's trail, from the katana of whoever is swinging it.
+	if (currentAssoc && weapon == WEAPONTYPE_KATANA) {
 		if (m_curFightMove == FIGHTMOVE_MELEE1 || m_curFightMove == FIGHTMOVE_MELEE2) {
 			static float streakDelay = 0.2f;
 
 			if (tFightMoves[m_curFightMove].startFireTime - streakDelay < currentAssoc->currentTime &&
 				streakDelay + tFightMoves[m_curFightMove].endFireTime > currentAssoc->currentTime) {
-				CSpecialFX::AddWeaponStreak(GetWeapon()->m_eWeaponType);
+				CSpecialFX::AddWeaponStreak(GetWeapon()->m_eWeaponType, this);
 			}
 		}
 	}
@@ -2855,10 +2856,17 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 				if (bMeleeProof)
 					return false;
 
+				{
+				// The attacker, not player 1: the katana's head-removing
+				// slash is the swing that lands it.  It was written against
+				// player 1 by name, so a partner's katana could never take a
+				// head off -- the condition was never true for them and they
+				// always got the ordinary hit animation.
+				CPed *attacker = (damagedBy != nil && damagedBy->IsPed()) ? (CPed*)damagedBy : nil;
 				if (method != WEAPONTYPE_KATANA ||
-					damagedBy != FindPlayerPed()
-					|| FindPlayerPed()->m_nPedState != PED_FIGHT
-					|| FindPlayerPed()->m_curFightMove != FIGHTMOVE_MELEE1 && FindPlayerPed()->m_curFightMove != FIGHTMOVE_MELEE2
+					attacker == nil ||
+					attacker->m_nPedState != PED_FIGHT
+					|| attacker->m_curFightMove != FIGHTMOVE_MELEE1 && attacker->m_curFightMove != FIGHTMOVE_MELEE2
 					|| CGeneral::GetRandomNumber() & 3) {
 
 					if (m_nPedState == PED_FALL) {
@@ -2872,8 +2880,8 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 							dieDelta = dieDelta * 2.0f;
 							dieSpeed = 0.5f;
 						}
-					} else if (damagedBy != FindPlayerPed() || FindPlayerPed()->m_curFightMove != FIGHTMOVE_MELEE2) {
-						if (damagedBy != FindPlayerPed() || FindPlayerPed()->m_curFightMove != FIGHTMOVE_MELEE3) {
+					} else if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE2) {
+						if (attacker == nil || attacker->m_curFightMove != FIGHTMOVE_MELEE3) {
 							switch (direction) {
 								case 0:
 									dieAnim = ANIM_STD_HIGHIMPACT_FRONT;
@@ -2901,6 +2909,7 @@ CPed::InflictDamage(CEntity *damagedBy, eWeaponType method, float damage, ePedPi
 					RemoveBodyPart(PED_HEAD, direction);
 					headShot = true;
 					willLinger = true;
+				}
 				}
 				break;
 			case WEAPONTYPE_COLT45:

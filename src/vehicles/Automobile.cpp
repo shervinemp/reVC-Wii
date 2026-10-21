@@ -3382,17 +3382,21 @@ CAutomobile::TankControl(void)
 	CVector gunEnd(0.0f, 1.813f, 2.979f);
 	CVector baseToEnd = gunEnd - turrentBase;
 
-	// Whose tank this is: player 1's, or in co-op the partner's.  Both drive it
-	// from their own pad and both get a turret; this only ever ran for the
-	// player in focus -- player 1 -- so a partner's Rhino had no turret at all.
-	CPlayerPed *driver = FindPlayerPed();
-	CPad *pad = CPad::GetPad(0);
-	if(this != FindPlayerVehicle()){
-		if(this->pDriver == nil || this->pDriver == driver || !this->pDriver->IsPlayer())
-			return;
+	// Whose tank this is: the driver, if the driver is a player.  Both drive
+	// it from their own pad and both get a turret; this only ever ran for the
+	// player in focus -- player 1 -- so a partner's Rhino had no turret at
+	// all.  It used to ask FindPlayerVehicle() as well, which is the vehicle
+	// player 1 is in: with player 1 riding along in a partner's Rhino that
+	// said "this is player 1's tank" and the turret followed player 1's pad
+	// while the partner was at the wheel.
+	CPlayerPed *driver = nil;
+	CPad *pad = nil;
+	if(this->pDriver != nil && this->pDriver->IsPlayer()){
 		driver = (CPlayerPed*)this->pDriver;
 		pad = GetPadFromPlayer(driver);
 	}
+	if(driver == nil)
+		return;
 	CPlayerInfo *driverInfo = driver->GetPlayerInfoForThisPlayerPed();
 	if(driverInfo->m_WBState != WBSTATE_PLAYING)
 		return;
@@ -5400,8 +5404,13 @@ CAutomobile::BlowUpCarsInPath(void)
 			   m_aCollisionRecords[i]->IsVehicle() &&
 			   m_aCollisionRecords[i]->GetModelIndex() != MI_RHINO &&
 			   !m_aCollisionRecords[i]->bRenderScorched){
-				if(this == FindPlayerVehicle())
-					CEventList::RegisterEvent(EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, m_aCollisionRecords[i], FindPlayerPed(), 2000);
+				// A party vehicle, and whoever is driving it: the explosions
+				// the tank flattens are an event, and the crime of it
+				// belongs to the driver.  It used to be player 1's vehicle
+				// only, so a partner's Rhino rampage raised no heat at all
+				// and the events were credited to player 1.
+				if(IsPartyVehicle(this) && this->pDriver != nil)
+					CEventList::RegisterEvent(EVENT_EXPLOSION, EVENT_ENTITY_VEHICLE, m_aCollisionRecords[i], this->pDriver, 2000);
 				((CVehicle*)m_aCollisionRecords[i])->BlowUpCar(this);
 			}
 }

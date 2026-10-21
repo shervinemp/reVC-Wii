@@ -279,7 +279,9 @@ void CBulletInfo::Update(void)
 				}
 			}
 			CGlass::WasGlassHitByBullet(pHitEntity, point.point);
-			CWeapon::BlowUpExplosiveThings(pHitEntity);
+			// The bullet's own shooter is the culprit: a partner's shot at a
+			// barrel has to be their blast, not player 1's.
+			CWeapon::BlowUpExplosiveThings(pHitEntity, pBullet->m_pSource);
 		}
 		CWorld::pIgnoreEntity = nil;
 		CWorld::bIncludeDeadPeds = false;

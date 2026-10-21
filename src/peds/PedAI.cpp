@@ -2152,7 +2152,7 @@ CPed::ReactToPointGun(CEntity *entWithGun)
 		return;
 
 	if (m_nWaitState == WAITSTATE_PLAYANIM_HANDSUP || m_nWaitState == WAITSTATE_PLAYANIM_HANDSCOWER ||
-		(GetPosition() - pedWithGun->GetPosition()).MagnitudeSqr2D() > 225.0f || (m_nPedType == PEDTYPE_GANG7 && pedWithGun == FindPlayerPed()))
+		(GetPosition() - pedWithGun->GetPosition()).MagnitudeSqr2D() > 225.0f || (m_nPedType == PEDTYPE_GANG7 && pedWithGun->IsPlayer()))
 		return;
 
 	if (m_leader) {
@@ -2203,7 +2203,11 @@ CPed::ReactToPointGun(CEntity *entWithGun)
 				m_fleeFrom->RegisterReference((CEntity **) &m_fleeFrom);
 			}
 
-			if (FindPlayerPed() == pedWithGun && bRichFromMugging) {
+			// Whoever mugged them: a partner gets the money too.  It used to
+			// be player 1 only, so a partner could empty a rich pedestrian and
+			// nothing dropped -- and the pedestrian stayed rich, and could be
+			// robbed again for nothing.
+			if (pedWithGun->IsPlayer() && bRichFromMugging) {
 				int money = CGeneral::GetRandomNumberInRange(100, 300);
 				int pickupCount = money / 40 + 1;
 				int moneyPerPickup = money / pickupCount;

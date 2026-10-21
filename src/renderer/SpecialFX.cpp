@@ -102,31 +102,41 @@ CSpecialFX::Init(void)
 void
 CSpecialFX::AddWeaponStreak(int type)
 {
+	AddWeaponStreak(type, nil);
+}
+
+void
+CSpecialFX::AddWeaponStreak(int type, CPed *swinger)
+{
 	static CMatrix matrix;
 	CVector start;
 	CVector end;
 
-	if (FindPlayerPed() != nil && FindPlayerPed()->m_pWeaponModel != nil) {
+	// Whose swing it is: the ped doing the swinging.  It used to be
+	// player 1 whatever asked, so a partner's bat or katana had no trail at
+	// all -- the swing looked weightless next to player 1's.
+	CPed *ped = swinger != nil ? swinger : FindPlayerPed();
+	if (ped != nil && ped->m_pWeaponModel != nil) {
 		switch (type) {
 		case WEAPONTYPE_BASEBALLBAT:
-			matrix = RwFrameGetLTM(RpAtomicGetFrame(FindPlayerPed()->m_pWeaponModel));
+			matrix = RwFrameGetLTM(RpAtomicGetFrame(ped->m_pWeaponModel));
 			start = matrix * CVector(0.02f, 0.05f, 0.07f);
 			end = matrix * CVector(0.246f, 0.0325f, 0.796f);
 			break;
 		case WEAPONTYPE_GOLFCLUB:
-			matrix = RwFrameGetLTM(RpAtomicGetFrame(FindPlayerPed()->m_pWeaponModel));
+			matrix = RwFrameGetLTM(RpAtomicGetFrame(ped->m_pWeaponModel));
 			start = matrix * CVector(0.02f, 0.05f, 0.07f);
 			end = matrix * CVector(-0.054f, 0.0325f, 0.796f);
 			break;
 		case WEAPONTYPE_KATANA:
-			matrix = RwFrameGetLTM(RpAtomicGetFrame(FindPlayerPed()->m_pWeaponModel));
+			matrix = RwFrameGetLTM(RpAtomicGetFrame(ped->m_pWeaponModel));
 			start = matrix * CVector(0.02f, 0.05f, 0.07f);
 			end = matrix * CVector(0.096f, -0.0175f, 1.096f);
 			break;
 		default:
 			return;
 		}
-		CMotionBlurStreaks::RegisterStreak((uintptr)FindPlayerPed()->m_pWeaponModel, 100, 100, 100, start, end);
+		CMotionBlurStreaks::RegisterStreak((uintptr)ped->m_pWeaponModel, 100, 100, 100, start, end);
 	}
 }
 

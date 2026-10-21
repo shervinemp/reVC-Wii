@@ -2131,7 +2131,10 @@ CWorld::TriggerExplosionSectorList(CPtrList &list, const CVector &position, floa
 		CVector vecDistance = pEntity->GetPosition() - position;
 		float fMagnitude = vecDistance.Magnitude();
 		if(fRadius > fMagnitude) {
-			CWeapon::BlowUpExplosiveThings(pEntity);
+			// A barrel caught in a blast belongs to whoever set the first one
+			// off, not to player 1: the chain has to keep the same culprit or
+			// the friendly-fire rule stops meaning anything.
+			CWeapon::BlowUpExplosiveThings(pEntity, pCreator);
 			CPed *pPed = (CPed *)pEntity;
 			CObject *pObject = (CObject *)pEntity;
 			CVehicle *pVehicle = (CVehicle *)pEntity;
