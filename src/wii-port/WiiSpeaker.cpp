@@ -265,6 +265,26 @@ releaseCallBuffer(void)
 	}
 }
 
+// Hands the call buffer to libogc once there is something in it, the speaker is up
+// and no clip is still occupying the one stream: a second WPAD_SendStreamData while
+// the alarm runs would arm it twice.  A line that arrives behind a ring therefore
+// waits here, and is tried again from every encodeCall and from the service, because
+// a line decoded in full while it waited has no further encodeCall to start it.
+void
+startCallStream(void)
+{
+	if(!s_call.active || s_call.started || s_call.written == 0 || s_state != STATE_ON)
+		return;
+	const u64 now = gettime();
+	if(now < s_clipEnd)
+		return;
+	WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
+	s_call.started = true;
+	s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
+	s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
+	s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
+}
+
 // Encodes whatever has been resampled so far into the call buffer.  ADPCM packs
 // two samples a byte, so an odd one out is carried to the next call.
 void
@@ -291,15 +311,8 @@ encodeCall(const s16 *samples, u32 count)
 	s_call.encoderFresh = false;
 	s_call.written += pairs/2;
 
-	if(!s_call.started && s_state == STATE_ON){
-		// The first of the line is in place: let libogc start reading.
-		const u64 now = gettime();
-		WPAD_SendStreamData(kChannel, s_call.buffer, s_call.capacity);
-		s_call.started = true;
-		s_clipEnd = now + microsecs_to_ticks((s_call.capacity/kPacketBytes + kGuardPackets)*kPacketMicros);
-		s_callFreeTime = s_clipEnd + millisecs_to_ticks(200);
-		s_deadline = s_clipEnd + millisecs_to_ticks(kLingerMs);
-	}
+	// The first of the line is in place: let libogc start reading.
+	startCallStream();
 }
 
 // Asks for a clip, powering the speaker up if it is off.  A request that is still
@@ -510,6 +523,10 @@ WiiSpeakerService(void)
 		// tolerance, so a lone ring was always discarded before it could ever play.
 		s_pendingTime = now;
 	}
+
+	// A line that waited for the speaker or for a clip to finish goes before any clip
+	// still waiting its own turn.
+	startCallStream();
 
 	// Whatever waited too long, through warm-up or behind another clip, is dropped.
 	if(s_pending != CLIP_NONE && now - s_pendingTime > millisecs_to_ticks(kClipMaxAgeMs[s_pending]))
