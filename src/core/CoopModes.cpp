@@ -4237,6 +4237,11 @@ ReviveKothLead(void)
 	}
 
 	CGameLogic::RestorePlayerStuffDuringResurrection(lead, at, angle, false);
+	// The resurrection puts the body back where it was and the health back
+	// to full, but it does not clear an arrest: the ped would come back
+	// still in the cop's hands, and the hill would go on counting a player
+	// who is not there.
+	lead->SetPedState(PED_IDLE);
 	COOP_LOG("WII coop: king of the hill player 1 back\n");
 }
 
@@ -4321,7 +4326,7 @@ UpdateKoth(uint32 now)
 			continue;
 		}
 		if(i == 0){
-			if(ped->DyingOrDead()){
+			if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
 				if(s_koth.downSince[0] == 0)
 					s_koth.downSince[0] = now;
 				else if(now - s_koth.downSince[0] >= kKothReviveMs){
@@ -7785,7 +7790,13 @@ CCoopModes::KothLeadDown(void)
 	if(!s_koth.active || s_koth.finished)
 		return false;
 	CPlayerPed *lead = CWorld::Players[0].m_pPed;
-	return lead != nil && lead->DyingOrDead();
+	// An arrest counts as being down, the same as being dead.  The hill
+	// brings player 1 back at the body either way, and until it does the
+	// session must not shut down and take the partners with it.  It used to
+	// cover only the dead: an arrest in the middle of a fight over a ring
+	// -- which the hill invites, because the fight is forced on -- ended
+	// the round and the match with it.
+	return lead != nil && (lead->DyingOrDead() || lead->m_nPedState == PED_ARRESTED);
 }
 
 bool

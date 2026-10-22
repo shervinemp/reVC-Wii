@@ -34,6 +34,7 @@
 #include "GenericGameStorage.h"
 #include "Camera.h"
 #include "Coop.h"
+#include "CoopModes.h"
 #ifdef NINTENDO_WII
 #include "wii-port/WiiLog.h"
 #endif
@@ -1410,17 +1411,24 @@ CCamera::CamControl(void)
 	// Process arrested player
 	static int ThePickedArrestMode;
 	static int LastPedState;
+	// King of the Hill owes player 1 a four-second revive, and an arrest in
+	// the middle of a fight over a ring is a moment and not an ending.  The
+	// arrest camera would take the shared view away from the party for those
+	// seconds, and the shared view is the thing they came for.
+	const bool kothRevive = CCoopModes::KothLeadDown();
+	const bool arrested = PLAYER->GetPedState() == PED_ARRESTED && !kothRevive;
+
 	bool startArrestCam = false;
 	static bool beingArrested = false;
 	bool stopArrestCam = false;
 
-	if(PLAYER->GetPedState() == PED_ARRESTED)
+	if(arrested)
 		beingArrested = true;
 	else if(beingArrested){
 		stopArrestCam = true;
 		beingArrested = false;
 	}
-	if(LastPedState != PED_ARRESTED && PLAYER->GetPedState() == PED_ARRESTED){
+	if(LastPedState != PED_ARRESTED && arrested){
 		if(CarZoomIndicator != CAM_ZOOM_1STPRS || !pTargetEntity->IsVehicle())
 			startArrestCam = true;
 	}else
@@ -1431,7 +1439,7 @@ CCamera::CamControl(void)
 		ThePickedArrestMode = CCam::MODE_ARRESTCAM_ONE;
 		ReqMode = CCam::MODE_ARRESTCAM_ONE;
 		Cams[ActiveCam].ResetStatics = true;
-	}else if(PLAYER->GetPedState() == PED_ARRESTED)
+	}else if(arrested)
 		ReqMode = ThePickedArrestMode;
 
 	// Process dead player

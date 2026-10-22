@@ -186,7 +186,13 @@ CGameLogic::Update()
 		}
 		if (pPlayerInfo.m_pPed->m_nPedState == PED_ARRESTED) {
 			pPlayerInfo.m_pPed->ClearAdrenaline();
-			pPlayerInfo.ArrestPlayer();
+			// King of the Hill owns player 1's four-second revive, and that is
+			// true of an arrest as well as of a death.  An arrest in the
+			// middle of a fight over a ring is the police doing their job, and
+			// it used to start the busted sequence, which switched the co-op
+			// session off and ended the round with it.
+			if (!CCoopModes::KothLeadDown())
+				pPlayerInfo.ArrestPlayer();
 		}
 		break;
 	case WBSTATE_WASTED:

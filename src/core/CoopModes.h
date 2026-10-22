@@ -141,8 +141,13 @@ class CVector;
 // so a fight does not thin the party out; the ordinary revive is still there
 // for anyone who reaches them sooner.  Player 1 is the mode's too: the
 // wasted/hospital sequence is held off and he comes back at the body on the
-// same clock, with the party still in the session.  Ninety seconds; the
-// holder at the bell wins.
+// same clock, with the party still in the session.  An arrest is the same as
+// a death to that clock: the hill is a fight on a public street, the police
+// come, and being arrested in the middle of it is a moment and not the end
+// of a ninety-second round.  So the busted sequence is held off as well, the
+// arrest camera does not take the shared view away from the party, and
+// player 1 comes back at the body on the same four seconds.  Ninety seconds;
+// the holder at the bell wins.
 //
 // The toy race, the dance-off, cops & robbers, Caddy football, Bloodring and
 // King of the Hill do not arm while anyone in the party is wanted: they start

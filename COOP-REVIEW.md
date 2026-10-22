@@ -631,6 +631,23 @@ That left three things to do about it.
   duck cannot be held -- a jump is a hop -- so those are still taps, and the
   card still waits for both players to say yes.
 
+### An arrest is not the end of a round
+
+The hill was the one mode that could be ended by somebody else's decision.
+Being shot got a four-second revive; being arrested did not, and the arrest
+started the game's busted sequence, which switched the co-op session off and
+took the round and the partners with it. That is the wrong way round: the
+hill is a fight on a public street with the police invited by the fight
+itself, so an arrest is the likeliest thing that can happen in it, and the
+whole point of the mode is that the round is ninety seconds long and one
+bell decides it.
+
+It is now the same as being shot, in all four places where it matters: the
+hill's revive clock counts an arrest, the game's busted sequence is held off
+while the hill owes that clock, the arrest camera does not take the shared
+view away from the party for the seconds it lasts, and the resurrection
+clears the arrest, which it did not do for the dead.
+
 ### The advantage of Vice City, honestly
 
 The advantage is the props and the places, not the mechanics. Every objective
