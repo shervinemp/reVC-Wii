@@ -579,6 +579,58 @@ round earned by being played, the trophy is the prize for winning it -- and
 **every match now pays the same $500**, so the party size is the only thing
 that decides what a game is worth.
 
+### The eighth pass: what a Wii party game has that these do not
+
+The question worth asking of a set of minigames is what another game would
+have to take away from you to replace them. The honest answer, mode by mode,
+is that five of the eight are genre-generic and could be transplanted whole:
+the hill is a capture point, the toy race is laps around gates, the dance-off
+is a rhythm game, the football is football with the joke removed, and the cop
+shift is a chase. The two that could not be lifted into another game at all
+are the derby -- which is the Bloodring -- and the smuggling run, which needs
+a city with water and a coast. The cop shift and cops & robbers need a world
+with a police force in it.
+
+What no Wii game has is the combination: the Wii has co-op games and
+open-world games and never both. Mario Party gets four people onto a sofa;
+GTA gets a whole city. Nothing on the console puts two people in one city,
+and the closest thing ever shipped -- San Andreas on the PlayStation 2, which
+this design is modelled on -- was never on the Wii.
+
+So the modes are not minigames. Each one is a system that already exists in
+Vice City with the rules turned up: the police AI and the wanted level, the
+boat traffic and the Predators, the Bloodring, the RC Bandit, the Caddy and
+Leaf Links, the ped-on-ped combat and the case. And they happen where the
+party already is, in the car they own, with the money and the record they
+have -- no loading screen, no lobby, no reskin of the world they were driving
+through. The comparison with Mario Party is the wrong one: Mario Party is a
+better minigame collection and a worse place to be. The bet here is that the
+party keeps playing Vice City.
+
+That left three things to do about it.
+
+- **The dance-off was the weakest mode and it is now the best defended.**
+  Just Dance beats it on any console that has Just Dance, and the reason was
+  that it had no beat you could hear. There is still no music -- the audio is
+  the game's own radio stream and the sound effects are one-shots -- but a
+  one-shot is enough: the game's own clock tick, once a beat, through the
+  front end, so it comes from the screen and both players hear it at once.
+  The bar that drains towards the beat and the tick that sounds it were made
+  together, because a player who can hear the beat does not have to watch
+  the bar to find it.
+- **The modes are heard, not just seen.** A mode that counts down counts
+  down out loud, with the game's own three-two-one-go: the derby, the toy
+  race, the football and the hill. The moments that matter have sounds: the
+  money for a case caught, the chime for a goal, the arrest for a bust, the
+  pay for a drop. They go through the front-end entity, so they come from the
+  screen and not from anybody's feet.
+- **The arming gestures are deliberate where they can be.** The horn that
+  arms the derby is now held for 0.6 s, like the nod that arms cops &
+  robbers, because the horn is an ordinary driving button and a tap on it at
+  a traffic light used to put a ready-up card on the screen. The jump and the
+  duck cannot be held -- a jump is a hop -- so those are still taps, and the
+  card still waits for both players to say yes.
+
 ### The advantage of Vice City, honestly
 
 The advantage is the props and the places, not the mechanics. Every objective

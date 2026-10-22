@@ -11,6 +11,7 @@
 #include "Coop.h"
 #include "CopPed.h"
 #include "Coronas.h"
+#include "DMAudio.h"
 #include "Font.h"
 #include "Frontend.h"
 #include "GameLogic.h"
@@ -66,6 +67,57 @@ enum
 	MENU_PITCH = CCoopModes::MENU_PITCH,
 	MENU_KOTH = CCoopModes::MENU_KOTH
 };
+
+// --- the modes' sounds --------------------------------------------------------
+
+// The game's own race countdown: three, two, one, go.  A mode that counts
+// down counts down out loud -- the digits are on the screen and the voice is
+// in the room, and the engine already has the sounds for it.  It is played
+// through the front-end entity, so it comes from the screen and not from
+// anybody's feet.
+int s_countdownStep = -1;
+
+void
+CountdownBeep(uint32 bellAt, uint32 lengthMs, uint32 now)
+{
+	if(now + lengthMs < bellAt)
+		return;
+	const uint32 remaining = bellAt > now ? bellAt - now : 0;
+	int step;
+	if(now >= bellAt){
+		if(now - bellAt >= 1000)
+			return;			// the go has been and gone
+		step = 0;			// go
+	}else if(remaining > 2000)
+		step = 3;
+	else if(remaining > 1000)
+		step = 2;
+	else
+		step = 1;
+	if(step == s_countdownStep)
+		return;
+	s_countdownStep = step;
+	switch(step){
+	case 3: DMAudio.PlayFrontEndSound(SOUND_RACE_START_3, 1); break;
+	case 2: DMAudio.PlayFrontEndSound(SOUND_RACE_START_2, 1); break;
+	case 1: DMAudio.PlayFrontEndSound(SOUND_RACE_START_1, 1); break;
+	default: DMAudio.PlayFrontEndSound(SOUND_RACE_START_GO, 1); break;
+	}
+}
+
+// A sound from the screen, for a moment that matters.  The game's own
+// sounds, played through the front-end entity so they belong to the room
+// and not to a car.
+void
+ModeSound(uint16 sound)
+{
+	DMAudio.PlayFrontEndSound(sound, 1);
+}
+
+// How long before the bell the countdown starts talking.  A mode that waits
+// ten seconds between rounds only says three, two and one over the last
+// three of them: the rest of the wait is not a countdown.
+const uint32 kCountdownBeepMs = 3000;
 
 // --- the cop shift's numbers -------------------------------------------------
 
@@ -226,6 +278,7 @@ const uint32 kDerbyIntermissionMs = 10000;
 const uint32 kDerbyRoundCapMs = 90000;	// a round that will not end
 const uint32 kDerbyMatchCapMs = 300000;	// a match that will not end either
 const uint32 kDerbyRearmMs = 10000;
+const uint32 kDerbyHornHoldMs = 600;	// the horn is held, not tapped
 const int kDerbyWinsNeeded = 2;
 
 // The derby: a ring drawn wherever the party parked, the running order, and
@@ -248,6 +301,7 @@ struct DerbyState
 	uint32 outSince[NUMPLAYERS];
 	uint32 footSince[NUMPLAYERS];
 	int matchWinner;
+	uint32 hornSince[NUMPLAYERS];	// the horn has been held this long
 	CVehicle *loaner[NUMPLAYERS];
 };
 DerbyState s_derby;
@@ -463,6 +517,7 @@ struct DanceState
 	bool finished;
 	uint32 startAt;
 	uint32 beatAt;		// the nominal time of the beat the chip is for
+	bool beatClicked;	// this beat's click has been played
 	uint32 issueAt;		// when the next chip comes up
 	uint32 judgeAt;		// when the chip is judged: the beat plus the window
 	uint32 shownAt;		// when this chip came up: the beat bar is drawn from it
@@ -1362,6 +1417,8 @@ CloseCase(uint32 now, bool caught)
 		s_shift.resultAt = now;
 		s_shift.resultKind = SHIFT_RESULT_CAUGHT;
 		s_shift.resultPay = pay;
+		// The money: a case caught is the one moment in a shift that pays.
+		ModeSound(SOUND_PICKUP_MONEY);
 		COOP_LOG("WII coop: case closed, streak %u\n", (unsigned)s_shift.streak);
 	}else{
 		s_shift.streak = 0;
@@ -2274,6 +2331,8 @@ CompleteDrop(uint32 now, CVehicle *boat)
 	if(crewBoat == nil)
 		crewBoat = boat;
 	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDropPay + kEscortPay*CountEscorts(crewBoat);
+	// The drop is paid: the crate is in the ring and the run moves on.
+	ModeSound(SOUND_PICKUP_MONEY);
 	s_run.carrier = -1;
 	s_run.unloadBoat = -1;
 	ClearObjectiveMarker();
@@ -3014,6 +3073,7 @@ StartDerby(uint32 now, const CVector &centre)
 		s_derby.running[i] = false;
 		s_derby.outSince[i] = 0;
 		s_derby.footSince[i] = 0;
+		s_derby.hornSince[i] = 0;
 	}
 	CStreaming::RequestModel(MI_BLOODRA, 0);
 	COOP_LOG("WII coop: derby on\n");
@@ -3184,12 +3244,22 @@ TryStartDerby(uint32 now)
 			return;
 	}
 
-	// A honk from any of them is the go-ahead.
+	// A honk from any of them is the go-ahead -- held, not tapped.  The horn
+	// is an ordinary driving button: a tap on it at a traffic light used to
+	// put a ready-up card on the screen, and the card is a piece of the
+	// world stopping to ask two people whether they want to play.  The nod
+	// that arms cops & robbers is held for the same reason.
 	for(int i = 0; i < NUMPLAYERS; i++){
 		if(car[i] == nil)
 			continue;
 		CPad *pad = GetPadFromVehicleDriver(car[i]);
-		if(pad != nil && pad->GetHorn()){
+		if(pad == nil || !pad->GetHorn()){
+			s_derby.hornSince[i] = 0;
+			continue;
+		}
+		if(s_derby.hornSince[i] == 0)
+			s_derby.hornSince[i] = now;
+		else if(now - s_derby.hornSince[i] >= kDerbyHornHoldMs){
 			ArmStart(MENU_DERBY, now, centre, CVector(0.0f, 0.0f, 0.0f), count);
 			return;
 		}
@@ -3244,6 +3314,7 @@ UpdateDerby(uint32 now)
 	}
 
 	if(s_derby.counting){
+		CountdownBeep(s_derby.countdownAt, kCountdownBeepMs, now);
 		if(now >= s_derby.countdownAt)
 			StartDerbyRound(now);
 		return;
@@ -3759,6 +3830,7 @@ UpdatePitch(uint32 now)
 			s_pitch.countdownAt = now + kPitchCountdownMs;
 			return;
 		}
+		CountdownBeep(s_pitch.countdownAt, kCountdownBeepMs, now);
 		if(now >= s_pitch.countdownAt)
 			s_pitch.counting = false;
 		return;
@@ -3836,6 +3908,9 @@ UpdatePitch(uint32 now)
 		}
 		s_pitch.lastGoalAt = now;
 		s_pitch.lastGoalBy = shooter;
+		// A goal is the football's moment: it should be heard as well as
+		// seen, from the screen, in both directions at once.
+		ModeSound(SOUND_PICKUP_BONUS);
 		if(s_pitch.players == 3){
 			const bool own = shooter == s_pitch.goalOwner[g];
 			s_pitch.lastGoalOwn = own;
@@ -4282,6 +4357,7 @@ UpdateKoth(uint32 now)
 		s_koth.aloneSince = 0;
 
 	if(s_koth.counting){
+		CountdownBeep(s_koth.countdownAt, kCountdownBeepMs, now);
 		if(now < s_koth.countdownAt)
 			return;
 		s_koth.counting = false;
@@ -4743,6 +4819,7 @@ UpdateRc(uint32 now)
 	}
 
 	if(s_rc.counting){
+		CountdownBeep(s_rc.countdownAt, kCountdownBeepMs, now);
 		RegisterRcCoronas();
 		if(now < s_rc.countdownAt)
 			return;
@@ -5031,6 +5108,7 @@ StartDance(uint32 now, const CVector &centre)
 	s_dance.issueAt = now;
 	s_dance.judgeAt = s_dance.beatAt + DanceWindow(kDanceBeatSlowMs);
 	s_dance.shownAt = now;
+	s_dance.beatClicked = false;
 	s_dance.centre = centre;
 	s_dance.winner = -1;
 	for(int i = 0; i < kDanceRingMarks; i++){
@@ -5164,6 +5242,15 @@ UpdateDance(uint32 now)
 			s_dance.pressAt[i] = now;
 	}
 
+	// The beat itself: the game's own clock tick.  There is no music this
+	// side of the engine that a minigame can play on cue, so the tick is the
+	// drum track -- and a rhythm game whose beat cannot be heard is a
+	// guessing game with a bar on it.
+	if(!s_dance.beatClicked && now >= s_dance.beatAt){
+		s_dance.beatClicked = true;
+		ModeSound(SOUND_CLOCK_TICK);
+	}
+
 	// The judgement: a press has to land near the beat to count.  The chip
 	// came up a beat early and is judged on the beat plus the window, so a
 	// player can see the beat coming, and can be early for it or late for
@@ -5172,6 +5259,7 @@ UpdateDance(uint32 now)
 	// was all: the fastest way to win was to hold every button down.
 	if(now >= s_dance.judgeAt){
 		const uint32 window = DanceWindow(DanceBeatInterval(now));
+		bool anyHit = false;
 		for(int i = 0; i < NUMPLAYERS; i++){
 			if(s_dance.prompt[i] < 0 || s_dance.promptHit[i])
 				continue;
@@ -5188,6 +5276,7 @@ UpdateDance(uint32 now)
 				s_dance.combo[i]++;
 				s_dance.hitFlash[i] = now;
 				s_dance.grade[i] = (error*2 <= window) ? DANCE_GRADE_PERFECT : DANCE_GRADE_GOOD;
+				anyHit = true;
 			}else{
 				s_dance.combo[i] = 0;
 				s_dance.missFlash[i] = now;
@@ -5196,9 +5285,14 @@ UpdateDance(uint32 now)
 			}
 			s_dance.gradeAt[i] = now;
 		}
+		// One chime for the beat, not one for each player: at the fast end
+		// of the tempo that would be a chord, and the screen says who hit.
+		if(anyHit)
+			ModeSound(SOUND_PICKUP_BONUS);
 		// The next beat, and the window it will be judged on.
 		const uint32 interval = DanceBeatInterval(now);
 		s_dance.beatAt += interval;
+		s_dance.beatClicked = false;
 		s_dance.judgeAt = s_dance.beatAt + DanceWindow(interval);
 		s_dance.issueAt = now;
 	}
@@ -5574,6 +5668,8 @@ UpdateCnR(uint32 now)
 			}else if(now - s_cnr.bustSince >= kCnRBustHoldMs){
 				const int busted = s_cnr.carrier;
 				s_cnr.score[pin]++;
+				// The bust is an arrest, and the game has a sound for one.
+				ModeSound(SOUND_PED_ARREST_COP);
 				COOP_LOG("WII coop: player %d busted player %d\n", pin + 1, busted + 1);
 				DropCase();
 						// The dead time: the case lies where it fell and nobody is
@@ -6428,7 +6524,12 @@ DrawModeMarks(uint32 now)
 			// explainer says so once; this says so every time.
 			sprintf(line, "ROUND %d  RAMMING ONLY", s_derby.round + 1);
 			DrawStatus(line, white);
-			DrawCountdown(now, s_derby.countdownAt);
+			// The wait between rounds is ten seconds, and only the last three
+			// of them are a countdown: the rest of the time the screen says
+			// what is happening and the room talks.  The voice counts down
+			// over the same three seconds.
+			if(s_derby.round == 0 || s_derby.countdownAt - now <= 3000)
+				DrawCountdown(now, s_derby.countdownAt);
 		}else{
 			int left = 0;
 			for(int i = 0; i < NUMPLAYERS; i++)

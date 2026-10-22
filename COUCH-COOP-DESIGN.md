@@ -668,13 +668,38 @@ busted for three seconds ("SAFE" on the headline), so a pair glued together
 cannot trade busts at the speed of the hold; the screen says who busted whom.
 The dance-off's beat runs from 1000 ms to 650 ms, each chip shows the action
 as well as the button, and the chip comes up a beat early with a bar inside it
-that drains towards the beat: there is no music this side of the engine that a
-minigame can play on cue, so the screen has to be the metronome. A press has
+that drains towards the beat. A press has
 to land within a window of the beat -- a fifth of the beat, which closes as
 the tempo climbs -- and the press is graded perfect, good, early or late, with
 the grade on screen for a moment. The game never asks for a button the player
 is already holding, so holding the duck down does not cost them a third of
 the prompts and a mash scores nothing.
+
+**The modes are heard.** There is no music this side of the engine that a
+minigame can play on cue -- the audio is the game's own radio stream and the
+sound effects are one-shots -- so the beat is a one-shot: the game's own clock
+tick, once a beat, through the front end, so it comes from the screen and
+both players hear it at once. That is the whole difference between a rhythm
+game and a chip on a picture, and it is why the beat bar and the tick were
+made together: one shows the beat and one sounds it, and a player who can
+hear it does not need to watch the bar to find it.
+
+The countdowns speak too: the game's own three-two-one-go, over the last
+three seconds of a countdown, in the derby, the toy race, the football and the
+hill. The ten seconds between derby rounds are a wait, not a countdown, so
+the screen says what is happening and only the last three of them count down.
+The moments that matter have their own sounds: the money for a case caught,
+the chime for a goal, the arrest for a bust, the pay for a drop. They are all
+played through the front-end entity, so they come from the screen rather than
+from anybody's feet -- one screen, one room, one sound.
+
+**The arming gestures are held, where they can be.** The nod that arms cops &
+robbers is held for 0.6 s, and the horn that arms the derby is now held for
+the same length. The horn is an ordinary driving button: a tap on it at a
+traffic light used to put a ready-up card on the screen, and the card is the
+world stopping to ask two people whether they want to play. The jump and the
+duck are taps and cannot be held -- a jump is a hop -- so they are still a
+tap, and the card still waits for both players to say yes.
 
 The smuggling run is player 1's: they are the skipper, because the world is
 streamed round player 1 and the whole party is held to them. A boat cannot carry

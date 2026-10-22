@@ -56,14 +56,24 @@ class CVector;
 // are taken out of the world, and come back by the usual rules.
 //
 // The third is the Bloodring derby.  Two or more players parked in a knot --
-// any open ground will do; the ring is drawn around them -- and a honk starts
-// a countdown.  Last car running takes the round, first to two rounds takes
+// any open ground will do; the ring is drawn around them -- and a honk held
+// for 0.6 s starts a countdown.  The horn is held rather than tapped because
+// it is an ordinary driving button, and a tap on it at a traffic light used
+// to stop the world to ask two people whether they wanted to play.  Last car
+// running takes the round, first to two rounds takes
 // the match.  Weapons are off for the duration, a loaner Bloodring Banger
 // appears for anyone who needs one, and the camera holds still: a derby is all
 // spinning cars, and a view that turns with one of them turns with all.
 // Between rounds the party has ten seconds to get back into a car and drive
 // to the ring, and the round waits for them rather than ending the match: a
 // first-to-two match is not lost because somebody could not find their door.
+//
+// The modes are heard as well as seen.  A mode that counts down counts down
+// out loud, with the game's own three-two-one-go, and the moments that matter
+// have their own sounds: the money for a case caught, the chime for a goal,
+// the arrest for a bust, the pay for a drop.  They are played through the
+// front end, so they come from the screen and not from anybody's feet: one
+// screen, one room, one sound.
 //
 // The fourth is the toy race.  The party on foot in a knot and somebody jumps:
 // RC Bandits are placed in a grid on the spot, a ring of four gates glows
@@ -78,15 +88,17 @@ class CVector;
 // the nod for a dancer with a car in reach: it would get them in), each
 // printed as the player's own controller's button, in their colour at the
 // bottom of the screen, with the action under it.  The chip comes up a beat
-// before the beat it is for and a bar inside it drains towards that beat,
-// because there is no music this side of the engine can play and a rhythm
-// game that cannot show the beat is a guessing game: the press has to land
-// within a window of the beat, and the window closes as the tempo climbs.
-// The press is graded -- perfect, good, early, late -- and the grade is under
-// the chip for a moment, which is the only thing that tells a player what
-// late means.  The game never asks for a button the player is already
-// holding, so a mash scores nothing.  Every hit pays a little and the best
-// score takes the pot.  The prompts are real actions, so the dancing is the party's
+// before the beat it is for, a bar inside it drains towards that beat, and
+// the beat itself is heard: the game's own clock tick, once a beat, through
+// the front end, so it comes from the screen and both players hear it at
+// once.  There is no music this side of the engine that a minigame can play
+// on cue, and a rhythm game that cannot show or sound the beat is a guessing
+// game.  A press has to land within a window of the beat -- a fifth of the
+// beat, which closes as the tempo climbs -- and the press is graded perfect,
+// good, early or late, with the grade on screen for a moment.  The game never
+// asks for a button the player is already holding, so holding the duck down
+// does not cost them a third of the prompts and a mash scores nothing.  Every
+// hit pays a little and the best score takes the pot.  The prompts are real actions, so the dancing is the party's
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
 //
