@@ -546,14 +546,26 @@ never dropped into traffic again.
   driverless Caddy is the ball; two goals for 1v1 or 2v2, three goals in a
   triangle for three players; first to three; not while wanted), and
 - **King of the Hill** (everyone holds aim on foot: a 12 m ring on the nearest
-  clear ground, never the roadway; the sole player standing inside banks time,
-  two or more contest it and nobody scores; player-on-player damage is forced
-  on; 90 seconds, most time wins; a downed or arrested partner is brought back
+  clear ground, never the roadway; the hill is a *point* at its centre and the
+  player nearest it holds it; the hold belongs to the hill and is lost when the
+  hill changes hands or is left empty, so the round is decided by who is
+  holding the point when the bell goes; player-on-player damage is forced
+  on; 90 seconds; a downed or arrested partner is brought back
   at the body after four seconds, and player 1 comes back on the same clock
   without the hospital reset). A player who stays in a car is a spectator, not
   a second scoring position, and a player in a car cannot make the ring
   contested. The wall and leash stand aside for the round, because two players
   at opposite edges of a 12 m ring are at the walking tether's limit already.
+
+  The hill was a ring with a timer on it, and that had two faults. Two people
+  standing in the ring made it a deadlock — nobody scored — so the only way to
+  play it was to sit on the point and let the other one come, and the other's
+  best move was to stand in the ring and refuse to fight, which cost the
+  holder nothing and won the challenger nothing. And the score was the *total*
+  time held, which is a score the first player to arrive cannot lose: the
+  challenger's only way in was the four seconds a knocked-down player spends on
+  the ground, which is not a way to win ninety seconds. So the hill is a point
+  you have to take, and the hold is lost when you lose it.
 
 The toy race seats its racers directly (`WarpPedIntoCar`) instead of asking
 them to walk into a toy: the RC Bandit is a remote-control model with no door
@@ -591,6 +603,26 @@ partner for the run. A player already in an eligible car keeps it; anyone else
 is put on foot at the venue, given the loaner, and seated. The mode's normal
 update then starts it from that prepared state, so the gestures still work in
 the world and the menu is only another way in.
+
+**What a mode pays, and what it is worth.** The pot scales with the party:
+two players get the base, three get one and a half times it, four get twice
+it. A pot that does not care how many people are playing makes a four-player
+game worth less for each of them than a two-player one, and a party picks the
+game with the most people in it. The money goes into the party's one wallet,
+which is right for the game's economy and useless as a prize -- so the prize
+is a **count**: how many modes each player has won, theirs alone, shown on the
+ready-up card and on the result line. It lasts the session, so a loaded game
+starts a new one.
+
+**Cops & robbers, after a bust.** The case lies dead for three seconds:
+nobody can pick it up and nobody can be pinned. It used to be two rules --
+the busted player could not take the case back for two seconds, and whoever
+took it next could not be busted for two seconds -- and two rules to remember
+in the middle of a chase is one rule too many.
+
+**Caddy football, a ball that stops.** A ball that has not moved for six
+seconds is wedged -- under a car, pinned in a corner -- and the ramming-only
+rules give a wedged ball nobody a way to free it. It goes back to the middle.
 
 The first time a mode arms in a session, one line under the headline says how it
 is played and how it ends, for 4.5 s (`DrawExplainer`); it comes back after a

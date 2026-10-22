@@ -264,6 +264,7 @@ const float kPitchLeash = kPitchRingRadius;
 const uint32 kPitchHoldMs = 1000;	// the brake is held this long to start
 const uint32 kPitchCountdownMs = 3000;
 const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
+const uint32 kPitchStuckMs = 6000;	// a ball that has not moved this long is stuck
 const uint32 kPitchGoalNoteMs = 1500;
 const uint32 kPitchFinishMs = 5000;
 const uint32 kPitchRearmMs = 10000;
@@ -300,6 +301,12 @@ struct PitchState
 	int lastTouch;
 	int lastGoalBy;
 	bool lastGoalOwn;
+	// Couch co-op: when the ball last moved, and where it was.  A ball that
+	// has not moved for kPitchStuckMs is wedged -- under a car, pinned in a
+	// corner -- and a football match with no way to restart it is a match
+	// that ends in nobody scoring.
+	uint32 ballStillSince;
+	CVector ballStillPos;
 	uint32 lastGoalAt;
 	int winner;
 	int winnerTeam;
@@ -348,6 +355,12 @@ struct KothState
 	uint32 downSince[NUMPLAYERS];
 	uint32 aloneSince;
 	int holder;
+
+	// Couch co-op: two players within reach of the point, not merely
+
+	// two in the ring.  That is what a contest looks like.
+
+	bool contested;
 	int inside;
 	int winner;
 };
@@ -456,8 +469,14 @@ const float kCnRDeliverRange = 4.5f;
 const int kCnRRingMarks = 12;		// the green mission ring round the getaway
 const float kCnRBustRange = 5.0f;
 const uint32 kCnRBustHoldMs = 1500;
-const uint32 kCnRBustLockMs = 2000;	// a busted carrier may not take the case back for this long
-const uint32 kCnRGraceMs = 2000;	// ...and whoever picks it up cannot be busted for this long
+const uint32 kCnRGraceMs = 2000;	// whoever picks the case up cannot be busted for this long
+// Couch co-op: after a bust the case lies dead for this long -- nobody can
+// pick it up and nobody can be pinned.  The old rules were two of them: the
+// busted player could not take the case back for two seconds, and whoever
+// took it next could not be busted for two seconds.  Two rules to remember in
+// the middle of a chase is one rule too many, and the first of them had the
+// busted player straight back on the case on the next frame.
+const uint32 kCnRDeadMs = 3000;
 const uint32 kCnRHoldMs = 600;		// the nod is held this long to start a match, not tapped
 const uint32 kCnRNoteMs = 2000;		// "P3 BUSTED P1" stays on screen this long
 const float kCnRArena = 34.0f;		// beyond this the case comes back
@@ -599,6 +618,14 @@ uint32 s_startNoticeUntil;
 // are -- and a player who won it used to see a name and no number, which
 // read as "the other one got paid".
 int s_resultPot;
+// Couch co-op: how many modes each player has won.  The money a mode pays goes
+// into the party's one wallet, so winning a mode does not, on its own, leave
+// the winner better off than anybody else -- and a thing that is the same for
+// everybody is not a thing anybody competes for.  This is: a count that is
+// the winner's alone, and the one number a party remembers about an evening.
+// It is for the session: a loaded game starts a new one, like the rest of
+// the co-op session.
+int s_trophies[NUMPLAYERS];
 
 void
 SetStartNotice(const char *notice, uint32 now)
@@ -973,6 +1000,30 @@ VehicleInReach(CPlayerPed *ped)
 // it is doing it for another reason -- a jump to clear a fence, a duck behind a
 // car, a press of the nod at a door.  The cop shift and the smuggling run are
 // not held back by this: the police are what they are about.
+// How many of the party are in the world and able to play.
+int
+PlayersPresent(void)
+{
+	int count = 0;
+	for(int player = 0; player < NUMPLAYERS; player++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(player);
+		if(ped != nil && !ped->DyingOrDead() && ped->m_nPedState != PED_ARRESTED)
+			count++;
+	}
+	return count;
+}
+
+// What a mode is worth.  A pot that does not care how many people are
+// playing makes a four-player game worth less for each of them than a
+// two-player one, and a party picks the game with the most people in it.
+int
+PotFor(int base, int players)
+{
+	if(players < 2)
+		players = 2;
+	return base + (base/2)*(players - 2);
+}
+
 bool
 PartyWanted(void)
 {
@@ -2881,8 +2932,9 @@ FinishDerby(uint32 now)
 		}
 	if(best >= 0){
 		s_derby.matchWinner = best;
-		s_resultPot = 500;
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+		CCoopModes::AwardTrophy(best);
+		s_resultPot = PotFor(500, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: derby to player %d, +$500\n", best + 1);
 	}
 	s_derby.finished = true;
@@ -3260,6 +3312,10 @@ ResetPitchBall(void)
 	if(found)
 		pos.z = ground;
 	s_pitch.ball->SetPosition(pos);
+	// A ball that has just been put back is not stuck: the clock starts again
+	// where it is.
+	s_pitch.ballStillSince = 0;
+	s_pitch.ballStillPos = pos;
 	s_pitch.ball->SetMoveSpeed(0.0f, 0.0f, 0.0f);
 	s_pitch.ball->SetTurnSpeed(0.0f, 0.0f, 0.0f);
 	s_pitch.ball->SetOrientation(0.0f, 0.0f, s_pitch.forward.Heading());
@@ -3299,12 +3355,13 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 	s_pitch.finished = true;
 	s_pitch.finishAt = now + kPitchFinishMs;
 	s_pitch.winner = winner;
+	CCoopModes::AwardTrophy(winner);
 	s_pitch.winnerTeam = winnerTeam;
 	// A team whose last player left before the whistle has no one to pay, and
 	// no pot to show: what was paid is what the result says was paid.
 	if(winner >= 0){
-		s_resultPot = 500;
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
+		s_resultPot = PotFor(500, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 	}
 	COOP_LOG("WII coop: caddy football to %s %d, +$%d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1, s_resultPot);
 }
@@ -3580,6 +3637,22 @@ UpdatePitch(uint32 now)
 	// proximity credit, not a collision callback -- a few lines, and exact
 	// enough for who gets the goal.
 	CVehicle *ball = s_pitch.ball;
+	// A ball that has stopped moving is stuck: wedged under a car, pinned in
+	// a corner, or simply parked against something.  A football match with no
+	// way to restart it is a match that ends in nobody scoring, and the
+	// ramming-only rules give a wedged ball nobody a way to free it.
+	if(s_pitch.ballStillSince == 0){
+		s_pitch.ballStillSince = now;
+		s_pitch.ballStillPos = ball->GetPosition();
+	}else if((ball->GetPosition() - s_pitch.ballStillPos).Magnitude2D() > 1.0f){
+		s_pitch.ballStillPos = ball->GetPosition();
+		s_pitch.ballStillSince = now;
+	}else if(now - s_pitch.ballStillSince > kPitchStuckMs){
+		ResetPitchBall();
+		s_pitch.lastTouch = -1;
+		COOP_LOG("WII coop: the ball was stuck, back to the middle\n");
+		return;
+	}
 	int best = -1;
 	float bestDist = kPitchTouchRange;
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -3862,8 +3935,9 @@ FinishKoth(uint32 now)
 	}
 	if(!tie && best >= 0){
 		s_koth.winner = best;
-		s_resultPot = kKothPay;
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kKothPay;
+		CCoopModes::AwardTrophy(best);
+		s_resultPot = PotFor(kKothPay, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u/%u ms)\n",
 		         best + 1, s_resultPot, s_koth.scoreMs[0], s_koth.scoreMs[1]);
 	}else
@@ -4075,8 +4149,15 @@ UpdateKoth(uint32 now)
 	// Who is on the hill?  Only a player on foot is a contender.  A car is a
 	// way to arrive, not a second scoring position, and two players in one car
 	// must not make the hill look contested without anybody standing on it.
+	//
+	// The hill is a point and not the whole ring: the player nearest the
+	// centre holds it.  Two people standing in the ring are not a contest --
+	// only one of them is on the point -- so a challenger cannot stand in
+	// the ring and stop the holder scoring.  To take the hill they have to
+	// take the point, which is a fight and not a queue.
 	int inside = 0;
 	int occupant = -1;
+	float closest = 0.0f;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
@@ -4084,15 +4165,61 @@ UpdateKoth(uint32 now)
 		if(ped->bInVehicle)
 			continue;
 		const CVector at = ped->GetPosition();
-		if((at - s_koth.centre).Magnitude2D() <= kKothRadius &&
-		   Abs(at.z - s_koth.centre.z) <= 3.0f){
+		const float dist = (at - s_koth.centre).Magnitude2D();
+		if(dist <= kKothRadius && Abs(at.z - s_koth.centre.z) <= 3.0f){
 			inside++;
-			occupant = i;
+			if(occupant < 0 || dist < closest){
+				occupant = i;
+				closest = dist;
+			}
 		}
 	}
 	s_koth.inside = inside;
 
-	if(inside == 1){
+	// A contest is two people on the point, not two people in the
+
+	// ring: the hill is a point and only one of them is on it.
+
+	s_koth.contested = false;
+
+	for(int i = 0; i < NUMPLAYERS; i++){
+
+		if(i == occupant)
+
+			continue;
+
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+
+		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED)
+
+			continue;
+
+		if(ped->bInVehicle)
+
+			continue;
+
+		const CVector at = ped->GetPosition();
+
+		if((at - s_koth.centre).Magnitude2D() <= 3.0f &&
+
+		   Abs(at.z - s_koth.centre.z) <= 3.0f)
+
+			s_koth.contested = true;
+
+	}
+
+	// The hold belongs to the hill, and it is lost when the hill changes hands
+	// or is left empty.  A hill that is won by whoever reaches it first is a
+	// hill nobody can take, and a hill nobody can take is a camp: the
+	// challenger's only way in was the four seconds a knocked-down player
+	// spends on the ground, which is not a way to win a ninety-second round.
+	// So the round is decided by who is holding the point when the bell goes,
+	// and every second of the hill is worth holding on to.
+	if(occupant != s_koth.holder){
+		for(int i = 0; i < NUMPLAYERS; i++)
+			s_koth.scoreMs[i] = 0;
+	}
+	if(occupant >= 0){
 		s_koth.holder = occupant;
 		if(s_koth.scoreMs[occupant] < kKothRoundMs){
 			const uint32 room = kKothRoundMs - s_koth.scoreMs[occupant];
@@ -4515,8 +4642,9 @@ UpdateRc(uint32 now)
 		}
 		if(best >= 0){
 			s_rc.winner = best;
-			s_resultPot = kRcPot;
-			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
+			CCoopModes::AwardTrophy(best);
+			s_resultPot = PotFor(kRcPot, PlayersPresent());
+			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		}
 		s_rc.finished = true;
 		s_rc.finishAt = now + kRcLingerMs;
@@ -4578,8 +4706,9 @@ UpdateRc(uint32 now)
 				s_rc.lap[i]++;
 				if(s_rc.lap[i] >= kRcLaps){
 					s_rc.winner = i;
-					s_resultPot = kRcPot;
-					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
+					CCoopModes::AwardTrophy(i);
+					s_resultPot = PotFor(kRcPot, PlayersPresent());
+					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 					s_rc.finished = true;
 					s_rc.finishAt = now + kRcLingerMs;
 					COOP_LOG("WII coop: rc race to player %d, +$%d\n", i + 1, kRcPot);
@@ -4662,12 +4791,13 @@ FinishDance(uint32 now)
 	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceHitPay*totalHits;
 	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
 	if(best >= 0 && !tie){
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceWinPot;
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += PotFor(kDanceWinPot, PlayersPresent());
+		CCoopModes::AwardTrophy(best);
 		// What the round actually paid: the hit money as well as the pot.
 		// Every other mode's headline is the money that left the wallet, and
 		// this one said the pot alone -- so a good round that banked hundreds
 		// of dollars of hits read on screen as the two hundred it won.
-		s_resultPot = kDanceHitPay*totalHits + kDanceWinPot;
+		s_resultPot = kDanceHitPay*totalHits + PotFor(kDanceWinPot, PlayersPresent());
 		COOP_LOG("WII coop: dance-off to player %d, +$%d\n", best + 1, s_resultPot);
 	}else{
 		// A draw pays the hits and nothing else, and says so.
@@ -4914,8 +5044,9 @@ FinishCnR(uint32 now, int winner)
 {
 	if(winner >= 0){
 		s_cnr.winner = winner;
-		s_resultPot = kCnRPot;
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kCnRPot;
+		CCoopModes::AwardTrophy(winner);
+		s_resultPot = PotFor(kCnRPot, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: cops & robbers to player %d, +$%d\n", winner + 1, s_resultPot);
 	}
 	s_cnr.finished = true;
@@ -5097,10 +5228,11 @@ UpdateCnR(uint32 now)
 			if(ped == nil || ped->DyingOrDead() ||
 			   ped->m_nPedState == PED_ARRESTED)
 				continue;
-			// Just busted: not straight off their own feet, where they are the
+			// Just busted: the case is dead for a moment, so it lies where it
+			// fell.  Not straight off their own feet, where they would be the
 			// nearest player by definition and would take it back on the next
-			// frame -- and the buster score again 1.5 s after that.
-			if(i == s_cnr.lockPlayer && now < s_cnr.lockUntil)
+			// frame -- and the buster would score again 1.5 s after that.
+			if(now < s_cnr.lockUntil)
 				continue;
 			const float reach = (ped->bInVehicle && ped->m_pMyVehicle != nil) ? kCnRGrabRangeCar : kCnRGrabRange;
 			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
@@ -5168,7 +5300,10 @@ UpdateCnR(uint32 now)
 				COOP_LOG("WII coop: player %d busted player %d\n", pin + 1, busted + 1);
 				DropCase();
 				s_cnr.lockPlayer = busted;
-				s_cnr.lockUntil = now + kCnRBustLockMs;
+				// The dead time: the case lies where it fell and nobody is
+				// pinned while it does.
+				s_cnr.lockUntil = now + kCnRDeadMs;
+				s_cnr.graceUntil = now + kCnRDeadMs;
 				s_cnr.noteBuster = pin;
 				s_cnr.noteBusted = busted;
 				s_cnr.noteAt = now;
@@ -5339,11 +5474,12 @@ DrawWinner(int winner)
 		DrawStatus("NO WINNER", CRGBA(255, 255, 255, 255));
 		return;
 	}
-	char line[32];
+	char line[48];
 	if(s_resultPot > 0)
-		sprintf(line, "P%d WINS   PARTY +$%d", winner + 1, s_resultPot);
+		sprintf(line, "P%d WINS   PARTY +$%d   %d WINS", winner + 1, s_resultPot,
+			CCoopModes::TrophyCount(winner));
 	else
-		sprintf(line, "P%d WINS", winner + 1);
+		sprintf(line, "P%d WINS   %d WINS", winner + 1, CCoopModes::TrophyCount(winner));
 	DrawStatus(line, kCoopColours[winner]);
 }
 
@@ -5523,6 +5659,26 @@ DrawLobby(uint32 now)
 	const char *venue = s_lobby.fromMenu ? s_menuVenue.name : "WHERE YOU STAND";
 	PrintCentred(cx, SCREEN_SCALE_Y(148.0f), venue,
 		CRGBA(170, 200, 220, 255), 0.45f, 0.7f);
+	// The session's scoreboard.  The money a mode pays goes into the party's
+	// one wallet, so this count -- how many each of them has won -- is the one
+	// number that is theirs alone, and it is the thing a party keeps count of.
+	{
+		char tally[64];
+		int written = 0;
+		tally[0] = '\0';
+		for(int i = 0; i < NUMPLAYERS; i++){
+			const int wins = CCoopModes::TrophyCount(i);
+			if(wins == 0)
+				continue;
+			char part[16];
+			sprintf(part, "%sP%d %d", written > 0 ? "   " : "", i + 1, wins);
+			strcat(tally, part);
+			written++;
+		}
+		if(written > 0)
+			PrintCentred(cx, SCREEN_SCALE_Y(162.0f), tally,
+				CRGBA(200, 200, 200, 255), 0.45f, 0.7f);
+	}
 
 	int present = 0;
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -6065,7 +6221,7 @@ DrawModeMarks(uint32 now)
 				const uint32 wait = (kKothReviveMs - (now - s_koth.downSince[0]) + 999)/1000;
 				sprintf(koth, "KING OF THE HILL  %us  P1 DOWN %us", left, wait);
 				DrawStatus(koth, CRGBA(255, 200, 90, 255));
-			}else if(s_koth.inside >= 2)
+			}else if(s_koth.contested)
 				sprintf(koth, "KING OF THE HILL  %us  CONTESTED", left);
 			else if(s_koth.holder >= 0)
 				sprintf(koth, "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
@@ -6073,7 +6229,7 @@ DrawModeMarks(uint32 now)
 				sprintf(koth, "KING OF THE HILL  %us  GET IN RING", left);
 			if(s_koth.downSince[0] == 0 || now - s_koth.downSince[0] >= kKothReviveMs)
 				DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
-				           s_koth.inside >= 2 ? CRGBA(255, 120, 120, 255) : white);
+				           s_koth.contested ? CRGBA(255, 120, 120, 255) : white);
 		}
 		for(int i = 0; i < NUMPLAYERS; i++){
 			CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -6911,6 +7067,10 @@ CCoopModes::Init(void)
 	s_koth.holder = -1;
 	s_koth.winner = -1;
 
+	// The session's scoreboard belongs to the session: a loaded game starts a
+	// new one, like the rest of the co-op state.
+	memset(s_trophies, 0, sizeof(s_trophies));
+
 	memset(&s_explain, 0, sizeof(s_explain));
 }
 
@@ -7241,6 +7401,23 @@ CCoopModes::DownedBleedMs(int normal)
 	// are already on their feet.  After the bell the hill's revive is over,
 	// so the ordinary bar is the honest one again.
 	return s_koth.active && !s_koth.finished ? (int)kKothReviveMs : normal;
+}
+
+int
+CCoopModes::TrophyCount(int player)
+{
+	if(player < 0 || player >= NUMPLAYERS)
+		return 0;
+	return s_trophies[player];
+}
+
+void
+CCoopModes::AwardTrophy(int player)
+{
+	if(player < 0 || player >= NUMPLAYERS)
+		return;
+	s_trophies[player]++;
+	COOP_LOG("WII coop: player %d has won %d mode(s)\n", player + 1, s_trophies[player]);
 }
 
 bool

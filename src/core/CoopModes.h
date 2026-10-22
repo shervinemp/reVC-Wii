@@ -81,9 +81,9 @@ class CVector;
 // the enter-vehicle button and that press is somebody getting in: a case
 // appears at their feet and a getaway marker a short run away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
-// them -- the case falls where it fell, anyone but the busted player can take
-// it for the next two seconds, whoever does cannot be busted for two seconds,
-// and the screen says who busted whom.  First to three takes the pot.  The
+// them -- the case falls where it fell, and after a bust it lies dead for
+// three seconds: nobody can pick it up and nobody can be pinned.  The
+// screen says who busted whom.  First to three takes the pot.  The
 // party's wall and leash stand aside for it: a pursuit nobody can outrun is
 // not a pursuit.
 //
@@ -91,23 +91,27 @@ class CVector;
 // party's own cars push it.  Two players get two goals and a 1v1, four get
 // 2v2, and three get three goals in a triangle, each player defending the
 // nearest one.  One player holds the brake in a car to start; ramming only;
-// first to three.  The brake, not the nod or the horn: the nod is the
+// first to three.  A ball that has not moved for six seconds is wedged --
+// under a car, pinned in a corner -- and goes back to the middle.  The brake,
+// not the nod or the horn: the nod is the
 // exit-vehicle button in a car, and the horn already starts the derby.  The
 // camera holds still and the pitch is built wherever the party stopped.
 //
-// The eighth is King of the Hill.  Every present player holds aim on foot, and
-// a ring is drawn on open ground near them: a street is not an arena, so the
-// ring moves to the nearest clear patch that is not a roadway.  Aim, not the
-// nod: the nod is the enter-vehicle button.  Only a player on foot inside
-// scores time; two or more contest it and nobody scores.  A player who stays in
-// a car is a spectator, not a second score.  Player-on-player damage is forced
-// on for the round whatever the friendly-fire toggle says, because a hill
-// nobody can take from anybody is not a hill.  A downed or arrested partner is
-// brought back at the body after four seconds, so a fight does not thin the
-// party out; the ordinary revive is still there for anyone who reaches them
-// sooner.  Player 1 is the mode's too: the wasted/hospital sequence is held
-// off and he comes back at the body on the same clock, with the party still in
-// the session.  Ninety seconds; most time held wins.
+// The eighth is King of the Hill.  Every present player holds aim on foot,
+// and a ring is drawn on open ground near them: a street is not an arena, so
+// the ring moves to the nearest clear patch that is not a roadway.  The hill
+// is a point at the centre of that ring, and the player nearest it holds it.
+// The hold belongs to the hill: it is lost when the hill changes hands or is
+// left empty, so the round is decided by who is holding the point when the
+// bell goes.  A player in a car is a spectator, not a second holder.  Player-
+// on-player damage is forced on for the round whatever the friendly-fire
+// toggle says, because a hill nobody can take from anybody is not a hill.  A
+// downed or arrested partner is brought back at the body after four seconds,
+// so a fight does not thin the party out; the ordinary revive is still there
+// for anyone who reaches them sooner.  Player 1 is the mode's too: the
+// wasted/hospital sequence is held off and he comes back at the body on the
+// same clock, with the party still in the session.  Ninety seconds; the
+// holder at the bell wins.
 //
 // The toy race, the dance-off, cops & robbers, Caddy football, Bloodring and
 // King of the Hill do not arm while anyone in the party is wanted: they start
@@ -233,6 +237,11 @@ public:
 	// the save leaves them out; loaded back they would be orphans nothing in the
 	// world would ever clear away.
 	static bool IsModeVehicle(const CVehicle *vehicle);
+	// Couch co-op: the session's scoreboard.  How many modes each player has
+	// won -- theirs alone, where the money is everybody's.  Counted from the
+	// moment a mode is decided, and it lasts the session.
+	static int TrophyCount(int player);
+	static void AwardTrophy(int player);
 
 	// The minigames' screen marks, called by the HUD with the other co-op
 	// ones: the headline and countdown at the top (the cop shift's streak and
