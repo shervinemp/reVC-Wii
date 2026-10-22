@@ -587,9 +587,9 @@ is that five of the eight are genre-generic and could be transplanted whole:
 the hill is a capture point, the toy race is laps around gates, the dance-off
 is a rhythm game, the football is football with the joke removed, and the cop
 shift is a chase. The two that could not be lifted into another game at all
-are the derby -- which is the Bloodring -- and the smuggling run, which needs
-a city with water and a coast. The cop shift and cops & robbers need a world
-with a police force in it.
+are the derby -- a brawl in the Bloodring's own car -- and the smuggling run,
+which needs a city with water and a coast. The cop shift and cops & robbers
+need a world with a police force in it.
 
 What no Wii game has is the combination: the Wii has co-op games and
 open-world games and never both. Mario Party gets four people onto a sofa;
