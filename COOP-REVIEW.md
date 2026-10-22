@@ -473,6 +473,56 @@ design. What they found, and what was done about it.
 - The arrest path still ends the hill, where the death path does not: the
   busted sequence is the engine's and it takes player 1 away.
 
+### The modes, played properly
+
+A critique of the eight minigames -- their objective, their fun, and what
+Vice City gives them that another game would not -- and what came out of it.
+
+- **The pot now scales with the party.** It did not: five hundred dollars
+  whether two people or four, so a four-player game was worth less for each of
+  them and a party would pick the two-player game. Two get the base, three get
+  one and a half times it, four get twice it.
+- **King of the Hill could not be taken.** Two people in the ring made it a
+  deadlock, so the only way to play was to sit on the point; the challenger's
+  best move was to stand in the ring and refuse to fight, which cost the
+  holder nothing. And the score was the *total* time held, which the first
+  arrival cannot lose -- the challenger's only way in was the four seconds a
+  knocked-down player spends on the ground. The hill is a point now, the
+  player nearest it holds it, and the hold is lost when the hill changes hands
+  or is left empty, so the bell decides.
+- **Caddy football could deadlock on a wedged ball.** Ramming only, and a
+  ball under a car is a ball nobody can free. A ball that has not moved for
+  six seconds goes back to the middle.
+- **Cops & robbers had two rules where one would do.** After a bust the case
+  now lies dead for three seconds: nobody picks it up and nobody is pinned.
+- **Winning had nothing to show for it.** The money goes into the party's one
+  wallet, so there is now a count that is the winner's alone: how many modes
+  each player has won, on the ready-up card and the result line. It lasts the
+  session, so a loaded game starts a new one.
+
+### The advantage of Vice City, honestly
+
+The advantage is the props and the places, not the mechanics. Every objective
+here -- last one running, hold the ring, chase the carrier, deliver the crate
+-- is genre-generic and would survive a transplant to any open-world game.
+What Vice City contributes is a specific toybox: the Bloodring, the Caddy (a
+golf cart used as a ball, on a golf course that is a real map), the RC Bandit
+(a remote-controlled toy you sit inside, with the driver-not-drawn gag), the
+SQUALO and the Predator for a smuggling lane across an island city, the
+Cruiser and the helicopter for the police, and six named venues that are each
+a short drive apart -- which matters, because the leash is 28 m and a small
+map is a precondition for the leash working at all.
+
+The uncomfortable part: the modes that use those props *as their mechanic* are
+the ones with a reason to be in Vice City. The modes that could be in any
+game -- the derby as "last one running", the hill as "hold the circle" -- are
+the ones that would be better if they were more Vice City. The set leans on
+rules and treats the toy as the skin, which is backwards. Caddy football gets
+it right: the object *is* the joke and the rules are nearly incidental. There
+is a mismatch there too -- the football's menu venue is the golf course, which
+is perfect, but the in-world gesture builds the pitch wherever the party
+stopped, which is a car park.
+
 ## Not covered
 
 About 100 `IsPlayer()` sites in `Ped.cpp` / `PedAI.cpp` (grep only), seat-entry logic
