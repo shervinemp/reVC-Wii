@@ -7,7 +7,7 @@ setlocal EnableExtensions
 ::   scripts\deploy-wii.bat E: assets     -> also copy the Vice City PC assets (first run)
 ::   scripts\deploy-wii.bat E: root       -> data in E:\reVC-data, app in E:\apps\reVC
 ::   scripts\deploy-wii.bat E: root assets-> first run, data in E:\reVC-data
-::   scripts\deploy-wii.bat local         -> stage everything to .\dist\reVC on disk
+::   scripts\deploy-wii.bat local         -> stage everything to .\dist\apps\reVC on disk
 
 set "REPO=%~dp0.."
 set "BUILD_DOL=%REPO%\build-wii\src\reVC.dol"
@@ -45,11 +45,16 @@ if not exist "%BUILD_DOL%" (
 )
 
 echo.
-echo [1/3] Creating %APP%
+echo [1/5] Creating %APP%
 if not exist "%APP%" mkdir "%APP%" || goto :fail
 if not exist "%DATA%" mkdir "%DATA%" || goto :fail
 
-echo [2/3] Copying boot.dol, meta.xml, icon, fonts
+:: The game looks in apps\reVC before reVC-data, so a full install left there
+:: from an earlier layout is what it would keep loading, and the files copied to
+:: reVC-data below would never be read.
+if "%ROOTMODE%"=="1" if exist "%APP%\data\GTA_VC.DAT" echo WARNING: %APP% still holds a full install, which the game prefers to %DATA%. Delete its asset folders to use the new layout.
+
+echo [2/5] Copying boot.dol, meta.xml, icon, fonts
 copy /Y "%BUILD_DOL%" "%APP%\boot.dol" >nul || goto :fail
 copy /Y "%REPO%\gamefiles\wii-hbc\meta.xml" "%APP%\meta.xml" >nul || goto :fail
 copy /Y "%REPO%\gamefiles\wii-hbc\icon.png" "%APP%\icon.png" >nul || goto :fail
@@ -59,7 +64,7 @@ if exist "%REPO%\gamefiles\wii-hbc\fonts" (
 )
 
 if /I "%ASSETS%"=="assets" (
-    echo [3/3] Copying Vice City PC assets from:
+    echo [3/5] Copying Vice City PC assets from:
     echo      "%VC_DIR%"
     echo    Press Ctrl+C now if this is not what you want.
     for %%D in (anim data models TEXT mp3 audio txd skins) do (
@@ -71,10 +76,10 @@ if /I "%ASSETS%"=="assets" (
     )
     echo    - movies skipped on purpose ^(edit this script to add them^)
 ) else (
-    echo [3/3] Assets: untouched ^(run with the word "assets" to copy them^)
+    echo [3/5] Assets: untouched ^(run with the word "assets" to copy them^)
 )
 
-echo [4/4] Overwriting with repository gamefiles ^(compat fixes, GXT, neo^)
+echo [4/5] Overwriting with repository gamefiles ^(compat fixes, GXT, neo^)
 xcopy /E /I /Y /Q "%REPO%\gamefiles\data" "%DATA%\data" >nul
 xcopy /E /I /Y /Q "%REPO%\gamefiles\models" "%DATA%\models" >nul
 xcopy /E /I /Y /Q "%REPO%\gamefiles\TEXT" "%DATA%\TEXT" >nul
