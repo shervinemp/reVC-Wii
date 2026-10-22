@@ -2212,9 +2212,15 @@ void CPad::Update(int16 pad)
 void CPad::DoCheats(void)
 {
 #ifdef DETECT_PAD_INPUT_SWITCH
-	if (IsAffectedByController)
+	if (!IsAffectedByController)
+		return;
 #endif
-		GetPad(0)->DoCheats(0);
+	// Couch co-op: every pad has its own cheat string, so a partner's
+	// controller can reach the cheats too.  The old code read pad 0's only,
+	// which made the cheats a player-1 thing on a machine that has four
+	// players in front of it.
+	for(int i = 0; i < MAX_PADS; i++)
+		GetPad(i)->DoCheats(0);
 }
 
 void CPad::DoCheats(int16 unk)

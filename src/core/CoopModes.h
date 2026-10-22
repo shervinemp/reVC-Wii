@@ -109,11 +109,22 @@ class CVector;
 // off and he comes back at the body on the same clock, with the party still in
 // the session.  Ninety seconds; most time held wins.
 //
-// The toy race, the dance-off, cops & robbers and Caddy football do not arm
-// while anyone in the party is wanted: they start from a jump, a duck or a
-// press of the nod, the things a party being chased does anyway.  The cop
-// shift and the smuggling run are about the police, and are not held back.
-// King of the Hill is a fight and does not check the wanted level either.
+// The toy race, the dance-off, cops & robbers, Caddy football, Bloodring and
+// King of the Hill do not arm while anyone in the party is wanted: they start
+// from a jump, a duck, a press of the nod, a horn or a held brake, the things
+// a party being chased does anyway.  The cop shift is held back too -- the
+// law's view of the party is that nobody starts a shift with a record -- but
+// the smuggling run is not: it is about the police, and it brings its own
+// heat.
+//
+// And while a mode is running, the party's crimes are not reported to the
+// police at all: the event system is what the games themselves generate --
+// a car through a pedestrian in the middle of a derby -- and it is what
+// brought the police to a round that was meant to be a race.  A script's own
+// crimes, an alarm or a bank robbery, are not the event system's and still
+// count.  The cop shift is the exception, because there the police are the
+// point: the takedown is the job, and anything else the party does there is a
+// crime like anywhere else.
 class CCoopModes
 {
 public:

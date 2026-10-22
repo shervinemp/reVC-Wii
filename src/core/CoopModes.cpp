@@ -249,7 +249,7 @@ DerbyState s_derby;
 
 // --- Caddy football's numbers ------------------------------------------------
 
-const float kPitchGatherRange = 24.0f;	// all cars this close to the middle
+const float kPitchGatherRange = 19.5f;	// all cars this close to the middle: on the pitch
 const float kPitchParkedSpeed = 1.5f * METERS_PER_SECOND_TO_GAME_SPEED;
 const float kPitchRadius = 14.0f;	// two-goal pitch: each goal this far out
 const float kPitchTriangleRadius = 13.0f;	// three-goal pitch: vertex radius
@@ -261,7 +261,7 @@ const float kPitchClearance = 4.0f;	// ball spot clear of the cars
 // The ring is not decoration: a ball whose centre crosses it is out, and is
 // put back at the middle.  It is the line the players can see.
 const float kPitchLeash = kPitchRingRadius;
-const uint32 kPitchHoldMs = 500;	// the brake is held this long to start
+const uint32 kPitchHoldMs = 1000;	// the brake is held this long to start
 const uint32 kPitchCountdownMs = 3000;
 const uint32 kPitchResetMs = 2000;	// after a goal, before the next one counts
 const uint32 kPitchGoalNoteMs = 1500;
@@ -2937,6 +2937,11 @@ TryStartDerby(uint32 now)
 		return;
 	if(now < s_derby.rearmAt)
 		return;
+	// The same rule the toy race, the dance-off, cops & robbers, the football
+	// and the hill keep: nobody starts a game with a record.  A derby with
+	// the police after it is a chase, not a race.
+	if(PartyWanted())
+		return;
 
 	// The party, parked in a knot: two or more of their own cars, all stopped,
 	// all within arm's length of the middle.
@@ -3759,6 +3764,11 @@ TryStartKoth(uint32 now, bool menuStart)
 	if(ModeActive())
 		return;
 	if(now < s_koth.rearmAt)
+		return;
+	// The hill is a fight, and a party with the police after it is doing
+	// something else.  The same rule the toy race, the dance-off, cops &
+	// robbers and the football keep: nobody starts a game with a record.
+	if(PartyWanted())
 		return;
 
 	CVector centre = CrewCentre();
@@ -6997,6 +7007,18 @@ CCoopModes::Update(void)
 bool
 CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 {
+	// The party is playing a game, not committing crimes.  The event system
+	// is what the modes themselves generate -- a car through a pedestrian in
+	// the middle of a derby, a shot in a fight -- and it is what brought the
+	// police to a round that was meant to be a race.  A script's own crimes,
+	// an alarm or a bank robbery, are not the event system's and still count,
+	// and the run's own heat is raised deliberately rather than by an event.
+	//
+	// The cop shift is the one mode where the police are the point, so it
+	// keeps the ordinary law: the takedown is the job, and anything else the
+	// party does there is a crime like anywhere else.
+	if(ModeActive() && !s_shift.active)
+		return true;
 	if(s_shift.suspectCar == nil && s_shift.suspectPed == nil)
 		return false;
 	if(victim != nil && (victim == s_shift.suspectCar || victim == s_shift.suspectPed))
@@ -7006,7 +7028,6 @@ CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 		return true;
 	return false;
 }
-
 CVehicle *
 CCoopModes::EscortBoat(int player, CVehicle *lead)
 {
@@ -7120,9 +7141,19 @@ CCoopModes::CameraHint(CVector &target)
 	// The cargo carrier is the thing the escort has to keep in view; without
 	// this the shared camera can stay with the lead boat while the partner
 	// carries the crate off the side of the screen.
-	if(s_run.active && s_run.carrier >= 0 && CCoop::GetPlayerPed(s_run.carrier) != nil){
-		target = PlayerCoors(s_run.carrier);
-		return true;
+	if(s_run.active){
+		if(s_run.carrier >= 0 && CCoop::GetPlayerPed(s_run.carrier) != nil){
+			target = PlayerCoors(s_run.carrier);
+			return true;
+		}
+		// Otherwise the lead boat.  The escorts are allowed eighty metres of
+		// spread -- the range at which a boat still counts as crew -- and the
+		// shared camera cannot frame that, so the view leans toward the boat
+		// everybody is trying to keep up with.
+		if(s_run.boat != nil){
+			target = s_run.boat->GetPosition();
+			return true;
+		}
 	}
 	if(!s_cnr.active || s_cnr.finished)
 		return false;

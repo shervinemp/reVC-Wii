@@ -561,12 +561,21 @@ frames, and the ordinary enter-car path is built for cars that have them. A
 wrecked toy is replaced and its racer seated again the same way; a racer who is
 down or arrested is left where they are.
 
-The toy race, the dance-off, cops & robbers and Caddy football start from a
-jump, a duck, a press of the nod, a horn or a brake, which a party with the
-police after it does anyway, so none of the four arms while anyone in the party
-is wanted.
-The cop shift and the smuggling run are about the police and are not held back.
-King of the Hill is a fight and does not check the wanted level either.
+The toy race, the dance-off, cops & robbers, Caddy football, Bloodring and King
+of the Hill start from a jump, a duck, a press of the nod, a horn or a brake,
+which a party with the police after it does anyway, so none of the six arms
+while anyone in the party is wanted. The cop shift is held back too — the
+law's view of the party is that nobody starts a shift with a record — but the
+smuggling run is not: it is about the police, and it brings its own heat.
+
+And while a mode is running the party's crimes are not reported to the police
+at all. The event system is what the games themselves generate — a car through
+a pedestrian in the middle of a derby, a shot in a fight — and it is what
+brought the police to a round that was meant to be a race. A script's own
+crimes, an alarm or a bank robbery, are not the event system's and still
+count. The cop shift is the exception, because there the police are the
+point: the takedown is the job, and anything else the party does there is a
+crime like anywhere else.
 
 The co-op page also has **START A MINIGAME**, a page of the eight modes for
 players who do not want to remember the in-world gesture. Choosing a row arms
@@ -704,15 +713,14 @@ Recorded because each was stated as a verified fact.
 ## Not done
 
 - **The minigames' arming gestures are ordinary driving buttons.** The football
-  is armed by a half-second hold of the brake with the party parked within
-  24 m; the derby by one press of the horn with the cars within 12 m. In
-  traffic that is a ready-up card nobody asked for. The gates are also
-  uneven: the shift, the toy race, the dance-off, cops & robbers and the
-  football refuse to start while the party is wanted, and the derby, the run
-  and the hill do not.
-- **Nothing clears a mode's arena of traffic or pedestrians**, and no mode
-  makes the police ignore the party, so running somebody over in the middle
-  of a round brings them.
+  is armed by a one-second hold of the brake with the party parked within
+  19.5 m — the ring — and the derby by one press of the horn with the cars
+  within 12 m. In traffic that is a ready-up card nobody asked for. It is
+  never a mode that starts by itself: the card waits for both players to
+  press A, and it goes away again on B or after eight seconds.
+- **Nothing clears a mode's arena of traffic or pedestrians**, so a mode
+  played in the middle of the city has the city in it. The police no longer
+  come for it, but a car can still drive through the ring.
 - **No partner is ever a passenger in a boat.** The automatic seat never takes
   one, for the reasons under "Riding along, and driving"; a bike's pillion rides
   without a drive-by, and a boat has no seat to ride in.
