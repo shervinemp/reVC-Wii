@@ -10,6 +10,7 @@
 #include "ModelIndices.h"
 #include "Replay.h"
 #include "Object.h"
+#include "PlayerPed.h"
 #include "World.h"
 #include "SaveBuf.h"
 
@@ -197,6 +198,29 @@ void CCranes::UpdateCranes(void)
 	}
 }
 
+// Couch co-op: whether anybody in the party is getting into this car.  The
+// crane gives up on a car somebody is climbing into -- it will not carry one
+// away with a ped still in the doorway -- and it only ever asked about
+// player 1, so a partner's car could be carried off with them in it.
+static bool
+AnyPlayerIsEnteringThisCar(CVehicle *car)
+{
+	if(car == nil)
+		return false;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if(ped == nil)
+			continue;
+		if((ped->GetPedState() == PED_ENTER_CAR
+#ifdef FIX_BUGS
+			|| ped->GetPedState() == PED_CARJACK
+#endif
+			) && ped->m_pSeekTarget == car)
+			return true;
+	}
+	return false;
+}
+
 void CCrane::Update(void)
 {
 	if (CReplay::IsPlayingBack())
@@ -241,11 +265,7 @@ void CCrane::Update(void)
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().x) > CAR_MOVING_SPEED_THRESHOLD ||
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().y) > CAR_MOVING_SPEED_THRESHOLD ||
 					Abs(m_pVehiclePickedUp->GetMoveSpeed().z) > CAR_MOVING_SPEED_THRESHOLD ||
-					(FindPlayerPed()->GetPedState() == PED_ENTER_CAR
-#ifdef FIX_BUGS
-					|| FindPlayerPed()->GetPedState() == PED_CARJACK
-#endif
-					) && FindPlayerPed()->m_pSeekTarget == m_pVehiclePickedUp) {
+					AnyPlayerIsEnteringThisCar(m_pVehiclePickedUp)) {
 					m_pVehiclePickedUp = nil;
 					m_nCraneState = IDLE;
 				}

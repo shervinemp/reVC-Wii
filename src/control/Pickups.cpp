@@ -291,6 +291,26 @@ CPickup::CanBePickedUp(CPlayerPed *player, int playerId)
 	return !cannotBePickedUp;
 }
 
+// Couch co-op: the distance from the pickup to the nearest member of the
+// party, not to player 1.  A pickup the partner took comes back once the
+// party has walked away from it; measured from player 1 it stayed gone for
+// as long as player 1 stood near the spot, and the next partner to come
+// along found an empty pavement.
+static float
+DistanceToTheParty(const CVector &pos)
+{
+	float best = 1.0e30f;
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if(ped == nil)
+			continue;
+		const float d = (ped->GetPosition() - pos).Magnitude2D();
+		if(d < best)
+			best = d;
+	}
+	return best;
+}
+
 bool
 CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 {
@@ -321,7 +341,8 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 	if (m_bRemoved) {
 		if (CTimer::GetTimeInMilliseconds() > m_nTimer) {
 			// respawn pickup if we're far enough
-			float dist = (FindPlayerCoors().x - m_vecPos.x) * (FindPlayerCoors().x - m_vecPos.x) + (FindPlayerCoors().y - m_vecPos.y) * (FindPlayerCoors().y - m_vecPos.y);
+			float dist = DistanceToTheParty(m_vecPos);
+			dist *= dist;
 			if (dist > 100.0f || m_eType == PICKUP_IN_SHOP && dist > 2.4f) {
 				m_pObject = GiveUsAPickUpObject(&m_pObject, &m_pExtraObject, -1, -1);
 				if (m_pObject) {
@@ -398,7 +419,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 				if (plrWeaponSlot != weaponType) {
 					if (CStreaming::ms_aInfoForModel[m_pObject->GetModelIndex()].m_loadState == STREAMSTATE_LOADED) {
 						if (plrWeaponSlot == WEAPONTYPE_UNARMED || (player->GetWeapon(slot).m_nAmmoTotal == 0 && !CWeaponInfo::IsWeaponSlotAmmoMergeable(slot))) {
-							if (CTimer::GetTimeInMilliseconds() - player->m_nPadDownPressedInMilliseconds < 1500) {
+							if (CTimer::GetTimeInMilliseconds() - collector->m_nPadDownPressedInMilliseconds < 1500) {
 								CPickups::PlayerOnWeaponPickup = 6;
 								isPickupTouched = false;
 							}
@@ -430,7 +451,7 @@ CPickup::Update(CPlayerPed *player, CVehicle *vehicle, int playerId)
 							}
 							if (CollectPickupBuffer == 0)
 								isPickupTouched = false;
-							if (CTimer::GetTimeInMilliseconds() - player->m_nPadDownPressedInMilliseconds < 1500)
+							if (CTimer::GetTimeInMilliseconds() - collector->m_nPadDownPressedInMilliseconds < 1500)
 								isPickupTouched = false;
 						}
 					} else

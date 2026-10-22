@@ -167,6 +167,18 @@ public:
 	float CalcSmallestDistToGarageDoorSquared(float, float);
 	bool IsAnyOtherCarTouchingGarage(CVehicle* pException);
 	bool IsStaticPlayerCarEntirelyInside();
+	// Couch co-op: the car the garage is working on, and the player in it.
+	// The garage is player 1's -- it asks for player 1's car, player 1's
+	// money and player 1's wanted level -- so a partner's own car standing
+	// in the Pay'n'Spray was not resprayed, not repaired and not even
+	// noticed, and the bomb shop fitted nothing to it.
+	CVehicle* CarToWorkOn();
+	CPed* PedInCarToWorkOn();
+	bool IsStaticCarEntirelyInside(CVehicle*);
+	// Couch co-op: the party's car at the collector's door, player 1's first,
+	// and whether every player is clear of the garage so it can close.
+	CVehicle* CarAtTheDoor();
+	bool EveryoneOutsideGarage();
 	bool IsPlayerOutsideGarage();
 	bool IsAnyCarBlockingDoor();
 	void CenterCarInGarage(CVehicle*);

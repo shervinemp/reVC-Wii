@@ -13,7 +13,13 @@ class CZoneInfo;
 class CAutomobile;
 
 enum{
-	MAX_CARS_TO_KEEP = 2,
+	// Couch co-op: one car each for the whole party.  The list is the cars
+	// the traffic system is not allowed to despawn, and it is registered
+	// from CPed::WarpPedIntoCar for any player -- so with only room for two,
+	// a party of four had two of its cars quietly turned back into traffic,
+	// and the ones that were left went missing from the street when the
+	// party walked away from them.
+	MAX_CARS_TO_KEEP = 4,
 	MAX_CAR_MODELS_IN_ARRAY = 25,
 };
 

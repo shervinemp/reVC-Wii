@@ -203,6 +203,7 @@ WiiFallbackText(const char *key)
 		{ "WII_P3O", "Player 3's controller was lost. Reconnect it and press A to rejoin." },
 		{ "WII_P4O", "Player 4's controller was lost. Reconnect it and press A to rejoin." },
 		{ "WII_CCM", "Co-op is paused until the mission is over." },
+		{ "WII_CCW", "Co-op is paused for a moment." },
 		{ "WII_TTH", "You slow down, then stop, if you get too far from the others on foot." },
 		{ "WII_CF0", "Shared camera: low." },
 		{ "WII_CF1", "Shared camera: middle." },

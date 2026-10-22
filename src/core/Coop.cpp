@@ -14,6 +14,7 @@
 #include "Pad.h"
 #include "PedIK.h"
 #include "PedPlacement.h"
+#include "Phones.h"
 #include "PlayerPed.h"
 #include "WiiPointerAim.h"
 #include "Pools.h"
@@ -353,6 +354,10 @@ const uint32 kMissionRetellMs = 20000;
 bool s_missionHeld;
 bool s_missionTold;
 uint32 s_missionTellAt;
+// The party is held for something that is not a mission: a cutscene, the
+// train, a script that points the view at something.  They are out of the
+// world for it, and they were there a moment ago, so it is worth a word.
+bool s_sceneHeld;
 
 // --- what the help box is told ------------------------------------------------
 // A line in the help box, for the few things that happen with nothing on screen
@@ -1485,6 +1490,14 @@ SpawnPartner(CPlayerPed *lead, int player)
 }
 
 // --- what stops a session ----------------------------------------------------
+// Whether the payphone has the camera: the pick-up animation, or the call
+// itself.  Both put the letterbox up, and both are over in a few seconds.
+bool
+PhoneHasTheCamera(void)
+{
+	return CPhoneInfo::bPickingUpPhone || CPhoneInfo::bDisplayingPhoneMessage;
+}
+
 // Returns nil when co-op may run, and otherwise what is in the way.
 const char *
 SessionBlocker(void)
@@ -1501,7 +1514,16 @@ SessionBlocker(void)
 		return "mission";
 	// IsCutsceneProcessing as well: it is true from the moment one starts to
 	// load, which can be a couple of seconds before it is running.
-	if(CCutsceneMgr::IsRunning() || CCutsceneMgr::IsCutsceneProcessing() || TheCamera.m_WideScreenOn)
+	//
+	// The letterbox is the camera's, not a cutscene's, and the payphone puts
+	// it up for the length of a call -- the pick-up animation and the message
+	// -- which is free-roam content a party runs into all the time.  A partner
+	// standing at the payphone while player 1 talks on it is an ordinary thing
+	// to see, and taking them out of the world for it meant they vanished and
+	// came back with nothing said.  The train's letterbox is a set piece, and
+	// that one still stands the party down.
+	if(CCutsceneMgr::IsRunning() || CCutsceneMgr::IsCutsceneProcessing() ||
+	   (TheCamera.m_WideScreenOn && !PhoneHasTheCamera()))
 		return "cutscene";
 	if(CReplay::IsPlayingBack())
 		return "replay";
@@ -2025,6 +2047,7 @@ CCoop::Init(void)
 	s_missionHeld = false;
 	s_missionTold = false;
 	s_missionTellAt = 0;
+	s_sceneHeld = false;
 	// (s_introTold is not reset: the controls are taught once per run.)
 	// A partner's choice of camera does not outlive the game it was made in: the
 	// partner it names may be a different player, or nobody, in the next.
@@ -2260,12 +2283,25 @@ CCoop::Update(void)
 				Tell("WII_CCM");
 			}
 		}
+	}else if(blocker != nil && strcmp(blocker, "cutscene") == 0){
+		// A cutscene, or something a script pointed the view at: the party is
+		// out of the world for it, and they were in it a moment ago, so it is
+		// worth a word.  The payphone is not one of these any more.
+		if(!s_sceneHeld && AnyJoined()){
+			s_sceneHeld = true;
+			Tell("WII_CCW");
+		}
 	}else if(allowed){
 		if(s_missionHeld && AnyJoined())
 			Tell("WII_CPB");
+		else if(s_sceneHeld && AnyJoined())
+			Tell("WII_CPB");
 		s_missionHeld = false;
-	}else if(strcmp(blocker, "switched off") == 0)
+		s_sceneHeld = false;
+	}else if(strcmp(blocker, "switched off") == 0){
 		s_missionHeld = false;
+		s_sceneHeld = false;
+	}
 
 	if(!ms_bRunning){
 		// Nobody comes back from a mission, a cutscene or a death owing a line about

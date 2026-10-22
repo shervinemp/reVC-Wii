@@ -30,6 +30,29 @@
 #define ROTATED_DOOR_CLOSE_SPEED (0.02f)
 #define DEFAULT_DOOR_OPEN_SPEED (0.035f)
 #define DEFAULT_DOOR_CLOSE_SPEED (0.04f)
+
+// Couch co-op: whether any player is in this vehicle, or is on their way into
+// it.  The garages take the cars inside them and delete them, and deleting a
+// car destroys whoever is riding in it -- so a partner's own car, parked in
+// the safehouse or handed in to the collector, would go from under them, and
+// a partner riding in one would go with it.
+static bool
+AnyPlayerInThisVehicle(CVehicle *pVehicle)
+{
+	if (pVehicle == nil)
+		return false;
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped == nil)
+			continue;
+		if (ped->bInVehicle && ped->m_pMyVehicle == pVehicle)
+			return true;
+		if (ped->m_carInObjective == pVehicle &&
+			(ped->m_nPedState == PED_SEEK_CAR || ped->m_nPedState == PED_ENTER_CAR || ped->m_nPedState == PED_CARJACK))
+			return true;
+	}
+	return false;
+}
 #define CRUSHER_CRANE_SPEED (0.005f)
 
 // Prices
@@ -388,37 +411,44 @@ void CGarage::Update()
 	case GARAGE_RESPRAY:
 		switch (m_eGarageState) {
 		case GS_OPENED:
-			if (IsStaticPlayerCarEntirelyInside()) {
-				if (CGarages::IsCarSprayable(FindPlayerVehicle())) {
-					if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= RESPRAY_PRICE || CGarages::RespraysAreFree) {
-						m_eGarageState = GS_CLOSING;
-						CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-						FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+			{
+				// Couch co-op: the car the garage works on is whichever of the
+				// party's is inside it and standing still, so a partner's own
+				// car is resprayed and repaired like anybody's.  With only
+				// player 1 in the world this is the car it always was.
+				CVehicle *car = CarToWorkOn();
+				if (car != nil) {
+					if (CGarages::IsCarSprayable(car)) {
+						if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= RESPRAY_PRICE || CGarages::RespraysAreFree) {
+							m_eGarageState = GS_CLOSING;
+							CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
+							FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
+						}
+						else {
+							CGarages::TriggerMessage("GA_3", -1, 4000, -1); // No more freebies. $100 to respray!
+							m_eGarageState = GS_OPENEDCONTAINSCAR;
+							DMAudio.PlayFrontEndSound(SOUND_GARAGE_NO_MONEY, 1);
+						}
 					}
 					else {
-						CGarages::TriggerMessage("GA_3", -1, 4000, -1); // No more freebies. $100 to respray!
+						CGarages::TriggerMessage("GA_1", -1, 4000, -1); // Whoa! I don't touch nothing THAT hot!
 						m_eGarageState = GS_OPENEDCONTAINSCAR;
-						DMAudio.PlayFrontEndSound(SOUND_GARAGE_NO_MONEY, 1);
+						DMAudio.PlayFrontEndSound(SOUND_GARAGE_BAD_VEHICLE, 1);
 					}
 				}
-				else {
-					CGarages::TriggerMessage("GA_1", -1, 4000, -1); // Whoa! I don't touch nothing THAT hot!
-					m_eGarageState = GS_OPENEDCONTAINSCAR;
-					DMAudio.PlayFrontEndSound(SOUND_GARAGE_BAD_VEHICLE, 1);
+				if (car != nil) {
+					if (CalcDistToGarageRectangleSquared(car->GetPosition().x, car->GetPosition().y) < SQR(DISTANCE_TO_ACTIVATE_GARAGE))
+						CWorld::CallOffChaseForArea(
+							m_fInfX - DISTANCE_TO_CALL_OFF_CHASE,
+							m_fInfY - DISTANCE_TO_CALL_OFF_CHASE,
+							m_fSupX + DISTANCE_TO_CALL_OFF_CHASE,
+							m_fSupY + DISTANCE_TO_CALL_OFF_CHASE);
 				}
-			}
-			if (FindPlayerVehicle()) {
-				if (CalcDistToGarageRectangleSquared(FindPlayerVehicle()->GetPosition().x, FindPlayerVehicle()->GetPosition().y) < SQR(DISTANCE_TO_ACTIVATE_GARAGE))
-					CWorld::CallOffChaseForArea(
-						m_fInfX - DISTANCE_TO_CALL_OFF_CHASE,
-						m_fInfY - DISTANCE_TO_CALL_OFF_CHASE,
-						m_fSupX + DISTANCE_TO_CALL_OFF_CHASE,
-						m_fSupY + DISTANCE_TO_CALL_OFF_CHASE);
 			}
 			break;
 		case GS_CLOSING:
-			if (FindPlayerVehicle())
-				ThrowCarsNearDoorOutOfGarage(FindPlayerVehicle());
+			if (CarToWorkOn())
+				ThrowCarsNearDoorOutOfGarage(CarToWorkOn());
 			m_fDoorPos = Max(0.0f, m_fDoorPos - (m_bRotatedDoor ? ROTATED_DOOR_CLOSE_SPEED : DEFAULT_DOOR_CLOSE_SPEED) * CTimer::GetTimeStep());
 			if (m_fDoorPos == 0.0f) {
 				m_eGarageState = GS_FULLYCLOSED;
@@ -428,11 +458,11 @@ void CGarage::Update()
 			}
 			UpdateDoorsHeight();
 #ifdef FIX_BUGS
-			if (FindPlayerVehicle() && FindPlayerVehicle()->IsCar())
+			if (CarToWorkOn() && CarToWorkOn()->IsCar())
 #else
-			if (FindPlayerVehicle())
+			if (CarToWorkOn())
 #endif
-				((CAutomobile*)(FindPlayerVehicle()))->m_fFireBlowUpTimer = 0.0f;
+				((CAutomobile*)(CarToWorkOn()))->m_fFireBlowUpTimer = 0.0f;
 			CWorld::CallOffChaseForArea(
 				m_fInfX - DISTANCE_TO_CALL_OFF_CHASE,
 				m_fInfY - DISTANCE_TO_CALL_OFF_CHASE,
@@ -455,41 +485,46 @@ void CGarage::Update()
 #else
 				bool bChangedColour;
 #endif
-				if (FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike())) {
-					if (FindPlayerVehicle()->m_fHealth < FREE_RESPRAY_HEALTH_THRESHOLD)
+				// Couch co-op: the car the garage is working on, held for the
+				// whole of the respray so that it cannot change half way
+				// through it.  With only player 1 in the world this is the
+				// car it always was.
+				CVehicle *car = CarToWorkOn();
+				if (car != nil && (car->IsCar() || car->IsBike())) {
+					if (car->m_fHealth < FREE_RESPRAY_HEALTH_THRESHOLD)
 						bTakeMoney = true;
-					FindPlayerVehicle()->m_fHealth = 1000.0f;
-					if (FindPlayerVehicle()->IsCar()) {
-						((CAutomobile*)(FindPlayerVehicle()))->m_fFireBlowUpTimer = 0.0f;
-						((CAutomobile*)(FindPlayerVehicle()))->Fix();
+					car->m_fHealth = 1000.0f;
+					if (car->IsCar()) {
+						((CAutomobile*)(car))->m_fFireBlowUpTimer = 0.0f;
+						((CAutomobile*)(car))->Fix();
 					}
 					else {
-						((CBike*)(FindPlayerVehicle()))->m_fFireBlowUpTimer = 0.0f;
-						((CBike*)(FindPlayerVehicle()))->Fix();
+						((CBike*)(car))->m_fFireBlowUpTimer = 0.0f;
+						((CBike*)(car))->Fix();
 					}
-					FindPlayerVehicle()->m_nDoorLock = CARLOCK_UNLOCKED;
+					car->m_nDoorLock = CARLOCK_UNLOCKED;
 					++CStats::Sprayings;
-					if (FindPlayerVehicle()->GetUp().z < 0.0f) {
-						FindPlayerVehicle()->GetUp() = -FindPlayerVehicle()->GetUp();
-						FindPlayerVehicle()->GetRight() = -FindPlayerVehicle()->GetRight();
+					if (car->GetUp().z < 0.0f) {
+						car->GetUp() = -car->GetUp();
+						car->GetRight() = -car->GetRight();
 					}
 					bChangedColour = false;
 #ifdef FIX_BUGS
-					if (!FindPlayerVehicle()->IsCar() || !((CAutomobile*)(FindPlayerVehicle()))->bFixedColour) {
+					if (!car->IsCar() || !((CAutomobile*)(car))->bFixedColour) {
 #else
-					if (!((CAutomobile*)(FindPlayerVehicle()))->bFixedColour) {
+					if (!((CAutomobile*)(car))->bFixedColour) {
 #endif
 						uint8 colour1, colour2;
 						uint16 attempt;
-						FindPlayerVehicle()->GetModelInfo()->ChooseVehicleColour(colour1, colour2);
+						car->GetModelInfo()->ChooseVehicleColour(colour1, colour2);
 						for (attempt = 0; attempt < 10; attempt++) {
-							if (colour1 != FindPlayerVehicle()->m_currentColour1 || colour2 != FindPlayerVehicle()->m_currentColour2)
+							if (colour1 != car->m_currentColour1 || colour2 != car->m_currentColour2)
 								break;
-							FindPlayerVehicle()->GetModelInfo()->ChooseVehicleColour(colour1, colour2);
+							car->GetModelInfo()->ChooseVehicleColour(colour1, colour2);
 						}
 						bChangedColour = (attempt < 10);
-						FindPlayerVehicle()->m_currentColour1 = colour1;
-						FindPlayerVehicle()->m_currentColour2 = colour2;
+						car->m_currentColour1 = colour1;
+						car->m_currentColour2 = colour2;
 						if (bChangedColour) {
 							for (int i = 0; i < NUM_PARTICLES_IN_RESPRAY; i++) {
 								CVector pos;
@@ -500,7 +535,7 @@ void CGarage::Update()
 							}
 						}
 					}
-					CenterCarInGarage(FindPlayerVehicle());
+					CenterCarInGarage(car);
 				}
 				if (bTakeMoney) {
 					if (!CGarages::RespraysAreFree) {
@@ -546,27 +581,33 @@ void CGarage::Update()
 	case GARAGE_BOMBSHOP3:
 		switch (m_eGarageState) {
 		case GS_OPENED:
-			if (IsStaticPlayerCarEntirelyInside()) {
-				if (!FindPlayerVehicle() || FindPlayerVehicle()->m_bombType) {
-					CGarages::TriggerMessage("GA_5", -1, 4000, -1); //"Your car is already fitted with a bomb"
-					m_eGarageState = GS_OPENEDCONTAINSCAR;
-					DMAudio.PlayFrontEndSound(SOUND_GARAGE_BOMB_ALREADY_SET, 1);
-					break;
+			{
+				// Couch co-op: the bomb goes on whichever of the party's cars
+				// is inside the shop, so a partner's own car is fitted like
+				// anybody's.
+				CVehicle *car = CarToWorkOn();
+				if (car != nil) {
+					if (car->m_bombType) {
+						CGarages::TriggerMessage("GA_5", -1, 4000, -1); //"Your car is already fitted with a bomb"
+						m_eGarageState = GS_OPENEDCONTAINSCAR;
+						DMAudio.PlayFrontEndSound(SOUND_GARAGE_BOMB_ALREADY_SET, 1);
+						break;
+					}
+					if (!CGarages::BombsAreFree && CWorld::Players[CWorld::PlayerInFocus].m_nMoney < BOMB_PRICE) {
+						CGarages::TriggerMessage("GA_4", -1, 4000, -1); // "Car bombs are $1000 each" - weird that the price is hardcoded in message
+						m_eGarageState = GS_OPENEDCONTAINSCAR;
+						DMAudio.PlayFrontEndSound(SOUND_GARAGE_NO_MONEY, 1);
+						break;
+					}
+					m_eGarageState = GS_CLOSING;
+					CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
+					FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
 				}
-				if (!CGarages::BombsAreFree && CWorld::Players[CWorld::PlayerInFocus].m_nMoney < BOMB_PRICE) {
-					CGarages::TriggerMessage("GA_4", -1, 4000, -1); // "Car bombs are $1000 each" - weird that the price is hardcoded in message
-					m_eGarageState = GS_OPENEDCONTAINSCAR;
-					DMAudio.PlayFrontEndSound(SOUND_GARAGE_NO_MONEY, 1);
-					break;
-				}
-				m_eGarageState = GS_CLOSING;
-				CPad::GetPad(0)->SetDisablePlayerControls(PLAYERCONTROL_GARAGE);
-				FindPlayerPed()->m_pWanted->m_bIgnoredByCops = true;
-				}
+			}
 			break;
 		case GS_CLOSING:
-			if (FindPlayerVehicle())
-				ThrowCarsNearDoorOutOfGarage(FindPlayerVehicle());
+			if (CarToWorkOn())
+				ThrowCarsNearDoorOutOfGarage(CarToWorkOn());
 			m_fDoorPos = Max(0.0f, m_fDoorPos - (m_bRotatedDoor ? ROTATED_DOOR_CLOSE_SPEED : DEFAULT_DOOR_CLOSE_SPEED) * CTimer::GetTimeStep());
 			if (m_fDoorPos == 0.0f) {
 				m_eGarageState = GS_FULLYCLOSED;
@@ -588,13 +629,17 @@ void CGarage::Update()
 					m_eGarageState = GS_OPENING;
 					if (!CGarages::BombsAreFree)
 						CWorld::Players[CWorld::PlayerInFocus].m_nMoney = Max(0, CWorld::Players[CWorld::PlayerInFocus].m_nMoney - BOMB_PRICE);
-					if (FindPlayerVehicle() && (FindPlayerVehicle()->IsCar() || FindPlayerVehicle()->IsBike())) {
+					// Couch co-op: the bomb goes on the party's car, and the
+					// player in it is the one who rigged it.  The detonator
+					// and the money stay player 1's, which is the party's.
+					CVehicle *car = CarToWorkOn();
+					if (car != nil && (car->IsCar() || car->IsBike())) {
 #if (!defined GTA_PS2 || defined FIX_BUGS)
-						FindPlayerVehicle()->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
-						FindPlayerVehicle()->m_pBombRigger = FindPlayerPed();
+						car->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
+						car->m_pBombRigger = PedInCarToWorkOn();
 #else // PS2 version contained a bug: CBike was casted to CAutomobile, but due to coincidence it didn't corrupt memory
-						((CAutomobile*)(FindPlayerVehicle()))->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
-						((CAutomobile*)(FindPlayerVehicle()))->m_pBombRigger = FindPlayerPed();
+						((CAutomobile*)(car))->m_bombType = CGarages::GetBombTypeForGarageType(m_eGarageType);
+						((CAutomobile*)(car))->m_pBombRigger = PedInCarToWorkOn();
 #endif
 						if (m_eGarageType == GARAGE_BOMBSHOP3)
 							CGarages::GivePlayerDetonator();
@@ -734,9 +779,15 @@ void CGarage::Update()
 	case GARAGE_COLLECTCARS_4:
 		switch (m_eGarageState) {
 		case GS_OPENED:
-			if (FindPlayerVehicle() && DoesCraigNeedThisCar(FindPlayerVehicle()->GetModelIndex())) {
-				m_pTarget = FindPlayerVehicle();
-				m_pTarget->RegisterReference((CEntity**)&m_pTarget);
+			{
+				// Couch co-op: the car at the door is the party's, player 1's
+				// first, so a collectible one the partner drove in is handed
+				// in like anybody's.
+				CVehicle *veh = CarAtTheDoor();
+				if (veh != nil && DoesCraigNeedThisCar(veh->GetModelIndex())) {
+					m_pTarget = veh;
+					m_pTarget->RegisterReference((CEntity**)&m_pTarget);
+				}
 			}
 			if (Abs(FindPlayerCoors().x - GetGarageCenterX()) > DISTANCE_TO_CLOSE_COLLECTCARS_GARAGE ||
 				Abs(FindPlayerCoors().y - GetGarageCenterY()) > DISTANCE_TO_CLOSE_COLLECTCARS_GARAGE) {
@@ -744,8 +795,12 @@ void CGarage::Update()
 				m_pTarget = nil;
 				break;
 			}
-			if (m_pTarget && !FindPlayerVehicle() && IsEntityEntirelyInside3D(m_pTarget, 0.0f) &&
-				!IsAnyOtherCarTouchingGarage(m_pTarget) && IsEntityEntirelyOutside(FindPlayerPed(), 2.0f)) {
+			// The car is handed in when it is inside, alone and at rest, and
+			// the party is clear of the garage.  A car somebody is riding in
+			// is not handed in: taking it away takes them with it.
+			if (m_pTarget && !FindPlayerVehicle() && !AnyPlayerInThisVehicle(m_pTarget) &&
+				IsEntityEntirelyInside3D(m_pTarget, 0.0f) &&
+				!IsAnyOtherCarTouchingGarage(m_pTarget) && EveryoneOutsideGarage()) {
 #ifdef FIX_BUGS
 				if (!m_pTarget->IsCar() ||
 					((CAutomobile*)(m_pTarget))->Damage.GetEngineStatus() <= ENGINE_STATUS_ON_FIRE &&
@@ -781,30 +836,36 @@ void CGarage::Update()
 			UpdateDoorsHeight();
 			break;
 		case GS_FULLYCLOSED:
-			if (FindPlayerVehicle() &&
-				CalcSmallestDistToGarageDoorSquared(
-					FindPlayerVehicle()->GetPosition().x,
-					FindPlayerVehicle()->GetPosition().y
+			{
+				CVehicle *veh = CarAtTheDoor();
+				if (veh != nil &&
+					CalcSmallestDistToGarageDoorSquared(
+					veh->GetPosition().x,
+					veh->GetPosition().y
 					) < SQR(DISTANCE_TO_ACTIVATE_GARAGE)) {
-				if (DoesCraigNeedThisCar(FindPlayerVehicle()->GetModelIndex())) {
-					if (FindPlayerVehicle()->VehicleCreatedBy == MISSION_VEHICLE)
-						CGarages::TriggerMessage("GA_1A", -1, 5000, -1); // Come back when you're not so busy...
-					else
-						m_eGarageState = GS_OPENING;
-				}
-				else {
-					if (HasCraigCollectedThisCar(FindPlayerVehicle()->GetModelIndex()))
-						CGarages::TriggerMessage("GA_20", -1, 5000, -1); // We got more of these than we can shift. Sorry man, no deal.
-					else if (FindPlayerSpeed().Magnitude() < MAX_SPEED_TO_SHOW_COLLECTED_MESSAGE)
-						CGarages::TriggerMessage("GA_19", -1, 5000, -1); // We're not interested in that model.
+					if (DoesCraigNeedThisCar(veh->GetModelIndex())) {
+						if (veh->VehicleCreatedBy == MISSION_VEHICLE)
+							CGarages::TriggerMessage("GA_1A", -1, 5000, -1); // Come back when you're not so busy...
+						else
+							m_eGarageState = GS_OPENING;
+					}
+					else {
+						if (HasCraigCollectedThisCar(veh->GetModelIndex()))
+							CGarages::TriggerMessage("GA_20", -1, 5000, -1); // We got more of these than we can shift. Sorry man, no deal.
+						else if (FindPlayerSpeed().Magnitude() < MAX_SPEED_TO_SHOW_COLLECTED_MESSAGE)
+							CGarages::TriggerMessage("GA_19", -1, 5000, -1); // We're not interested in that model.
+					}
 				}
 			}
 			m_pTarget = nil;
 			break;
 		case GS_OPENING:
-			if (FindPlayerVehicle() && DoesCraigNeedThisCar(FindPlayerVehicle()->GetModelIndex())) {
-				m_pTarget = FindPlayerVehicle();
-				m_pTarget->RegisterReference((CEntity**)&m_pTarget);
+			{
+				CVehicle *veh = CarAtTheDoor();
+				if (veh != nil && DoesCraigNeedThisCar(veh->GetModelIndex())) {
+					m_pTarget = veh;
+					m_pTarget->RegisterReference((CEntity**)&m_pTarget);
+				}
 			}
 			m_fDoorPos = Min(m_fDoorHeight, m_fDoorPos + (m_bRotatedDoor ? ROTATED_DOOR_OPEN_SPEED : DEFAULT_DOOR_OPEN_SPEED) * CTimer::GetTimeStep());
 			if (m_fDoorPos == m_fDoorHeight) {
@@ -1133,13 +1194,21 @@ bool CGarage::IsStaticPlayerCarEntirelyInside()
 {
 	if (!FindPlayerVehicle())
 		return false;
-	if (!FindPlayerVehicle()->IsCar() && !FindPlayerVehicle()->IsBike())
-		return false;
 	if (FindPlayerPed()->GetPedState() != PED_DRIVING)
 		return false;
 	if (FindPlayerPed()->m_objective == OBJECTIVE_LEAVE_CAR)
 		return false;
-	CVehicle* pVehicle = FindPlayerVehicle();
+	return IsStaticCarEntirelyInside(FindPlayerVehicle());
+}
+
+// Whether this vehicle is inside the garage and standing still.  The engine
+// asks this of player 1's car; couch co-op asks it of the party's.
+bool CGarage::IsStaticCarEntirelyInside(CVehicle* pVehicle)
+{
+	if (pVehicle == nil)
+		return false;
+	if (!pVehicle->IsCar() && !pVehicle->IsBike())
+		return false;
 	if (pVehicle->GetPosition().x < m_fInfX || pVehicle->GetPosition().x > m_fSupX ||
 		pVehicle->GetPosition().y < m_fInfY || pVehicle->GetPosition().y > m_fSupY)
 		return false;
@@ -1150,6 +1219,52 @@ bool CGarage::IsStaticPlayerCarEntirelyInside()
 	if (pVehicle->GetSpeed().MagnitudeSqr() > SQR(0.01f))
 		return false;
 	return IsEntityEntirelyInside3D(pVehicle, 0.0f);
+}
+
+// Couch co-op: the car the garage is working on.
+//
+// The garage is player 1's, and it asks for player 1's car throughout -- so a
+// partner's own car standing in the Pay'n'Spray was not resprayed, not
+// repaired and not even noticed: the door came down on a car the game did not
+// know was there, and the partner was told nothing.  So the garage works on
+// whichever of the party's cars is inside it and standing still, player 1's
+// first.  In the single-player case that is the car it always was.
+CVehicle* CGarage::CarToWorkOn()
+{
+	CVehicle *playerCar = FindPlayerVehicle();
+	if (playerCar != nil && FindPlayerPed()->GetPedState() == PED_DRIVING &&
+		FindPlayerPed()->m_objective != OBJECTIVE_LEAVE_CAR &&
+		IsStaticCarEntirelyInside(playerCar))
+		return playerCar;
+	for (int i = 1; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+			continue;
+		if (ped->GetPedState() != PED_DRIVING)
+			continue;
+		if (ped->m_objective == OBJECTIVE_LEAVE_CAR)
+			continue;
+		if (IsStaticCarEntirelyInside(ped->m_pMyVehicle))
+			return ped->m_pMyVehicle;
+	}
+	return nil;
+}
+
+// Couch co-op: the player sitting in the car the garage is working on.  The
+// wanted level stays player 1's -- the heat is the party's, and the law reads
+// player 1's -- but the car and the person in it are the ones the garage is
+// about.
+CPed* CGarage::PedInCarToWorkOn()
+{
+	CVehicle *veh = CarToWorkOn();
+	if (veh == nil)
+		return FindPlayerPed();
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped != nil && ped->bInVehicle && ped->m_pMyVehicle == veh)
+			return ped;
+	}
+	return FindPlayerPed();
 }
 
 bool CGarage::IsPointInsideGarage(CVector pos)
@@ -1294,12 +1409,49 @@ bool CGarage::IsAnyOtherCarTouchingGarage(CVehicle * pException)
 	return false;
 }
 
+// Couch co-op: the party's car at the collector's door, player 1's first.
+// The collector only ever asked for player 1's car, so a collectible one
+// the partner drove in was not handed in at all.
+CVehicle* CGarage::CarAtTheDoor()
+{
+	CVehicle *veh = FindPlayerVehicle();
+	if (veh != nil)
+		return veh;
+	for (int i = 1; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped == nil || !ped->bInVehicle || ped->m_pMyVehicle == nil)
+			continue;
+		return ped->m_pMyVehicle;
+	}
+	return nil;
+}
+
+// Couch co-op: whether every player is clear of the garage, so that it can
+// close on the car it is about.  The collector's rule was that player 1 was
+// outside it; a party has to be outside it.
+bool CGarage::EveryoneOutsideGarage()
+{
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped == nil)
+			continue;
+		if (!IsEntityEntirelyOutside(ped, 2.0f))
+			return false;
+	}
+	return true;
+}
+
 void CGarage::ThrowCarsNearDoorOutOfGarage(CVehicle* pException)
 {
 	uint32 i = CPools::GetVehiclePool()->GetSize();
 	while (i--) {
 		CVehicle* pVehicle = CPools::GetVehiclePool()->GetSlot(i);
 		if (!pVehicle || pVehicle == pException)
+			continue;
+		// Couch co-op: a car the party is in is not shoved away.  The garage
+		// pushes off every car touching it but the one it is working on, and
+		// the party's other car is a car somebody is sitting in.
+		if (AnyPlayerInThisVehicle(pVehicle))
 			continue;
 		if (!IsEntityTouching3D(pVehicle))
 			continue;
@@ -1911,6 +2063,13 @@ void CGarage::StoreAndRemoveCarsForThisHideout(CStoredCar* aCars, int32 nMax)
 			continue;
 		if (IsPointInsideGarage(pVehicle->GetPosition())) {
 			if (pVehicle->VehicleCreatedBy != MISSION_VEHICLE) {
+				// Couch co-op: a car the party is in, or is on their way into,
+				// is not stored and thrown away.  The hideout takes the cars
+				// inside it and deletes them, and deleting a car destroys
+				// whoever is riding in it -- so a partner's own car would go
+				// from under them at the next save.
+				if (AnyPlayerInThisVehicle(pVehicle))
+					continue;
 				if (index < Max(NUM_GARAGE_STORED_CARS, nMax) && !EntityHasASphereWayOutsideGarage(pVehicle, 1.0f))
 					aCars[index++].StoreCar(pVehicle);
 				CWorld::Players[CWorld::PlayerInFocus].CancelPlayerEnteringCars(pVehicle);
