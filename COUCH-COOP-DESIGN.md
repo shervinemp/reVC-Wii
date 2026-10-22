@@ -614,6 +614,10 @@ is a **count**: how many modes each player has won, theirs alone, shown on the
 ready-up card and on the result line. It lasts the session, so a loaded game
 starts a new one.
 
+The six modes with a winner are the matches. The cop shift and the smuggling
+run are **jobs**: they have no winner, they pay per case and per drop, and
+they win no trophy.
+
 **Cops & robbers, after a bust.** The case lies dead for three seconds:
 nobody can pick it up and nobody can be pinned. It used to be two rules --
 the busted player could not take the case back for two seconds, and whoever

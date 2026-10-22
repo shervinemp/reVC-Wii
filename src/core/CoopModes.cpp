@@ -357,11 +357,8 @@ struct KothState
 	int holder;
 
 	// Couch co-op: two players within reach of the point, not merely
-
 	// two in the ring.  That is what a contest looks like.
-
 	bool contested;
-	int inside;
 	int winner;
 };
 KothState s_koth;
@@ -510,7 +507,6 @@ struct CnRState
 	// nearest player and take it straight back: the busted player is kept off
 	// it for kCnRBustLockMs, so it is up for the others -- and the screen
 	// says who busted whom.
-	int lockPlayer;
 	uint32 lockUntil;
 	// The other half of the same fix: whoever takes the case up is out of
 	// reach of a bust for kCnRGraceMs, so the buster -- who is almost always
@@ -3819,7 +3815,6 @@ StartKothAt(uint32 now, const CVector &centre)
 	s_koth.lastScoreAt = s_koth.countdownAt;
 	s_koth.aloneSince = 0;
 	s_koth.holder = -1;
-	s_koth.inside = 0;
 	s_koth.winner = -1;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_koth.scoreMs[i] = 0;
@@ -3905,8 +3900,11 @@ RegisterKothCoronas(void)
 {
 	// Gold while the hill is open, the holder's colour while one player has
 	// it, red while it is contested: the ring itself says who is scoring.
+	// Contested is two people on the point, not two in the ring: the hill is
+	// the point, and somebody standing at the edge of it is not fighting for
+	// it.
 	CRGBA colour(255, 215, 80, 255);
-	if(s_koth.inside >= 2)
+	if(s_koth.contested)
 		colour = CRGBA(255, 90, 80, 255);
 	else if(s_koth.holder >= 0)
 		colour = kCoopColours[s_koth.holder];
@@ -3943,7 +3941,6 @@ FinishKoth(uint32 now)
 	}else
 		s_koth.winner = -1;
 	s_koth.holder = -1;
-	s_koth.inside = 0;
 	s_koth.finished = true;
 	s_koth.finishAt = now + kKothFinishMs;
 }
@@ -4032,7 +4029,6 @@ EndKoth(uint32 now, const char *why)
 	s_koth.groupAll = false;
 	s_koth.aloneSince = 0;
 	s_koth.holder = -1;
-	s_koth.inside = 0;
 	for(int i = 0; i < NUMPLAYERS; i++)
 		s_koth.downSince[i] = 0;
 	s_koth.rearmAt = now + kKothRearmMs;
@@ -4174,7 +4170,6 @@ UpdateKoth(uint32 now)
 			}
 		}
 	}
-	s_koth.inside = inside;
 
 	// A contest is two people on the point, not two people in the
 
@@ -5065,7 +5060,6 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	s_cnr.carrier = -1;
 	s_cnr.bustSince = 0;
 	s_cnr.bustBy = -1;
-	s_cnr.lockPlayer = -1;
 	s_cnr.lockUntil = 0;
 	s_cnr.graceUntil = 0;
 	s_cnr.noteAt = 0;
@@ -5299,8 +5293,7 @@ UpdateCnR(uint32 now)
 				s_cnr.score[pin]++;
 				COOP_LOG("WII coop: player %d busted player %d\n", pin + 1, busted + 1);
 				DropCase();
-				s_cnr.lockPlayer = busted;
-				// The dead time: the case lies where it fell and nobody is
+						// The dead time: the case lies where it fell and nobody is
 				// pinned while it does.
 				s_cnr.lockUntil = now + kCnRDeadMs;
 				s_cnr.graceUntil = now + kCnRDeadMs;
@@ -5475,11 +5468,20 @@ DrawWinner(int winner)
 		return;
 	}
 	char line[48];
-	if(s_resultPot > 0)
-		sprintf(line, "P%d WINS   PARTY +$%d   %d WINS", winner + 1, s_resultPot,
-			CCoopModes::TrophyCount(winner));
-	else
-		sprintf(line, "P%d WINS   %d WINS", winner + 1, CCoopModes::TrophyCount(winner));
+	// The count of modes won, which is the winner's alone: the money went into
+	// the party's one wallet, so this is the part of winning that is theirs.
+	const int wins = CCoopModes::TrophyCount(winner);
+	if(s_resultPot > 0){
+		if(wins > 1)
+			sprintf(line, "P%d WINS   PARTY +$%d   %d WINS", winner + 1, s_resultPot, wins);
+		else
+			sprintf(line, "P%d WINS   PARTY +$%d", winner + 1, s_resultPot);
+	}else{
+		if(wins > 1)
+			sprintf(line, "P%d WINS   %d WINS", winner + 1, wins);
+		else
+			sprintf(line, "P%d WINS", winner + 1);
+	}
 	DrawStatus(line, kCoopColours[winner]);
 }
 
@@ -5497,9 +5499,9 @@ DrawExplainer(uint32 now)
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
 		"EVERY RACER DRIVES THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
 		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
-		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. FIRST TO 3",
+		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. AFTER A BUST THE CASE LIES DEAD FOR THREE SECONDS. FIRST TO 3",
 		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
-		"ALL HOLD AIM ON FOOT. ONE IN THE RING SCORES. DAMAGE ON. 90 SECONDS"
+		"ALL HOLD AIM ON FOOT. THE ONE NEAREST THE MIDDLE HOLDS THE HILL. TAKE IT AND KEEP IT TIL THE BELL. 90 SECONDS. DAMAGE ON"
 	};
 
 	if(s_explain.until == 0 || now >= s_explain.until)
@@ -5639,7 +5641,7 @@ const char *const kLobbyObjectives[MENU_KOTH + 1] = {
 	"MATCH THE PROMPT BEFORE THE NEXT BEAT.",
 	"GRAB THE CASE. REACH THE GETAWAY.",
 	"PUSH THE CADDY INTO A GOAL.",
-	"ONLY ONE IN THE RING SCORES. 90 SECONDS."
+	"HOLD THE MIDDLE. WHOEVER HOLDS IT AT THE BELL WINS."
 };
 
 void
@@ -5671,7 +5673,7 @@ DrawLobby(uint32 now)
 			if(wins == 0)
 				continue;
 			char part[16];
-			sprintf(part, "%sP%d %d", written > 0 ? "   " : "", i + 1, wins);
+			sprintf(part, "%sP%d %d", written > 0 ? "   " : "WINS  ", i + 1, wins);
 			strcat(tally, part);
 			written++;
 		}
@@ -6207,7 +6209,7 @@ DrawModeMarks(uint32 now)
 		if(s_koth.finished){
 			char koth[48];
 			if(s_koth.winner >= 0){
-				sprintf(koth, "KING OF THE HILL  P%d WINS  +$%d", s_koth.winner + 1, s_resultPot);
+				sprintf(koth, "KING OF THE HILL  P%d WINS  +$%d  %us", s_koth.winner + 1, s_resultPot, s_koth.scoreMs[s_koth.winner]/1000);
 				DrawStatus(koth, kCoopColours[s_koth.winner]);
 			}else
 				DrawStatus("KING OF THE HILL  DRAW", white);
@@ -7051,7 +7053,6 @@ CCoopModes::Init(void)
 	s_cnr.winner = -1;
 	s_cnr.caseBlip = -1;
 	s_cnr.getawayBlip = -1;
-	s_cnr.lockPlayer = -1;
 	s_cnr.noteBuster = -1;
 	s_cnr.noteBusted = -1;
 

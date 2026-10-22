@@ -500,6 +500,13 @@ Vice City gives them that another game would not -- and what came out of it.
   each player has won, on the ready-up card and the result line. It lasts the
   session, so a loaded game starts a new one.
 
+  The six modes with a winner are the matches; the cop shift and the
+  smuggling run are jobs -- they have no winner, they pay per case and per
+  drop, and they win no trophy. That is a real gap rather than a design: a
+  shift that goes well and a run that delivers all three drops deserve
+  something, and the honest answer is that a job's reward is the pay and the
+  heat it brings, not a crown.
+
 ### The advantage of Vice City, honestly
 
 The advantage is the props and the places, not the mechanics. Every objective
