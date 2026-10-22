@@ -484,11 +484,11 @@ DrawCoopMarks(void)
 					const int32 ammoInClip = weapon->m_nAmmoInClip;
 					const int32 totalAmmo = weapon->m_nAmmoTotal;
 					if(ammoAmount <= 1 || ammoAmount >= 1000)
-						sprintf(sAmmo, "%d", totalAmmo);
+						snprintf(sAmmo, sizeof(sAmmo), "%d", totalAmmo);
 					else if(weaponType == WEAPONTYPE_FLAMETHROWER)
-						sprintf(sAmmo, "%d-%d", Min((totalAmmo - ammoInClip)/10, 9999), ammoInClip/10);
+						snprintf(sAmmo, sizeof(sAmmo), "%d-%d", Min((totalAmmo - ammoInClip)/10, 9999), ammoInClip/10);
 					else
-						sprintf(sAmmo, "%d-%d", Min(totalAmmo - ammoInClip, 9999), ammoInClip);
+						snprintf(sAmmo, sizeof(sAmmo), "%d-%d", Min(totalAmmo - ammoInClip, 9999), ammoInClip);
 					wchar sAmmoText[16];
 					AsciiToUnicode(sAmmo, sAmmoText);
 					CFont::SetPropOff();

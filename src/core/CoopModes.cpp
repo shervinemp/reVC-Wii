@@ -76,10 +76,18 @@ enum
 // through the front-end entity, so it comes from the screen and not from
 // anybody's feet.
 int s_countdownStep = -1;
+uint32 s_countdownBell = 0;
 
 void
 CountdownBeep(uint32 bellAt, uint32 lengthMs, uint32 now)
 {
+	// A countdown walked away from part-way leaves its last step behind, and
+	// the next countdown's first step is that same step: heard as silence.
+	// Each one is told apart by its bell.
+	if(bellAt != s_countdownBell){
+		s_countdownBell = bellAt;
+		s_countdownStep = -1;
+	}
 	if(now + lengthMs < bellAt)
 		return;
 	const uint32 remaining = bellAt > now ? bellAt - now : 0;
@@ -144,6 +152,7 @@ const uint32 kStopHoldMs = 1200;
 const uint32 kCleanupDelayMs = 1500;	// how long a resolved case lingers
 const float kGunfireRange = 60.0f;	// on duty: gunfire this near the case
 const uint32 kShiftResultMs = 2000;	// how long what a case came to stays on screen
+const int kShiftStreakBonusCap = 8;	// catches in a row that raise the pay; after this it stays put
 const int kCaseCars[] = { MI_SENTINEL, MI_STALLION, MI_VOODOO, MI_SABRE };
 
 // What the screen says about the shift's last turn, for kShiftResultMs.
@@ -1420,7 +1429,9 @@ CloseCase(uint32 now, bool caught)
 {
 	if(caught){
 		s_shift.streak++;
-		const uint32 pay = 100 + 50 * (s_shift.streak - 1);
+		// The streak is a reward and not an income that grows without end: the
+		// bonus stops at kShiftStreakBonusCap cases, which is $500 a catch.
+		const uint32 pay = 100 + 50 * (uint32)Min((int)s_shift.streak - 1, kShiftStreakBonusCap);
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += pay;
 		s_shift.resultAt = now;
 		s_shift.resultKind = SHIFT_RESULT_CAUGHT;
@@ -3113,14 +3124,16 @@ FinishDerby(uint32 now)
 		s_resultPot = PotFor(500, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: derby to player %d, +$%d\n", best + 1, s_resultPot);
-	}else{
-		// A draw, or a match nobody won a round of: the pot goes into the
-		// party's wallet and nobody gets the trophy.  It used to pay nothing
-		// at all, which is the worst answer to five minutes of shoving each
-		// other round a ring.
+	}else if(bestWins > 0){
+		// A tie: the pot goes into the party's wallet and nobody gets the
+		// trophy.  A match nobody won a round of is not a tie, it is nobody
+		// playing, and pays nothing.
 		s_resultPot = PotFor(500, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: derby draw, +$%d\n", s_resultPot);
+	}else{
+		s_resultPot = 0;
+		COOP_LOG("WII coop: derby, nobody won a round\n");
 	}
 	s_derby.finished = true;
 	s_derby.finishAt = now + 4000;
@@ -4173,13 +4186,19 @@ FinishKoth(uint32 now)
 		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u ms held)\n",
 		         best + 1, s_resultPot, s_koth.scoreMs[best]);
 	}else{
-		// A draw: the pot goes into the party's wallet and nobody gets the
-		// trophy, the same as everywhere else.  The hill used to pay nothing
-		// at all when nobody was holding the point at the bell.
+		// A tie on the clock: the pot goes into the party's wallet and nobody
+		// gets the trophy, the same as everywhere else.  A hill nobody held
+		// is not a tie, it is nobody playing, and pays nothing -- 90 seconds
+		// of standing about would otherwise be worth the whole pot.
 		s_koth.winner = -1;
-		s_resultPot = PotFor(kKothPay, PlayersPresent());
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
-		COOP_LOG("WII coop: king of the hill draw, +$%d\n", s_resultPot);
+		if(bestScore > 0){
+			s_resultPot = PotFor(kKothPay, PlayersPresent());
+			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
+			COOP_LOG("WII coop: king of the hill draw, +$%d\n", s_resultPot);
+		}else{
+			s_resultPot = 0;
+			COOP_LOG("WII coop: king of the hill, nobody held it\n");
+		}
 	}
 	s_koth.holder = -1;
 	s_koth.finished = true;
@@ -5107,15 +5126,19 @@ FinishDance(uint32 now)
 		// of dollars of hits read on screen as the two hundred it won.
 		s_resultPot = kDanceHitPay*totalHits + PotFor(kDanceWinPot, PlayersPresent());
 		COOP_LOG("WII coop: dance-off to player %d, +$%d\n", best + 1, s_resultPot);
-	}else{
-		// A draw pays the hits and the pot into the party's wallet but wins
+	}else if(totalHits > 0){
+		// A tie pays the hits and the pot into the party's wallet but wins
 		// no trophy.  The pot is what the round earned by being played; the
-		// trophy is the prize for winning it.  A round where nobody touched
-		// a chip used to pay nothing at all, which is the worst possible
-		// answer to a minute of work.
+		// trophy is the prize for winning it.  A round where nobody landed
+		// a chip is not a tie, it is nobody playing, and pays nothing: the
+		// pot would otherwise be there for anyone who armed the dance and
+		// stood still.
 		s_resultPot = kDanceHitPay*totalHits + PotFor(kDanceWinPot, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += PotFor(kDanceWinPot, PlayersPresent());
 		COOP_LOG("WII coop: dance-off draw, +$%d\n", s_resultPot);
+	}else{
+		s_resultPot = 0;
+		COOP_LOG("WII coop: dance-off, nobody hit a chip\n");
 	}
 	s_dance.finished = true;
 	s_dance.finishAt = now + kDanceLingerMs;
@@ -5427,12 +5450,21 @@ FinishCnR(uint32 now, int winner)
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: cops & robbers to player %d, +$%d\n", winner + 1, s_resultPot);
 	}else{
-		// A draw: the pot goes into the party's wallet and nobody gets the
-		// trophy.  A match that ended level used to pay nothing at all,
-		// which is the worst answer to five minutes of chasing each other.
-		s_resultPot = PotFor(kCnRPot, PlayersPresent());
-		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
-		COOP_LOG("WII coop: cops & robbers draw, +$%d\n", s_resultPot);
+		// A tie: the pot goes into the party's wallet and nobody gets the
+		// trophy.  A match nobody scored in is not a tie, it is nobody
+		// playing, and pays nothing.
+		bool anyScore = false;
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(s_cnr.score[i] > 0)
+				anyScore = true;
+		if(anyScore){
+			s_resultPot = PotFor(kCnRPot, PlayersPresent());
+			CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
+			COOP_LOG("WII coop: cops & robbers draw, +$%d\n", s_resultPot);
+		}else{
+			s_resultPot = 0;
+			COOP_LOG("WII coop: cops & robbers, nobody scored\n");
+		}
 	}
 	s_cnr.finished = true;
 	s_cnr.finishAt = now + kCnRLingerMs;
@@ -5699,7 +5731,7 @@ UpdateCnR(uint32 now)
 				ModeSound(SOUND_PED_ARREST_COP);
 				COOP_LOG("WII coop: player %d busted player %d\n", pin + 1, busted + 1);
 				DropCase();
-						// The dead time: the case lies where it fell and nobody is
+				// The dead time: the case lies where it fell and nobody is
 				// pinned while it does.
 				s_cnr.lockUntil = now + kCnRDeadMs;
 				s_cnr.graceUntil = now + kCnRDeadMs;
@@ -6643,7 +6675,7 @@ DrawModeMarks(uint32 now)
 		if(s_koth.finished){
 			char koth[48];
 			if(s_koth.winner >= 0){
-				sprintf(koth, "KING OF THE HILL  P%d WINS  +$%d  %us", s_koth.winner + 1, s_resultPot, s_koth.scoreMs[s_koth.winner]/1000);
+				snprintf(koth, sizeof(koth), "KING OF THE HILL  P%d WINS  +$%d  %us", s_koth.winner + 1, s_resultPot, s_koth.scoreMs[s_koth.winner]/1000);
 				DrawStatus(koth, kCoopColours[s_koth.winner]);
 			}else
 				DrawStatus("KING OF THE HILL  DRAW", white);
@@ -6655,14 +6687,14 @@ DrawModeMarks(uint32 now)
 			const uint32 left = s_koth.endAt > now ? (s_koth.endAt - now + 999)/1000 : 0;
 			if(s_koth.downSince[0] != 0 && now - s_koth.downSince[0] < kKothReviveMs){
 				const uint32 wait = (kKothReviveMs - (now - s_koth.downSince[0]) + 999)/1000;
-				sprintf(koth, "KING OF THE HILL  %us  P1 DOWN %us", left, wait);
+				snprintf(koth, sizeof(koth), "KING OF THE HILL  %us  P1 DOWN %us", left, wait);
 				DrawStatus(koth, CRGBA(255, 200, 90, 255));
 			}else if(s_koth.contested)
-				sprintf(koth, "KING OF THE HILL  %us  CONTESTED", left);
+				snprintf(koth, sizeof(koth), "KING OF THE HILL  %us  CONTESTED", left);
 			else if(s_koth.holder >= 0)
-				sprintf(koth, "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
+				snprintf(koth, sizeof(koth), "KING OF THE HILL  %us  P%d HOLDS", left, s_koth.holder + 1);
 			else
-				sprintf(koth, "KING OF THE HILL  %us  GET IN RING", left);
+				snprintf(koth, sizeof(koth), "KING OF THE HILL  %us  GET IN RING", left);
 			if(s_koth.downSince[0] == 0 || now - s_koth.downSince[0] >= kKothReviveMs)
 				DrawStatus(koth, s_koth.holder >= 0 ? kCoopColours[s_koth.holder] :
 				           s_koth.contested ? CRGBA(255, 120, 120, 255) : white);

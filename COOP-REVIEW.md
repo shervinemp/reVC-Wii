@@ -699,6 +699,37 @@ is a mismatch there too -- the football's menu venue is the golf course, which
 is perfect, but the in-world gesture builds the pitch wherever the party
 stopped, which is a car park.
 
+### The ninth pass: the money, and the newest code (2026-10-22)
+
+A read of everything added since the critique commit `7ed0b093` (about 670 lines), and a
+compile of all 50 changed sources with `-Wall -Wextra` at the game's own optimisation level --
+the game's build passes `-w`, which hides every warning -- keeping only the warnings that land
+on lines this branch added. Nothing uninitialised, nothing out of bounds. Nothing was run on a
+console. Fixed:
+
+- **A mode nobody played paid its whole pot.** [V] The draw branches added in the seventh pass
+  paid whenever the winner was `-1`, and `-1` is also what a zero-to-zero result looks like. King
+  of the Hill nobody held, a dance-off where no chip was hit, a derby nobody won a round of and a
+  cops & robbers match nobody scored in each paid $500 or more into the wallet: arm the hill, stand
+  still for 90 seconds, collect. A draw now has to be a tie -- somebody scored and the best score is
+  shared -- and a mode nobody played pays nothing, which the result line already says (NO WINNER).
+- **The cop shift's pay grew without end.** [V] `100 + 50 x (streak - 1)` with no ceiling, and the
+  seventh pass shortened the cases, so a long streak was an income. The bonus stops at eight
+  catches in a row, $500 a catch; the streak itself still counts.
+- **A countdown walked away from part-way made the next one's first number silent.** [V]
+  `CountdownBeep` remembered the last step it had said, and a three-second countdown begins on the
+  step the last abandoned one stopped at. Each countdown is now told apart by its bell.
+- **Hardening.** The King of the Hill status lines and the partner ammo readout were `sprintf`
+  into small buffers, which the compiler could not prove safe; they are `snprintf` now. A stray
+  seven-tab indent in the bust handler.
+
+Looked at and left alone:
+
+- A paid Predator when the boat is gone rather than wrecked (`UpdatePursuers`): the run's Predators
+  are mission vehicles, which nothing culls, and a sunk one is removed after the run has paid it.
+- `GiveDerbyLoaners` every ten seconds while a round waits for a car: `SpawnLoaner` returns when the
+  player already has one, so it does not pile up.
+
 ## Not covered
 
 About 100 `IsPlayer()` sites in `Ped.cpp` / `PedAI.cpp` (grep only), seat-entry logic

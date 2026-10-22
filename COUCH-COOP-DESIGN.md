@@ -526,7 +526,8 @@ needs, and the airport is the fallback for anything it cannot find. A venue
 that fails to find open ground is the airport, not a bad one -- the party is
 never dropped into traffic again.
 
-- the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak;
+- the **cop shift** (siren on in a crewed law car: cases, takedowns, a streak
+  that raises the pay for eight catches in a row and then holds it at $500;
   while a case is open the takedown is not a crime),
 - the **smuggling run** (player 1 at the wheel of a boat and the horn: the
   rest of the party are given boats of their own beside it; a crate each leg,
@@ -625,7 +626,11 @@ which is the worst possible answer to five minutes of shoving each other
 round a ring. Every match pays the same $500, so the size of the party is the
 only thing that decides what a game is worth. The screen says **DRAW** and the
 pot, not NO WINNER: a draw is a result, and "no winner" reads as a mode that
-went wrong. And what a mode paid is forgotten when the next one arms, so a
+went wrong. A draw has to be a tie, though: somebody scored, and the best
+score is shared. A match nobody scored in -- a hill nobody held, a dance-off
+where no chip was hit, a derby nobody won a round of -- is nobody playing, and
+pays nothing; the pot would otherwise be there for anyone who armed a mode
+and stood still. And what a mode paid is forgotten when the next one arms, so a
 mode that pays nothing -- a football abandoned because the party walked away
 from it -- cannot show the pot of the mode before it.
 
