@@ -3058,6 +3058,27 @@ FinishDerby(uint32 now)
 	s_derby.finishAt = now + 4000;
 }
 
+// A Bloodring Banger for anyone whose car is gone: between rounds, and again
+// while a round waits for somebody to find one.
+void
+GiveDerbyLoaners(void)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CVehicle *own = nil;
+		const bool inOwnCar = PlayerInDerbyCar(i, &own);
+		CVehicle *raw = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
+			ped->m_pMyVehicle : nil;
+		const bool needsLoaner = !inOwnCar || raw == nil ||
+			raw->GetStatus() == STATUS_WRECKED || raw->IsUpsideDown();
+		if(needsLoaner &&
+		   (ped->GetPosition() - s_derby.centre).Magnitude2D() <= kDerbyJoinRange + 20.0f)
+			SpawnLoaner(i);
+	}
+}
+
 void
 StartDerbyRound(uint32 now)
 {
@@ -3102,6 +3123,7 @@ StartDerbyRound(uint32 now)
 		if(somebodyHere){
 			s_derby.counting = true;
 			s_derby.countdownAt = now + kDerbyIntermissionMs;
+			GiveDerbyLoaners();
 			COOP_LOG("WII coop: derby waiting for a car\n");
 			return;
 		}
@@ -3302,20 +3324,7 @@ UpdateDerby(uint32 now)
 	}
 
 	// Intermission: a Banger for anyone whose car is gone, then another round.
-	for(int i = 0; i < NUMPLAYERS; i++){
-		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil)
-			continue;
-		CVehicle *own = nil;
-		const bool inOwnCar = PlayerInDerbyCar(i, &own);
-		CVehicle *raw = (ped->bInVehicle && ped->m_pMyVehicle != nil) ?
-			ped->m_pMyVehicle : nil;
-		const bool needsLoaner = !inOwnCar || raw == nil ||
-			raw->GetStatus() == STATUS_WRECKED || raw->IsUpsideDown();
-		if(needsLoaner &&
-		   (ped->GetPosition() - s_derby.centre).Magnitude2D() <= kDerbyJoinRange + 20.0f)
-			SpawnLoaner(i);
-	}
+	GiveDerbyLoaners();
 	s_derby.counting = true;
 	s_derby.countdownAt = now + kDerbyIntermissionMs;
 }
@@ -5125,6 +5134,36 @@ UpdateDance(uint32 now)
 			(ped->GetPosition() - s_dance.centre).Magnitude2D() <= kDanceLeaveRange;
 	}
 
+	// The reads.  Jump and duck are the pad's own pulses; the nod is a
+	// held state here, so its edge is tracked by hand.  The press is kept
+	// with its time, because where it landed on the beat is the whole game:
+	// the last press before the judgement is the attempt.
+	//
+	// The reads come first, so a press made on the very frame the beat is
+	// judged is still the press that beat is judged on.  A press made after
+	// the judgement belongs to the next beat, which is right: the chip for
+	// that beat has not come up yet, so the press was blind.
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped == nil)
+			continue;
+		CPad *pad = GetPadFromPlayer(ped);
+		const bool triangle = pad->NewState.Triangle != 0;
+		const bool triangleDown = triangle && !s_dance.triangleHeld[i];
+		s_dance.triangleHeld[i] = triangle;
+
+		if(!onFloor[i] || s_dance.prompt[i] < 0)
+			continue;
+		bool pressed = false;
+		switch(s_dance.prompt[i]){
+		case DANCE_JUMP: pressed = pad->JumpJustDown(); break;
+		case DANCE_DUCK: pressed = pad->DuckJustDown(); break;
+		default: pressed = triangleDown; break;
+		}
+		if(pressed)
+			s_dance.pressAt[i] = now;
+	}
+
 	// The judgement: a press has to land near the beat to count.  The chip
 	// came up a beat early and is judged on the beat plus the window, so a
 	// player can see the beat coming, and can be early for it or late for
@@ -5176,31 +5215,6 @@ UpdateDance(uint32 now)
 			if(onFloor[i])
 				s_dance.prompt[i] = DancePickPrompt(i);
 		}
-	}
-
-	// The reads.  Jump and duck are the pad's own pulses; the nod is a
-	// held state here, so its edge is tracked by hand.  The press is kept
-	// with its time, because where it landed on the beat is the whole game:
-	// the last press before the judgement is the attempt.
-	for(int i = 0; i < NUMPLAYERS; i++){
-		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil)
-			continue;
-		CPad *pad = GetPadFromPlayer(ped);
-		const bool triangle = pad->NewState.Triangle != 0;
-		const bool triangleDown = triangle && !s_dance.triangleHeld[i];
-		s_dance.triangleHeld[i] = triangle;
-
-		if(!onFloor[i] || s_dance.prompt[i] < 0)
-			continue;
-		bool pressed = false;
-		switch(s_dance.prompt[i]){
-		case DANCE_JUMP: pressed = pad->JumpJustDown(); break;
-		case DANCE_DUCK: pressed = pad->DuckJustDown(); break;
-		default: pressed = triangleDown; break;
-		}
-		if(pressed)
-			s_dance.pressAt[i] = now;
 	}
 
 	RegisterDanceCoronas();

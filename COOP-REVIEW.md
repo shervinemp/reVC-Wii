@@ -507,6 +507,78 @@ Vice City gives them that another game would not -- and what came out of it.
   something, and the honest answer is that a job's reward is the pay and the
   heat it brings, not a crown.
 
+### The seventh pass: five modes that were not games
+
+The critique above asked whether each mode was fun. It answered, mostly, in
+terms of the *rules* -- could the hill be taken, could the ball deadlock, was
+the pot worth playing for. Reading the code for those answers missed the
+worse problem, which is not that the rules were bad but that in five of the
+eight the rules did not decide anything. A mode whose outcome is decided by
+the game rather than by the players is a waiting room.
+
+- **The dance-off was not a rhythm game.** The chip came up on the beat and
+  stayed up until the next one, and any press of the right button in that
+  time was a hit. There was no window and no beat to land on, so the fastest
+  way to win was to hold every button down -- except that the dance is armed
+  by ducking, so a player holding duck was auto-missing a third of the
+  prompts. It also paid up to $1,660 for a minute of button pressing, three
+  to five times any other mode, and a round nobody touched paid nothing at
+  all.
+
+  The chip now comes up a beat early, a bar inside it drains towards the
+  beat, and a press has to land within a window of it that closes as the
+  tempo climbs. The press is graded -- perfect, good, early, late -- and the
+  grade is on screen for a moment, because without it a missed beat is just a
+  missed beat. The game never asks for a button the player is already
+  holding, so a mash scores nothing. The hit money is a participation fee and
+  the pot matches the other modes.
+
+  There is no music. The port's audio is the game's own stream, and there is
+  no sound effect this side of the engine that a minigame can fire on cue, so
+  the screen has to be the metronome. A rhythm game that cannot show the beat
+  is a guessing game, and that is the ceiling on this mode until the audio
+  can be had.
+- **Cops & robbers had fixed roles.** The case dropped at the carrier's feet
+  and the lock on it was global, so the busted player was the nearest player
+  by definition and took it straight back: the same player was the robber for
+  the whole match, and the other could win 3-0 without doing anything
+  interesting. The busted player is now stood off the case for six seconds
+  and the cop takes it, so the sides swap on every bust. The getaway is
+  closer (18 m), the grace longer (3 s) and the hold shorter (1.2 s), so the
+  robber's job is possible rather than arithmetic.
+- **The derby ended a match over a fumble.** Six seconds to find a loaner,
+  open a door and drive to the ring, and missing it ended the first-to-two
+  match. The round waits now. A tied match used to be won by player one --
+  the code took the first player with the best score -- and a match nobody
+  won a round of paid nobody anything; a tie is a tie, and a draw pays the
+  pot into the wallet without a trophy.
+- **The toy race hid the course.** The gates were drawn only once the race
+  was running, so the players saw the track at the word GO. They are drawn
+  from the grid now. The race was also capped at five minutes and paid
+  $300, the least of any mode: it is capped at two and a half and pays $500
+  like the rest.
+- **The cop shift had eight seconds of nothing between every case**, a
+  ninety-second chase with an unarmed suspect in it, and a bust that had to
+  be made by stopping a car doing 25 m/s within two metres of you, which was
+  not a thing anybody could do. The gap is two and a half seconds, the case
+  is forty-five, and the screen says how far off the suspect is.
+- **The smuggling run gave the escort nothing to do.** The Predators only
+  ever shot the carrier, so the other boat could sit in a corner and still
+  deliver all three drops, and a police boat that went down was worth
+  nothing. Sinking one now pays, and the screen says so. The escort bonus
+  was measured against the lead boat while the screen told the escort to
+  hold the carrier's boat, so the two numbers disagreed; it is measured
+  against the carrier now. The second police boat was spawned on one frame
+  and never retried, so it often never came at all. The crate no longer
+  dies with the boat carrying it, and the run no longer ends because the
+  skipper climbed into the other boat.
+
+Two rules came out of all of this and now apply everywhere: **a draw pays
+the pot into the party's wallet but wins no trophy** -- the money is what the
+round earned by being played, the trophy is the prize for winning it -- and
+**every match now pays the same $500**, so the party size is the only thing
+that decides what a game is worth.
+
 ### The advantage of Vice City, honestly
 
 The advantage is the props and the places, not the mechanics. Every objective

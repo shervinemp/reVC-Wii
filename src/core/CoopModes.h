@@ -18,7 +18,9 @@ class CVector;
 // players aboard and the siren on puts the party on duty.  Cases spawn a
 // suspect car out at arm's length and it drives off; stopping it, wrecking it
 // or killing its driver pays, a streak scales the pay, and a suspect that gets
-// clear of the leash is a case lost.  While a case is open the takedown is not
+// clear of the leash is a case lost.  A case runs for forty-five seconds and
+// the next one comes straight after, because a shift that is eight seconds of
+// nothing between every case is a shift nobody is waiting for.  While a case is open the takedown is not
 // a crime -- see CEventList::RegisterEvent -- so the shift does not write its
 // own wanted level.
 //
@@ -42,10 +44,13 @@ class CVector;
 // stands aside so an escort can race the lead to a crate.  Three drops are
 // planned along the coast on water path nodes, each marked by a radar blip and
 // a corona, and each unloads by holding the lead boat in the ring at rest.
-// Every drop pays (more for each boat of the crew), raises the party's wanted
-// level by one, and brings heat: a Predator, the game's own police boat, with
-// a cop at the wheel, chasing the lead boat on the same drive-to-coords
-// machinery.  Deliver all three for the cache -- an Uzi into the party's
+// Every drop pays (more for each boat of the crew -- measured against the boat
+// carrying the crate, which is the boat the escort is told to stay near),
+// raises the party's wanted level by one, and brings heat: a Predator, the
+// game's own police boat, with a cop at the wheel, chasing the lead boat on
+// the same drive-to-coords machinery.  The Predators only ever shoot the
+// carrier, so the escort's job is the police: a police boat that goes down
+// pays, and the screen says so.  Deliver all three for the cache -- an Uzi into the party's
 // arsenal.  The lead boat lost, wrecked, or left by player 1 for a moment is a
 // run over, and the party's boats are handed back: partners at their wheels
 // are taken out of the world, and come back by the usual rules.
@@ -56,11 +61,14 @@ class CVector;
 // the match.  Weapons are off for the duration, a loaner Bloodring Banger
 // appears for anyone who needs one, and the camera holds still: a derby is all
 // spinning cars, and a view that turns with one of them turns with all.
+// Between rounds the party has ten seconds to get back into a car and drive
+// to the ring, and the round waits for them rather than ending the match: a
+// first-to-two match is not lost because somebody could not find their door.
 //
 // The fourth is the toy race.  The party on foot in a knot and somebody jumps:
 // RC Bandits are placed in a grid on the spot, a ring of four gates glows
-// around them -- each driver's own next gate in their own colour -- and three
-// laps take the pot.  A wrecked toy is replaced beside its racer with the laps
+// around them from the moment the grid opens -- each driver's own next gate
+// in their own colour -- and three laps take the pot.  A wrecked toy is replaced beside its racer with the laps
 // kept, and the driver inside is not drawn, because a normal-sized ped in a
 // toy is a normal-sized ped through its roof.
 //
@@ -69,9 +77,16 @@ class CVector;
 // second to 650 milliseconds, and a prompt each -- jump, duck or the nod (not
 // the nod for a dancer with a car in reach: it would get them in), each
 // printed as the player's own controller's button, in their colour at the
-// bottom of the screen, with the action under it.  Hit the prompt before the
-// next beat or the run of hits shown under the chip starts again.  Every hit
-// pays and the best score takes the pot.  The prompts are real actions, so the dancing is the party's
+// bottom of the screen, with the action under it.  The chip comes up a beat
+// before the beat it is for and a bar inside it drains towards that beat,
+// because there is no music this side of the engine can play and a rhythm
+// game that cannot show the beat is a guessing game: the press has to land
+// within a window of the beat, and the window closes as the tempo climbs.
+// The press is graded -- perfect, good, early, late -- and the grade is under
+// the chip for a moment, which is the only thing that tells a player what
+// late means.  The game never asks for a button the player is already
+// holding, so a mash scores nothing.  Every hit pays a little and the best
+// score takes the pot.  The prompts are real actions, so the dancing is the party's
 // own bodies: the game's own dance loops are script data this side of the
 // engine cannot name.
 //
@@ -82,7 +97,11 @@ class CVector;
 // appears at their feet and a getaway marker a short run away.  Whoever grabs the case is the robber; everyone else is a cop.  Run or
 // drive it to the getaway for a point, or pin the carrier for a moment to bust
 // them -- the case falls where it fell, and after a bust it lies dead for
-// three seconds: nobody can pick it up and nobody can be pinned.  The
+// three seconds: nobody can pick it up and nobody can be pinned.  The busted
+// player is then stood off the case for six seconds, so the cop who busted
+// them takes it and the two of them have swapped sides.  The sides changing
+// with every bust is the whole point of a mode where the same two people
+// keep chasing each other.  The
 // screen says who busted whom.  First to three takes the pot.  The
 // party's wall and leash stand aside for it: a pursuit nobody can outrun is
 // not a pursuit.

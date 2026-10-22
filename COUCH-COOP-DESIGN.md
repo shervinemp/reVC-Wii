@@ -618,11 +618,34 @@ The six modes with a winner are the matches. The cop shift and the smuggling
 run are **jobs**: they have no winner, they pay per case and per drop, and
 they win no trophy.
 
+**What a draw pays.** A draw pays the pot into the party's wallet and wins no
+trophy. The money is what the round earned by being played; the trophy is the
+prize for winning it. A mode that ends level used to pay nothing at all,
+which is the worst possible answer to five minutes of shoving each other
+round a ring. Every match pays the same $500, so the size of the party is the
+only thing that decides what a game is worth.
+
 **Cops & robbers, after a bust.** The case lies dead for three seconds:
 nobody can pick it up and nobody can be pinned. It used to be two rules --
 the busted player could not take the case back for two seconds, and whoever
 took it next could not be busted for two seconds -- and two rules to remember
 in the middle of a chase is one rule too many.
+
+**Cops & robbers, the sides swap.** The case falls where the carrier was
+standing, which is where the cop who busted them is standing, so the obvious
+thing is for the cop to take it. The busted player is therefore stood off the
+case for six seconds -- longer than the dead time -- and the cop picks it up
+instead. Without that the busted player was the nearest player by definition
+and took the case straight back, which froze the roles: the same player was
+the robber for the whole match and the other one could win 3-0 without doing
+anything interesting. A mode where the same two people keep chasing each
+other needs the chase to change direction.
+
+**The derby waits.** Between rounds the party has ten seconds to get back into
+a car and drive to the ring. If somebody has not made it, the round waits:
+a first-to-two match is not lost because a door was hard to find. A tied
+match is a tie -- the old code gave it to player one -- and a match nobody won
+a round of pays nobody nothing.
 
 **Caddy football, a ball that stops.** A ball that has not moved for six
 seconds is wedged -- under a car, pinned in a corner -- and the ramming-only
@@ -634,15 +657,24 @@ mission or a cutscene, not for a rematch. The derby cuts the fire button for
 every player, not only those in it, so that nobody shoots a driver mid-match;
 its headline says "ramming only" each round. Every lane has its player's name,
 and its bar is cut into one cell for each round, point or lap. The cop shift
-shows its streak and the seconds left on the open case, then what the case came
+shows its streak and the seconds left on the open case and how far off the
+suspect is, then what the case came
 to (caught with the pay, got away, siren off). In cops & robbers the nod is held
 (a tap, or a press with a car in reach, which is somebody getting in, starts
-nothing); a bust keeps the busted player off the case for two seconds, so the
-buster does not score again at once, and whoever picks the case up cannot be
-busted for two seconds ("SAFE" on the headline), so a pair glued together
+nothing); after a bust the case lies dead for three seconds and the busted
+player is stood off it for six, so the cop takes it and the sides swap;
+whoever picks the case up cannot be
+busted for three seconds ("SAFE" on the headline), so a pair glued together
 cannot trade busts at the speed of the hold; the screen says who busted whom.
-The dance-off's beat runs from 1000 ms to 650 ms, and each chip shows the
-action as well as the button.
+The dance-off's beat runs from 1000 ms to 650 ms, each chip shows the action
+as well as the button, and the chip comes up a beat early with a bar inside it
+that drains towards the beat: there is no music this side of the engine that a
+minigame can play on cue, so the screen has to be the metronome. A press has
+to land within a window of the beat -- a fifth of the beat, which closes as
+the tempo climbs -- and the press is graded perfect, good, early or late, with
+the grade on screen for a moment. The game never asks for a button the player
+is already holding, so holding the duck down does not cost them a third of
+the prompts and a mash scores nothing.
 
 The smuggling run is player 1's: they are the skipper, because the world is
 streamed round player 1 and the whole party is held to them. A boat cannot carry
@@ -669,10 +701,19 @@ The carrier's boat gets a green radar blip and must stop in the drop ring for
 two seconds; the other boat gets the "COVER" distance and keeps the Predators
 off. A Predator is sent out from the first leg, and the police switch to
 chasing whichever boat has the crate, so the escort has a real job on every leg.
-If the carrier's boat is wrecked or left, the crate floats where it was and the
-other boat can take it. Player 1 is still the skipper -- the run ends when their
+Because the Predators only ever shoot the carrier, the escort's job *is* the
+police: a police boat that goes down pays $100, and the headline says "POLICE
+DOWN" for a moment. The crew bonus is measured against the boat carrying the
+crate -- the boat the escort is told to stay near -- and not against the lead
+boat, which used to make the screen and the pay disagree about whether the
+escort was doing its job.
+If the carrier's boat is wrecked or left, the crate goes back to where it was
+planned, which is water, rather than staying with the wreck where the other
+boat cannot reach it. Player 1 is still the skipper -- the run ends when their
 lead boat is lost or they leave it -- but the main job changes hands each leg
-depending on who wins the crate. The party's boats can ram or shoot the police
+depending on who wins the crate. The run follows the skipper: it used to be
+tied to the boat it started in, so climbing into the other boat to fetch the
+crate ended the run five seconds later. The party's boats can ram or shoot the police
 like any other boat. The run ends when the lead boat is lost or wrecked, when
 player 1 is out of it for five seconds, or after the third drop, and then the
 boats are handed back: partners at their wheels are taken out of the world (as a
