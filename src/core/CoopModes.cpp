@@ -7993,9 +7993,11 @@ CCoopModes::DrawHud(void)
 		// they are on once it is more than a couple -- and, for a moment after
 		// the beat, the grade.  The grade is the only thing that tells a
 		// player whether the press was early or late, and without it a
-		// missed beat is just a missed beat.
+		// missed beat is just a missed beat.  It does not stay up long: the
+		// run of hits is the reward, and it was being crowded out by the
+		// feedback that teaches.
 		const char *gradeText = nil;
-		if(now - s_dance.gradeAt[i] < 600){
+		if(now - s_dance.gradeAt[i] < 350){
 			switch(s_dance.grade[i]){
 			case DANCE_GRADE_PERFECT: gradeText = "PERFECT"; break;
 			case DANCE_GRADE_GOOD: gradeText = "GOOD"; break;
