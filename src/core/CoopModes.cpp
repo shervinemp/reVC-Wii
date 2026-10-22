@@ -70,9 +70,9 @@ enum
 // --- the cop shift's numbers -------------------------------------------------
 
 const uint32 kShiftStartDelayMs = 2000;	// beat after the siren goes on
-const uint32 kCaseCooldownMs = 4000;	// between cases
+const uint32 kCaseCooldownMs = 1000;	// between cases
 const uint32 kShiftRearmMs = 10000;	// after a shift, before the siren arms again
-const uint32 kCaseTimeoutMs = 90000;	// a case older than this got away
+const uint32 kCaseTimeoutMs = 45000;	// a case older than this got away
 const float kCaseLeash = 250.0f;	// ...as did one further than this
 const float kSpawnDistance = 90.0f;	// how far out a case starts
 const uint32 kRetargetMs = 5000;	// routine re-flee interval
@@ -84,9 +84,9 @@ const float kStopRange = 12.0f;		// "cornered" needs a player this close
 // CarCtrl.h), so they are written as a number of metres per second times
 // METERS_PER_SECOND_TO_GAME_SPEED.  A suspect at cruise is about 0.42; "held
 // still" is a few metres per second at the most.
-const float kStopSpeed = 2.0f * METERS_PER_SECOND_TO_GAME_SPEED;
-const uint32 kStopHoldMs = 2000;
-const uint32 kCleanupDelayMs = 4000;	// how long a resolved case lingers
+const float kStopSpeed = 5.0f * METERS_PER_SECOND_TO_GAME_SPEED;
+const uint32 kStopHoldMs = 1200;
+const uint32 kCleanupDelayMs = 1500;	// how long a resolved case lingers
 const float kGunfireRange = 60.0f;	// on duty: gunfire this near the case
 const uint32 kShiftResultMs = 2000;	// how long what a case came to stays on screen
 const int kCaseCars[] = { MI_SENTINEL, MI_STALLION, MI_VOODOO, MI_SABRE };
@@ -130,6 +130,7 @@ const uint32 kRunResultMs = 4000;
 const float kEscortRange = 80.0f;	// a partner's boat this near the lead's is the crew
 const float kEscortGap = 14.0f;		// an escort appears this far to the side of the lead boat...
 const float kEscortBack = 8.0f;		// ...and this far astern, a boat length more for each partner
+const int kPursuerPay = 100;		// for a police boat sunk: the escort's pay
 const int kDropPay = 100;
 const int kEscortPay = 50;		// on top of it, for each boat of the crew at a drop
 
@@ -182,6 +183,7 @@ struct RunState
 	int leg;
 	CVector dropPos[kDrops];
 	CVector cargoPos[kDrops];	// where this leg's cargo is waiting
+	CVector cargoPlan[kDrops];	// where it was planned to be, if the carrier's boat is lost
 	CVector drop;
 	int32 blip;
 	int32 cargoBlip;		// cargo waiting: the yellow coordinate blip
@@ -190,11 +192,14 @@ struct RunState
 	bool cargoPlanned;		// this leg's crate spot has been worked out
 	bool firstHeat;			// the first Predator has been sent out
 	bool pursuerSent[2];		// this slot has had its one Predator
+	bool pursuerPaid[2];		// this slot's Predator has been paid for
+	CVector pursuerPos[2];		// where it was last seen
 	bool gunGiven[NUMPLAYERS];	// the cover kit has been handed out this run
 	int carrier;			// player whose boat is carrying the cargo, or -1
 	int32 unloadBoat;	// pool index of the boat the timer belongs to
 	uint32 unloadSince;
 	uint32 crewLostAt;
+	uint32 policeDownAt;	// a police boat went down: say so for a moment
 	uint32 resultAt;
 	int resultKind;		// 0 none, 1 delivered, 2 lost
 	uint32 nextRetargetAt;
@@ -217,8 +222,8 @@ const float kDerbyJoinRange = 24.0f;	// cars this close to the middle at the bel
 const uint32 kDerbyCountdownMs = 3000;
 const uint32 kDerbyOutGraceMs = 3000;	// outside the ring this long = out
 const uint32 kDerbyFootGraceMs = 5000;	// out of the car this long = out
-const uint32 kDerbyIntermissionMs = 6000;
-const uint32 kDerbyRoundCapMs = 180000;	// a round that will not end
+const uint32 kDerbyIntermissionMs = 10000;
+const uint32 kDerbyRoundCapMs = 90000;	// a round that will not end
 const uint32 kDerbyMatchCapMs = 300000;	// a match that will not end either
 const uint32 kDerbyRearmMs = 10000;
 const int kDerbyWinsNeeded = 2;
@@ -376,10 +381,10 @@ const uint32 kRcGridHoldMs = 2000;	// seated and still this long...
 const uint32 kRcCountdownMs = 3000;	// ...then the lights
 const uint32 kRcJumpWindowMs = 1500;	// two or more jump together to arm it
 const uint32 kRcGridTimeoutMs = 30000;
-const uint32 kRcMatchCapMs = 300000;	// a race that will not end
+const uint32 kRcMatchCapMs = 150000;	// a race that will not end
 const uint32 kRcLingerMs = 4000;
 const uint32 kRcRearmMs = 10000;
-const int kRcPot = 300;
+const int kRcPot = 500;
 
 // The toy race: RC Bandits placed in a grid wherever the party jumped, a ring
 // of four gates, three laps.
@@ -419,8 +424,16 @@ const uint32 kDanceRearmMs = 10000;
 const uint32 kDanceLingerMs = 4000;
 const uint32 kDanceBeatSlowMs = 1000;	// the tempo climbs...
 const uint32 kDanceBeatFastMs = 650;	// ...to here by the time the round ends
-const int kDanceHitPay = 10;
-const int kDanceWinPot = 200;
+// The window a press has to land in to count.  The old rule was that any
+// press between one chip and the next was a hit, which made the dance-off a
+// reaction test wearing a rhythm game's clothes -- and a reaction test that
+// paid three times as much as any other mode.  A beat you can be early for
+// and a beat you can be late for is what makes it a game.
+const float kDanceWindowScale = 0.22f;	// the window, as a share of the beat
+const uint32 kDanceWindowMinMs = 90;
+const uint32 kDanceWindowMaxMs = 240;
+const int kDanceHitPay = 2;		// the hit money is a participation fee, not a prize
+const int kDanceWinPot = 500;		// the same as the other modes' pots
 
 enum eDancePrompt
 {
@@ -428,6 +441,16 @@ enum eDancePrompt
 	DANCE_DUCK,
 	DANCE_TWO,
 	DANCE_PROMPTS
+};
+
+// How a press landed on the beat.
+enum eDanceGrade
+{
+	DANCE_GRADE_NONE,
+	DANCE_GRADE_GOOD,
+	DANCE_GRADE_PERFECT,
+	DANCE_GRADE_EARLY,
+	DANCE_GRADE_LATE
 };
 
 // The dance-off: the party bobbing on a spot to a beat that keeps climbing.
@@ -439,7 +462,10 @@ struct DanceState
 	bool active;
 	bool finished;
 	uint32 startAt;
-	uint32 beatAt;
+	uint32 beatAt;		// the nominal time of the beat the chip is for
+	uint32 issueAt;		// when the next chip comes up
+	uint32 judgeAt;		// when the chip is judged: the beat plus the window
+	uint32 shownAt;		// when this chip came up: the beat bar is drawn from it
 	uint32 finishAt;
 	uint32 rearmAt;
 	uint32 lastDuck[NUMPLAYERS];
@@ -447,6 +473,9 @@ struct DanceState
 	CVector ring[kDanceRingMarks];
 	int prompt[NUMPLAYERS];
 	bool promptHit[NUMPLAYERS];
+	uint32 pressAt[NUMPLAYERS];	// when the prompted button was last pressed
+	int grade[NUMPLAYERS];
+	uint32 gradeAt[NUMPLAYERS];
 	uint32 hitFlash[NUMPLAYERS];
 	uint32 missFlash[NUMPLAYERS];
 	int score[NUMPLAYERS];
@@ -459,14 +488,14 @@ DanceState s_dance;
 // --- cops & robbers' numbers -------------------------------------------------
 
 const float kCnRGatherRange = 12.0f;	// the knot that arms it
-const float kCnRGetawayDist = 24.0f;	// the getaway marker from the middle
+const float kCnRGetawayDist = 18.0f;	// the getaway marker from the middle
 const float kCnRGrabRange = 2.5f;	// on foot...
 const float kCnRGrabRangeCar = 4.5f;	// ...and from a car
 const float kCnRDeliverRange = 4.5f;
 const int kCnRRingMarks = 12;		// the green mission ring round the getaway
 const float kCnRBustRange = 5.0f;
-const uint32 kCnRBustHoldMs = 1500;
-const uint32 kCnRGraceMs = 2000;	// whoever picks the case up cannot be busted for this long
+const uint32 kCnRBustHoldMs = 1200;
+const uint32 kCnRGraceMs = 3000;	// whoever picks the case up cannot be busted for this long
 // Couch co-op: after a bust the case lies dead for this long -- nobody can
 // pick it up and nobody can be pinned.  The old rules were two of them: the
 // busted player could not take the case back for two seconds, and whoever
@@ -474,6 +503,14 @@ const uint32 kCnRGraceMs = 2000;	// whoever picks the case up cannot be busted f
 // the middle of a chase is one rule too many, and the first of them had the
 // busted player straight back on the case on the next frame.
 const uint32 kCnRDeadMs = 3000;
+// And the busted player is kept off the case for longer than that.  The dead
+// time only stops anybody taking it for three seconds; after that the case
+// lies at the carrier's feet, where the cop who busted them is standing --
+// so the cop takes it, and the two of them have swapped sides.  Without this
+// the busted player was the nearest player by definition and took the case
+// straight back, and the same two roles stayed the same two roles for the
+// whole match.
+const uint32 kCnRBustLockMs = 6000;
 const uint32 kCnRHoldMs = 600;		// the nod is held this long to start a match, not tapped
 const uint32 kCnRNoteMs = 2000;		// "P3 BUSTED P1" stays on screen this long
 const float kCnRArena = 34.0f;		// beyond this the case comes back
@@ -482,7 +519,7 @@ const int kCnRWinScore = 3;
 const uint32 kCnRCapMs = 300000;
 const uint32 kCnRLingerMs = 4000;
 const uint32 kCnRRearmMs = 12000;
-const int kCnRPot = 400;
+const int kCnRPot = 500;
 
 // Cops & robbers: the case is a position, not an object.  The briefcase model
 // would need creating, carrying and attaching, and the corona-and-blip the
@@ -508,6 +545,11 @@ struct CnRState
 	// it for kCnRBustLockMs, so it is up for the others -- and the screen
 	// says who busted whom.
 	uint32 lockUntil;
+	// The busted player, and only the busted player, is kept off the case
+	// after the dead time.  This is what makes the roles swap: the cop who
+	// busted the carrier is standing on the case, the carrier is stood off
+	// it, and the next carrier is the cop.
+	uint32 bustedUntil[NUMPLAYERS];
 	// The other half of the same fix: whoever takes the case up is out of
 	// reach of a bust for kCnRGraceMs, so the buster -- who is almost always
 	// the one who picks it up -- is not busted by the player they just busted
@@ -1534,8 +1576,17 @@ PartnerBoat(int player, CVehicle *lead)
 CVehicle *
 BoatOfPlayer(int player, CVehicle *lead)
 {
-	if(player == 0)
+	if(player == 0){
+		// The skipper's own boat, if they are driving one.  The run follows
+		// its skipper, so the crate is in the boat they are in and not in
+		// the boat they started in.
+		CPlayerPed *ped = CCoop::GetPlayerPed(0);
+		if(ped != nil && !ped->DyingOrDead() && ped->bInVehicle &&
+		   ped->m_pMyVehicle != nil && ped->m_pMyVehicle->IsBoat() &&
+		   ped->m_pMyVehicle->GetStatus() != STATUS_WRECKED)
+			return ped->m_pMyVehicle;
 		return lead;
+	}
 	return PartnerBoat(player, lead);
 }
 
@@ -1992,9 +2043,34 @@ UpdatePursuers(uint32 now, CVehicle *boat)
 	for(int i = 0; i < 2; i++){
 		CVehicle *predator = s_run.pursuer[i];
 		if(predator == nil || predator->GetStatus() == STATUS_WRECKED){
+			// A police boat sunk.  The escort's job is the police: the
+			// Predators only ever shot the carrier, so the other boat could
+			// sit in a corner and still deliver all three drops, and a
+			// Predator that went down was worth nothing at all.  The money
+			// is the party's; the log says who was nearest.
+			if(s_run.pursuerSent[i] && !s_run.pursuerPaid[i]){
+				s_run.pursuerPaid[i] = true;
+				int shooter = -1;
+				float bestDist = 0.0f;
+				for(int p = 0; p < NUMPLAYERS; p++){
+					CPlayerPed *ped = CCoop::GetPlayerPed(p);
+					if(ped == nil || ped->DyingOrDead())
+						continue;
+					const float dist = (PlayerCoors(p) - s_run.pursuerPos[i]).Magnitude2D();
+					if(shooter < 0 || dist < bestDist){
+						shooter = p;
+						bestDist = dist;
+					}
+				}
+				CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kPursuerPay;
+				s_run.policeDownAt = now;
+				COOP_LOG("WII coop: player %d sank a police boat, +$%d\n",
+					shooter + 1, kPursuerPay);
+			}
 			ClearPursuerBlip(i);
 			continue;
 		}
+		s_run.pursuerPos[i] = predator->GetPosition();
 		if(retarget)
 			DrivePursuer(i, now, boat);
 		FirePursuer(i, now, boat);
@@ -2054,14 +2130,17 @@ PlanCargoForLeg(CVehicle *boat)
 	CVector planned;
 	if(FindWaterNodeNear(candidate, kCargoSearch, planned) &&
 	   (planned - drop).Magnitude2D() >= kCargoMinFromDrop){
+		s_run.cargoPlan[s_run.leg] = planned;
 		s_run.cargoPos[s_run.leg] = planned;
 		return;
 	}
 	if(FindWaterNodeNear(drop - dir*kCargoDistance, kCargoSearch, planned) &&
 	   (planned - drop).Magnitude2D() >= kCargoMinFromDrop){
+		s_run.cargoPlan[s_run.leg] = planned;
 		s_run.cargoPos[s_run.leg] = planned;
 		return;
 	}
+	s_run.cargoPlan[s_run.leg] = drop;
 	s_run.cargoPos[s_run.leg] = drop;
 }
 
@@ -2184,7 +2263,17 @@ void
 CompleteDrop(uint32 now, CVehicle *boat)
 {
 	// The pay is the party's, and the boats that kept up are what earn it.
-	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDropPay + kEscortPay*CountEscorts(boat);
+	//
+	// The escort is measured against the boat carrying the crate, because
+	// that is the boat the escort's job is about -- and it is the boat the
+	// screen tells the escort to stay near.  It used to be measured against
+	// the lead boat, so the two numbers disagreed: the screen said "cover,
+	// you are 120 metres off" while the pay said "you are 20 metres off,
+	// here is your fifty dollars".
+	CVehicle *crewBoat = s_run.carrier >= 0 ? BoatOfPlayer(s_run.carrier, boat) : nil;
+	if(crewBoat == nil)
+		crewBoat = boat;
+	CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDropPay + kEscortPay*CountEscorts(crewBoat);
 	s_run.carrier = -1;
 	s_run.unloadBoat = -1;
 	ClearObjectiveMarker();
@@ -2216,12 +2305,10 @@ CompleteDrop(uint32 now, CVehicle *boat)
 	// is not replaced if the escort put it down; the pair is the run's heat,
 	// not an endless supply.
 	//
-	// The second Predator, in the second slot.  The index used to be the leg
-	// that had just finished -- which was the slot the first Predator had
-	// already taken -- so the second boat only ever turned up for the last
-	// drop, a whole leg late.
-	if(s_run.leg == 1)
-		SpawnPursuer(now, boat, 1);
+	// The second Predator is not spawned here.  It used to be, on the one
+	// frame the second drop began, and if the model was not loaded or there
+	// was no water near the boat it never came at all.  The run asks for it
+	// every frame until it turns up.
 }
 
 void
@@ -2251,8 +2338,14 @@ UpdateRun(uint32 now)
 	}
 
 	CPlayerPed *skipper = CCoop::GetPlayerPed(0);
-	if(skipper == nil || skipper->DyingOrDead() || skipper->m_nPedState == PED_ARRESTED ||
-	   !skipper->bInVehicle || skipper->m_pMyVehicle != boat){
+	// The skipper has to be alive and in a boat; which boat is their own.
+	// The run follows the skipper.  It used to be tied to the boat the run
+	// started in, so climbing into the other boat -- the most natural thing
+	// in the world to do when the crate is in it -- left the skipper out of
+	// the run, and the run over five seconds later.
+	const bool skipperAshore = skipper == nil || skipper->DyingOrDead() ||
+		skipper->m_nPedState == PED_ARRESTED || !skipper->bInVehicle;
+	if(skipperAshore){
 		if(s_run.crewLostAt == 0){
 			s_run.crewLostAt = now;
 		}else if(now - s_run.crewLostAt >= kCrewGraceMs){
@@ -2276,6 +2369,14 @@ UpdateRun(uint32 now)
 			s_run.firstHeat = true;
 	}
 
+	// The second Predator, from the second drop onwards.  It used to be
+	// spawned on the one frame the second drop began: if the model was not
+	// loaded yet, or there was no water near the boat, the boat never came
+	// and the run went on without it for the rest of the way.  It is asked
+	// for every frame until it turns up.
+	if(s_run.leg >= 1)
+		SpawnPursuer(now, boat, 1);
+
 	if(!s_run.cargoPlanned){
 		PlanCargoForLeg(boat);
 		s_run.cargoPlanned = true;
@@ -2292,6 +2393,11 @@ UpdateRun(uint32 now)
 			s_run.carrier = -1;
 			s_run.unloadSince = 0;
 			s_run.unloadBoat = -1;
+			// The crate goes back to where it was planned, which is water,
+			// and not to where the boat happened to die, which might be a
+			// beach.  It used to stay with the wreck, where the other boat
+			// could not reach it and the run could not end.
+			s_run.cargoPos[s_run.leg] = s_run.cargoPlan[s_run.leg];
 			ClearObjectiveMarker();
 			ClearCargoMarker();
 		}else{
@@ -2921,17 +3027,32 @@ FinishDerby(uint32 now)
 {
 	int best = -1;
 	int bestWins = 0;
+	int tied = 0;
 	for(int i = 0; i < NUMPLAYERS; i++)
 		if(s_derby.roundWins[i] > bestWins){
 			bestWins = s_derby.roundWins[i];
 			best = i;
-		}
+			tied = 1;
+		}else if(s_derby.roundWins[i] == bestWins && bestWins > 0)
+			tied++;
+	// A tie is a tie.  The old code took the first player with the best
+	// score, so a match that ended level was won by whoever was player one.
+	if(tied > 1)
+		best = -1;
 	if(best >= 0){
 		s_derby.matchWinner = best;
 		CCoopModes::AwardTrophy(best);
 		s_resultPot = PotFor(500, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
-		COOP_LOG("WII coop: derby to player %d, +$500\n", best + 1);
+		COOP_LOG("WII coop: derby to player %d, +$%d\n", best + 1, s_resultPot);
+	}else{
+		// A draw, or a match nobody won a round of: the pot goes into the
+		// party's wallet and nobody gets the trophy.  It used to pay nothing
+		// at all, which is the worst answer to five minutes of shoving each
+		// other round a ring.
+		s_resultPot = PotFor(500, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
+		COOP_LOG("WII coop: derby draw, +$%d\n", s_resultPot);
 	}
 	s_derby.finished = true;
 	s_derby.finishAt = now + 4000;
@@ -2968,6 +3089,22 @@ StartDerbyRound(uint32 now)
 		if(s_derby.running[i])
 			running++;
 	if(running < 2){
+		// Nobody is in a car yet.  That is not the end of the match: it is
+		// a player who has not got back into one after the last round, and
+		// the old rule ended a first-to-two match over it -- a car to find,
+		// a door to open and a drive to the ring in six seconds.  The round
+		// waits instead, and the match only ends when there is nobody left
+		// to wait for.
+		bool somebodyHere = false;
+		for(int i = 0; i < NUMPLAYERS; i++)
+			if(CCoop::GetPlayerPed(i) != nil)
+				somebodyHere = true;
+		if(somebodyHere){
+			s_derby.counting = true;
+			s_derby.countdownAt = now + kDerbyIntermissionMs;
+			COOP_LOG("WII coop: derby waiting for a car\n");
+			return;
+		}
 		// Nobody to race; the match goes to whoever has wins.
 		FinishDerby(now);
 		return;
@@ -3152,7 +3289,7 @@ UpdateDerby(uint32 now)
 	if(alive == 1 && survivor >= 0){
 		s_derby.roundWins[survivor]++;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 150;
-		COOP_LOG("WII coop: derby round to player %d\n", survivor + 1);
+		COOP_LOG("WII coop: derby round to player %d, $150 to the party\n", survivor + 1);
 	}
 
 	int bestWins = 0;
@@ -4553,6 +4690,13 @@ UpdateRc(uint32 now)
 	if(s_rc.grid){
 		// The grid fills as the model arrives; the lights come down once two
 		// or more are seated and still.
+		//
+		// The gates are drawn from the grid onwards.  They used to be drawn
+		// only once the race was under way, which meant the course appeared
+		// at the word GO: the players had the toys seated, the lights
+		// counted down, and the first thing they saw of the track was the
+		// first corner.
+		RegisterRcCoronas();
 		int seated = 0;
 		bool moving = false;
 		for(int i = 0; i < NUMPLAYERS; i++){
@@ -4590,6 +4734,7 @@ UpdateRc(uint32 now)
 	}
 
 	if(s_rc.counting){
+		RegisterRcCoronas();
 		if(now < s_rc.countdownAt)
 			return;
 		s_rc.counting = false;
@@ -4730,6 +4875,59 @@ DanceBeatInterval(uint32 now)
 	return (uint32)(slow + (fast - slow)*progress);
 }
 
+// How wide the window is on this beat.  It is a share of the beat, so the
+// window closes as the tempo climbs: the same beat is harder to land on
+// when it comes round twice as fast.
+uint32
+DanceWindow(uint32 interval)
+{
+	const float scaled = (float)interval*kDanceWindowScale;
+	if(scaled < (float)kDanceWindowMinMs)
+		return kDanceWindowMinMs;
+	if(scaled > (float)kDanceWindowMaxMs)
+		return kDanceWindowMaxMs;
+	return (uint32)scaled;
+}
+
+// A prompt the player can answer.  Never ask for a button they are already
+// holding: a button that is down has no edge left to give, so the prompt
+// would be a miss the player could not have avoided -- and the dance is
+// armed by ducking, which is one of the three.  A player holding all three
+// gets no prompt at all, which is the point: the mash does not score.
+int
+DancePickPrompt(int player)
+{
+	CPlayerPed *ped = CCoop::GetPlayerPed(player);
+	if(ped == nil)
+		return -1;
+	CPad *pad = GetPadFromPlayer(ped);
+	if(pad == nil)
+		return -1;
+	bool free[DANCE_PROMPTS];
+	free[DANCE_JUMP] = pad->NewState.Square == 0;
+	free[DANCE_DUCK] = pad->NewState.LeftShock == 0;
+	free[DANCE_TWO] = pad->NewState.Triangle == 0;
+	// The nod is also the enter-vehicle button.  A dancer with a car in
+	// reach is given jump or duck instead, or the prompt would walk them
+	// off the floor and into it.
+	if(free[DANCE_TWO] && VehicleInReach(ped))
+		free[DANCE_TWO] = false;
+	int count = 0;
+	for(int i = 0; i < DANCE_PROMPTS; i++)
+		if(free[i])
+			count++;
+	if(count == 0)
+		return -1;
+	int pick = CGeneral::GetRandomNumberInRange(0, count - 1);
+	for(int i = 0; i < DANCE_PROMPTS; i++)
+		if(free[i]){
+			if(pick == 0)
+				return i;
+			pick--;
+		}
+	return -1;
+}
+
 // The stage: a ring in the four players' colours, the same colours the
 // prompts come up in.
 void
@@ -4752,6 +4950,10 @@ EndDance(uint32 now, const char *why)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_dance.prompt[i] = -1;
 		s_dance.promptHit[i] = false;
+		s_dance.pressAt[i] = 0;
+		s_dance.score[i] = 0;
+		s_dance.grade[i] = DANCE_GRADE_NONE;
+		s_dance.lastDuck[i] = 0;
 		// Whether the nod was down when the round ended.  It is read to work
 		// out whether the nod has just gone down, and it was only ever written
 		// while a round was running -- so it kept the last round's value, and
@@ -4795,9 +4997,14 @@ FinishDance(uint32 now)
 		s_resultPot = kDanceHitPay*totalHits + PotFor(kDanceWinPot, PlayersPresent());
 		COOP_LOG("WII coop: dance-off to player %d, +$%d\n", best + 1, s_resultPot);
 	}else{
-		// A draw pays the hits and nothing else, and says so.
-		s_resultPot = kDanceHitPay*totalHits;
-		COOP_LOG("WII coop: dance-off draw\n");
+		// A draw pays the hits and the pot into the party's wallet but wins
+		// no trophy.  The pot is what the round earned by being played; the
+		// trophy is the prize for winning it.  A round where nobody touched
+		// a chip used to pay nothing at all, which is the worst possible
+		// answer to a minute of work.
+		s_resultPot = kDanceHitPay*totalHits + PotFor(kDanceWinPot, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += PotFor(kDanceWinPot, PlayersPresent());
+		COOP_LOG("WII coop: dance-off draw, +$%d\n", s_resultPot);
 	}
 	s_dance.finished = true;
 	s_dance.finishAt = now + kDanceLingerMs;
@@ -4810,6 +5017,11 @@ StartDance(uint32 now, const CVector &centre)
 	s_dance.finished = false;
 	s_dance.startAt = now;
 	s_dance.beatAt = now + kDanceBeatSlowMs;
+	// The first chip comes up straight away and the first beat is a beat
+	// later: the chip always comes up before the beat it is for.
+	s_dance.issueAt = now;
+	s_dance.judgeAt = s_dance.beatAt + DanceWindow(kDanceBeatSlowMs);
+	s_dance.shownAt = now;
 	s_dance.centre = centre;
 	s_dance.winner = -1;
 	for(int i = 0; i < kDanceRingMarks; i++){
@@ -4823,10 +5035,18 @@ StartDance(uint32 now, const CVector &centre)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_dance.prompt[i] = -1;
 		s_dance.promptHit[i] = false;
+		s_dance.pressAt[i] = 0;
+		s_dance.grade[i] = DANCE_GRADE_NONE;
+		s_dance.gradeAt[i] = 0;
 		s_dance.hitFlash[i] = 0;
 		s_dance.missFlash[i] = 0;
 		s_dance.score[i] = 0;
 		s_dance.combo[i] = 0;
+		// The arming gesture's own state.  It was only ever written while a
+		// dance was being armed, so it kept the last dance's value, and a
+		// party that armed a dance within a second and a half of the last
+		// one got it armed for them.
+		s_dance.lastDuck[i] = 0;
 		// The nod's own state, for the reason given in EndDance.
 		s_dance.triangleHeld[i] = false;
 	}
@@ -4905,31 +5125,63 @@ UpdateDance(uint32 now)
 			(ped->GetPosition() - s_dance.centre).Magnitude2D() <= kDanceLeaveRange;
 	}
 
-	// The beat: whatever was not hit is a miss, then the next prompts appear.
-	if(now >= s_dance.beatAt){
-		for(int i = 0; i < NUMPLAYERS; i++)
-			if(s_dance.prompt[i] >= 0){
-				if(!s_dance.promptHit[i]){
-					s_dance.combo[i] = 0;
-					s_dance.missFlash[i] = now;
-				}
-				s_dance.prompt[i] = -1;
+	// The judgement: a press has to land near the beat to count.  The chip
+	// came up a beat early and is judged on the beat plus the window, so a
+	// player can see the beat coming, and can be early for it or late for
+	// it.  The old rule -- any press between one chip and the next was a
+	// hit -- meant the chip had to be read and a button pressed, and that
+	// was all: the fastest way to win was to hold every button down.
+	if(now >= s_dance.judgeAt){
+		const uint32 window = DanceWindow(DanceBeatInterval(now));
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(s_dance.prompt[i] < 0 || s_dance.promptHit[i])
+				continue;
+			const uint32 press = s_dance.pressAt[i];
+			uint32 error = 0;
+			bool hit = false;
+			if(press != 0){
+				error = (press > s_dance.beatAt) ? press - s_dance.beatAt : s_dance.beatAt - press;
+				hit = error <= window;
 			}
-		for(int i = 0; i < NUMPLAYERS; i++)
-			if(onFloor[i]){
-				s_dance.prompt[i] = CGeneral::GetRandomNumberInRange(0, DANCE_PROMPTS);
-				// The nod is also the enter-vehicle button.  A dancer with a car
-				// in reach is given jump or duck instead, or the prompt would
-				// walk them off the floor and into it.
-				if(s_dance.prompt[i] == DANCE_TWO && VehicleInReach(CCoop::GetPlayerPed(i)))
-					s_dance.prompt[i] = CGeneral::GetRandomNumberInRange(0, (int)DANCE_TWO);
-				s_dance.promptHit[i] = false;
+			if(hit){
+				s_dance.promptHit[i] = true;
+				s_dance.score[i]++;
+				s_dance.combo[i]++;
+				s_dance.hitFlash[i] = now;
+				s_dance.grade[i] = (error*2 <= window) ? DANCE_GRADE_PERFECT : DANCE_GRADE_GOOD;
+			}else{
+				s_dance.combo[i] = 0;
+				s_dance.missFlash[i] = now;
+				s_dance.grade[i] = (press == 0) ? DANCE_GRADE_NONE :
+					((press < s_dance.beatAt) ? DANCE_GRADE_EARLY : DANCE_GRADE_LATE);
 			}
-		s_dance.beatAt = now + DanceBeatInterval(now);
+			s_dance.gradeAt[i] = now;
+		}
+		// The next beat, and the window it will be judged on.
+		const uint32 interval = DanceBeatInterval(now);
+		s_dance.beatAt += interval;
+		s_dance.judgeAt = s_dance.beatAt + DanceWindow(interval);
+		s_dance.issueAt = now;
+	}
+
+	// The chip comes up before the beat it is for, and stays up until that
+	// beat has been judged.
+	if(now >= s_dance.issueAt){
+		s_dance.issueAt = s_dance.judgeAt;
+		s_dance.shownAt = now;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			s_dance.prompt[i] = -1;
+			s_dance.promptHit[i] = false;
+			s_dance.pressAt[i] = 0;
+			if(onFloor[i])
+				s_dance.prompt[i] = DancePickPrompt(i);
+		}
 	}
 
 	// The reads.  Jump and duck are the pad's own pulses; the nod is a
-	// held state here, so its edge is tracked by hand.
+	// held state here, so its edge is tracked by hand.  The press is kept
+	// with its time, because where it landed on the beat is the whole game:
+	// the last press before the judgement is the attempt.
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
 		if(ped == nil)
@@ -4939,20 +5191,16 @@ UpdateDance(uint32 now)
 		const bool triangleDown = triangle && !s_dance.triangleHeld[i];
 		s_dance.triangleHeld[i] = triangle;
 
-		if(!onFloor[i] || s_dance.prompt[i] < 0 || s_dance.promptHit[i])
+		if(!onFloor[i] || s_dance.prompt[i] < 0)
 			continue;
-		bool hit = false;
+		bool pressed = false;
 		switch(s_dance.prompt[i]){
-		case DANCE_JUMP: hit = pad->JumpJustDown(); break;
-		case DANCE_DUCK: hit = pad->DuckJustDown(); break;
-		default: hit = triangleDown; break;
+		case DANCE_JUMP: pressed = pad->JumpJustDown(); break;
+		case DANCE_DUCK: pressed = pad->DuckJustDown(); break;
+		default: pressed = triangleDown; break;
 		}
-		if(hit){
-			s_dance.promptHit[i] = true;
-			s_dance.score[i]++;
-			s_dance.combo[i]++;
-			s_dance.hitFlash[i] = now;
-		}
+		if(pressed)
+			s_dance.pressAt[i] = now;
 	}
 
 	RegisterDanceCoronas();
@@ -5002,6 +5250,8 @@ DropCase(void)
 	s_cnr.carrier = -1;
 	s_cnr.bustSince = 0;
 	s_cnr.bustBy = -1;
+	// The out-of-field clock belongs to the carrier, and the carrier is gone.
+	s_cnr.outSince = 0;
 	ShowLooseCase();
 }
 
@@ -5043,6 +5293,13 @@ FinishCnR(uint32 now, int winner)
 		s_resultPot = PotFor(kCnRPot, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: cops & robbers to player %d, +$%d\n", winner + 1, s_resultPot);
+	}else{
+		// A draw: the pot goes into the party's wallet and nobody gets the
+		// trophy.  A match that ended level used to pay nothing at all,
+		// which is the worst answer to five minutes of chasing each other.
+		s_resultPot = PotFor(kCnRPot, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
+		COOP_LOG("WII coop: cops & robbers draw, +$%d\n", s_resultPot);
 	}
 	s_cnr.finished = true;
 	s_cnr.finishAt = now + kCnRLingerMs;
@@ -5066,8 +5323,10 @@ StartCnR(uint32 now, const CVector &centre, const CVector &forward)
 	s_cnr.outSince = 0;
 	s_cnr.winner = -1;
 	s_cnr.caseBlip = -1;
-	for(int i = 0; i < NUMPLAYERS; i++)
+	for(int i = 0; i < NUMPLAYERS; i++){
 		s_cnr.score[i] = 0;
+		s_cnr.bustedUntil[i] = 0;
+	}
 
 	CVector dir = forward;
 	dir.z = 0.0f;
@@ -5228,6 +5487,11 @@ UpdateCnR(uint32 now)
 			// frame -- and the buster would score again 1.5 s after that.
 			if(now < s_cnr.lockUntil)
 				continue;
+			// And the player who was busted is stood off the case for longer
+			// than the dead time, so the case goes to the other one and the
+			// two of them swap sides.
+			if(now < s_cnr.bustedUntil[i])
+				continue;
 			const float reach = (ped->bInVehicle && ped->m_pMyVehicle != nil) ? kCnRGrabRangeCar : kCnRGrabRange;
 			const float dist = (PlayerCoors(i) - s_cnr.casePos).Magnitude2D();
 			if(dist < reach && (best < 0 || dist < bestDist)){
@@ -5244,6 +5508,11 @@ UpdateCnR(uint32 now)
 			s_cnr.bustSince = 0;
 			s_cnr.bustBy = -1;
 			s_cnr.graceUntil = now + kCnRGraceMs;
+			// The out-of-field clock starts when the case is picked up.  It
+			// was left over from whoever had it before, so a carrier who had
+			// been out of the field and dropped it took the case back and
+			// was teleported to the middle on the same frame.
+			s_cnr.outSince = 0;
 			COOP_LOG("WII coop: case to player %d\n", best + 1);
 		}
 	}
@@ -5297,6 +5566,9 @@ UpdateCnR(uint32 now)
 				// pinned while it does.
 				s_cnr.lockUntil = now + kCnRDeadMs;
 				s_cnr.graceUntil = now + kCnRDeadMs;
+				// And the busted player is stood off it for longer than that,
+				// so the case goes to the cop and the sides swap.
+				s_cnr.bustedUntil[busted] = now + kCnRBustLockMs;
 				s_cnr.noteBuster = pin;
 				s_cnr.noteBusted = busted;
 				s_cnr.noteAt = now;
@@ -5494,12 +5766,12 @@ void
 DrawExplainer(uint32 now)
 {
 	static const char *const kLines[EXPLAIN_COUNT] = {
-		"CHASE THE RADAR BLIP. ONE DRIVES, ONE SHOOTS; STOP OR WRECK IT. SIREN OFF TO QUIT",
+		"CHASE THE RADAR BLIP. ONE DRIVES, ONE SHOOTS THE DRIVER. STOP IT OR WRECK IT. SIREN OFF TO QUIT",
 		"RACE FOR THE CARGO. FIRST TO THE CRATE CARRIES IT TO THE RING; THE OTHER COVERS WITH SMG/RAM. 3 DROPS. P1 ASHORE QUITS",
 		"RAMMING ONLY, NO SHOOTING. LAST CAR IN THE RING WINS THE ROUND. FIRST TO 2",
-		"EVERY RACER DRIVES THREE LAPS. FOLLOW YOUR COLOR OF GATE. NOT WHILE WANTED",
-		"PRESS THE BUTTON ON YOUR CHIP BEFORE THE NEXT BEAT. BEST SCORE WINS. NOT WHILE WANTED",
-		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. AFTER A BUST THE CASE LIES DEAD FOR THREE SECONDS. FIRST TO 3",
+		"EVERY RACER DRIVES THREE LAPS OF FOUR GATES. FIRST TO THREE LAPS WINS. NOT WHILE WANTED",
+		"THE CHIP COMES UP BEFORE THE BEAT. PRESS THE BUTTON AS IT LANDS. MOST HITS WINS. NOT WHILE WANTED",
+		"ONE PLAYER HOLD NOD. GRAB THE CASE, RUN IT TO THE GREEN MARKER. COPS STAY CLOSE TO BUST. AFTER A BUST THE SIDES SWAP. FIRST TO 3",
 		"EACH IN A CAR; ONE HOLDS BRAKE. PUSH THE CADDY INTO A GOAL. 3 GOALS WINS. NOT WHILE WANTED",
 		"ALL HOLD AIM ON FOOT. THE ONE NEAREST THE MIDDLE HOLDS THE HILL. TAKE IT AND KEEP IT TIL THE BELL. 90 SECONDS. DAMAGE ON"
 	};
@@ -5571,6 +5843,14 @@ DrawShiftMarks(uint32 now)
 			const uint32 left = age < kCaseTimeoutMs ? (kCaseTimeoutMs - age + 999)/1000 : 0;
 			sprintf(line + strlen(line), "  %us", (unsigned)left);
 			late = left <= 15;
+			// How far off the suspect is.  The blip is on the radar, but a
+			// blip is a mark and a distance is a direction: the driver has
+			// to know which way to go, and the shooter has to know whether
+			// the case is in range to be shot at.
+			if(s_shift.suspectCar != nil){
+				const float dist = (s_shift.suspectCar->GetPosition() - CrewCentre()).Magnitude2D();
+				sprintf(line + strlen(line), "  %dm", (int)dist);
+			}
 		}
 		DrawStatus(line, late ? CRGBA(255, 200, 90, 255) : CRGBA(255, 255, 255, 255));
 	}
@@ -5637,8 +5917,8 @@ const char *const kLobbyObjectives[MENU_KOTH + 1] = {
 	"CHASE THE SUSPECT. DRIVER AND SHOOTER.",
 	"RACE FOR THE CRATE. THREE DROPS.",
 	"LAST CAR RUNNING. FIRST TO TWO ROUNDS.",
-	"THREE LAPS. FOLLOW YOUR GATE COLOR.",
-	"MATCH THE PROMPT BEFORE THE NEXT BEAT.",
+	"THREE LAPS OF FOUR GATES. FIRST TO FINISH.",
+	"PRESS THE CHIP ON THE BEAT. MOST HITS WINS.",
 	"GRAB THE CASE. REACH THE GETAWAY.",
 	"PUSH THE CADDY INTO A GOAL.",
 	"HOLD THE MIDDLE. WHOEVER HOLDS IT AT THE BELL WINS."
@@ -6060,6 +6340,10 @@ DrawModeMarks(uint32 now)
 				s_run.leg + 1, kDrops, s_run.carrier + 1, crew);
 		else
 			sprintf(line, "DROP %d/%d  RACE FOR CARGO  CREW %d", s_run.leg + 1, kDrops, crew);
+		// A police boat going down is the escort's job done, and the screen
+		// should say so: the money goes into a wallet nobody is watching.
+		if(s_run.policeDownAt != 0 && now - s_run.policeDownAt < 3000)
+			sprintf(line + strlen(line), "  POLICE DOWN");
 		DrawStatus(line, s_run.unloadSince != 0 ? CRGBA(255, 200, 90, 255) : white);
 
 		// The carrier has the drop to steer for and the other boat has to stay
@@ -6303,6 +6587,11 @@ DrawModeMarks(uint32 now)
 		}else if(s_cnr.carried && s_cnr.carrier >= 0){
 			sprintf(line, "P%d HAS THE CASE%s", s_cnr.carrier + 1, now < s_cnr.graceUntil ? "  SAFE" : "");
 			DrawStatus(line, kCoopColours[s_cnr.carrier]);
+		}else if(now < s_cnr.lockUntil){
+			// The case is lying dead and nobody may have it.  Telling a
+			// player to grab it when they cannot is the sort of small lie
+			// that makes a mode feel broken.
+			DrawStatus("THE CASE IS DEAD", white);
 		}else{
 			DrawStatus("GRAB THE CASE", white);
 		}
@@ -7516,6 +7805,20 @@ CCoopModes::DrawHud(void)
 			fill = CRGBA(255, 255, 255, 255);
 		CSprite2d::DrawRect(CRect(cx - hw, cy - hh, cx + hw, cy + hh), fill);
 
+		// The beat bar: the chip drains towards the beat, so the player can
+		// see the beat coming instead of guessing at it.  There is no music
+		// in this game to carry the beat -- the port has no sound effect
+		// this side of the engine can fire -- so the screen has to be the
+		// metronome, and a rhythm game that cannot show the beat is a
+		// guessing game.
+		if(s_dance.beatAt > s_dance.shownAt){
+			float frac = (float)(s_dance.beatAt - now)/(float)(s_dance.beatAt - s_dance.shownAt);
+			frac = Clamp(frac, 0.0f, 1.0f);
+			const float barW = hw*2.0f*frac;
+			CSprite2d::DrawRect(CRect(cx - hw, cy + hh - SCREEN_SCALE_Y(5.0f),
+				cx - hw + barW, cy + hh - SCREEN_SCALE_Y(2.0f)), InkFor(fill));
+		}
+
 		// Dark on the light fill, no shadow: the player colours are pastels, and
 		// a white label on them is about 1.4 to 2.5 to 1.  The label sits with
 		// the middle of its capitals on the middle of the chip.
@@ -7526,8 +7829,22 @@ CCoopModes::DrawHud(void)
 		CFont::SetDropShadowPosition(1);
 
 		// The action under the chip, in the player's colour, with the run of hits
-		// they are on once it is more than a couple.
-		if(named != nil){
+		// they are on once it is more than a couple -- and, for a moment after
+		// the beat, the grade.  The grade is the only thing that tells a
+		// player whether the press was early or late, and without it a
+		// missed beat is just a missed beat.
+		const char *gradeText = nil;
+		if(now - s_dance.gradeAt[i] < 600){
+			switch(s_dance.grade[i]){
+			case DANCE_GRADE_PERFECT: gradeText = "PERFECT"; break;
+			case DANCE_GRADE_GOOD: gradeText = "GOOD"; break;
+			case DANCE_GRADE_EARLY: gradeText = "EARLY"; break;
+			case DANCE_GRADE_LATE: gradeText = "LATE"; break;
+			}
+		}
+		if(gradeText != nil)
+			PrintCentred(cx, cy + SCREEN_SCALE_Y(16.0f), gradeText, kCoopColours[i], 0.45f, 0.7f);
+		else if(named != nil){
 			char caption[24];
 			if(s_dance.combo[i] >= 3)
 				sprintf(caption, "%s x%d", actionNames[s_dance.prompt[i]], s_dance.combo[i]);
