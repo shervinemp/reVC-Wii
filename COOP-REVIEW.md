@@ -400,6 +400,76 @@ The reviewers found no unguarded camera, renderer or shadow change. These are th
   cites `COOP-4-PLAN.md`, which isn't in the repo. The "path search is handed the vehicle" claim in
   the smuggling header is false.
 
+## J. The sixth pass: the minigames' own state, and the world asking for player 1
+
+Two audits, one of `CoopModes.cpp` against itself and one of the engine against the co-op
+design. What they found, and what was done about it.
+
+### Fixed, in the minigames
+
+- **The dance-off's nod was never let go of between rounds.** `s_dance.triangleHeld[]` is written
+  only while a round is running (`CoopModes.cpp:4722-4723`) and never reset, so it kept the last
+  round's value: a player still holding the nod at the bell started the next round with it stale,
+  and every nod prompt read as a miss while the button was down. Reset in `StartDance` and
+  `EndDance`.
+- **The dance-off's headline said the pot alone.** Every hit pays as well (`kDanceHitPay` a hit),
+  so a round that banked hundreds of dollars of hits read on screen as the two hundred it won.
+  The pot is now what the round actually paid.
+- **Forfeiting a mode in the four seconds after it was decided wiped the result.** `EndDerby` and
+  its five siblings clear `finished`, and `AbortActiveMode` reaches them. There is nothing left to
+  forfeit then, so the forfeit is refused (`ModeLingering`).
+- **The cop shift ate the city's traffic budget.** The suspect's car was cleaned up through
+  `CTheScripts::CleanUpThisVehicle`, which takes a mission car off the count; the shift's car was
+  never on that count, only the script's `CREATE_CAR` puts one there. Every closed case took a step
+  off the mission-car budget and put the random count up, and the traffic system's own clamp made
+  the loss permanent. The counters are put back where they belong now.
+- **Three menu starts could fail half way and leave the party moved to the venue in cars of the
+  mode's making** -- the shift with a police cruiser whose siren was still on (which is also a
+  shift waiting to arm itself), the run with its boat, the football with its Bloodring Bangers.
+  They are given back now, and the siren goes with the badge.
+
+### Fixed, in the engine
+
+- **The payphone stood the whole session down.** The letterbox the call puts up is the camera's,
+  not a cutscene's, so a partner standing at the payphone while player 1 talks on it was taken out
+  of the world for the length of the call, with nothing said. They stay now; the things that do
+  stand the party down -- a cutscene, the train -- say so (`WII_CCW`).
+- **The Pay'n'Spray and the bomb shop are player 1's.** They ask for player 1's car throughout, so
+  a partner's own car standing in the garage was not resprayed, not repaired and not even noticed.
+  They work on whichever of the party's cars is inside, player 1's first (`CGarage::CarToWorkOn`).
+- **The safehouse took the cars inside it and deleted them, and deleting a car destroys whoever is
+  riding in it** -- so a partner's car parked there went from under them at the next save. The
+  collector took a car's passengers with it, and only ever accepted player 1's car.
+- **The garage shoved every car touching it away but the one it was working on**, and the party's
+  other car is a car somebody is sitting in.
+- **The traffic system was told to keep two stolen cars** (`MAX_CARS_TO_KEEP`), and it is told for
+  any player, so a party of four had two of its cars turned back into traffic.
+- **A partner walking over a weapon was refused it** for a second and a half after player 1
+  pressed anything: the guard read player 1's button and not the body on the pickup. A pickup the
+  partner took also stayed gone while player 1 stood near the spot.
+- **The crane gave up on a car somebody was climbing into**, and only ever asked about player 1.
+
+### Looked at and left alone
+
+- **"A menu derby leaves a row of Bloodring Bangers in the street."** It does not: the party is
+  sitting in them, so the car is handed back to the world with them in it and they drive off. A
+  random vehicle is not saved, so the save does not keep it either.
+- **"`CCoopModes::Init` forgets the mode's vehicles."** All three of its call sites -- the level
+  init, the load and the restart -- are places where the world is rebuilt or torn down, which takes
+  the vehicles with it, and the radar is re-initialised on the same paths. Nothing is orphaned.
+- **The cheat string is read from pad 0 only.** A developer tool, and the partners' controllers
+  are not where cheats are wanted.
+
+### Still to look at
+
+- The minigames' arming gestures are ordinary driving buttons, and the "are you parked together"
+  tests are loose: the football's brake within 24 m and the derby's horn within 12 m will arm them
+  in traffic. The derby, the run and the hill may also start while the party is wanted.
+- Nothing clears the arena of traffic or pedestrians, and no mode sets `m_bIgnoredByCops`, so
+  running somebody over mid-round brings the police.
+- The garages and the pay'n'Spray are player 1's, and the design says so. What they do not say is
+  that the party is more than one person.
+
 ## Not covered
 
 About 100 `IsPlayer()` sites in `Ped.cpp` / `PedAI.cpp` (grep only), seat-entry logic

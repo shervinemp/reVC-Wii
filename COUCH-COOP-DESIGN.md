@@ -137,6 +137,11 @@ and ammo, and which one was in hand. That covers:
   the partner waits out of the world and rejoins when player 1 stops or gets out.
 - **A change of clothes, a cutscene loading, a replay** — anything that unloads
   the player model or rebuilds the ped pool. `CCoop::Suspend()`.
+- **The payphone is not one of these.** The letterbox a phone call puts up is
+  the camera's, not a cutscene's, so a partner standing at the payphone while
+  player 1 talks on it stays in the world. The train's letterbox is a set
+  piece, and that one does stand the party down — and says so, because a
+  partner who vanishes without a word is worse than one who is told.
 
 ### Staying together
 
@@ -698,6 +703,16 @@ Recorded because each was stated as a verified fact.
 
 ## Not done
 
+- **The minigames' arming gestures are ordinary driving buttons.** The football
+  is armed by a half-second hold of the brake with the party parked within
+  24 m; the derby by one press of the horn with the cars within 12 m. In
+  traffic that is a ready-up card nobody asked for. The gates are also
+  uneven: the shift, the toy race, the dance-off, cops & robbers and the
+  football refuse to start while the party is wanted, and the derby, the run
+  and the hill do not.
+- **Nothing clears a mode's arena of traffic or pedestrians**, and no mode
+  makes the police ignore the party, so running somebody over in the middle
+  of a round brings them.
 - **No partner is ever a passenger in a boat.** The automatic seat never takes
   one, for the reasons under "Riding along, and driving"; a bike's pillion rides
   without a drive-by, and a boat has no seat to ride in.
