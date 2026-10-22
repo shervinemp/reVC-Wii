@@ -3936,8 +3936,8 @@ FinishKoth(uint32 now)
 		CCoopModes::AwardTrophy(best);
 		s_resultPot = PotFor(kKothPay, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
-		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u/%u ms)\n",
-		         best + 1, s_resultPot, s_koth.scoreMs[0], s_koth.scoreMs[1]);
+		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u ms held)\n",
+		         best + 1, s_resultPot, s_koth.scoreMs[best]);
 	}else
 		s_koth.winner = -1;
 	s_koth.holder = -1;
