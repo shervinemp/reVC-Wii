@@ -741,6 +741,17 @@ ModeActive(void)
 	       s_pitch.active || s_koth.active;
 }
 
+// Whether the mode that is running has been decided and is only lingering, with
+// its result on the screen.  There is nothing left to forfeit: the pot is
+// paid, and the only thing the forfeit could still do was wipe the result a
+// second and a half after it appeared.
+bool
+ModeLingering(void)
+{
+	return s_derby.finished || s_pitch.finished || s_koth.finished || s_rc.finished ||
+	       s_dance.finished || s_cnr.finished;
+}
+
 // Where a player is for these purposes: their car while they are in one, so a
 // crew chasing in cars is measured car to car.
 CVector
@@ -875,6 +886,28 @@ PlayerUsingVehicle(CVehicle *vehicle)
 	return false;
 }
 
+// A mode's own car, handed back to the world: it becomes ordinary traffic,
+// unlocked, and the world counts one more random car for it.
+//
+// The engine's CleanUpThisVehicle does that, and also takes a mission car off
+// the count.  A mode's car was never on that count -- only the script's
+// CREATE_CAR puts one there -- so that half of it is wrong here, and wrong
+// every time.  The shift's suspect showed it: a case every ten seconds or
+// so, and each one took the city's mission-car budget down a step and put the
+// random count up, until the city was carrying more cars than it should.
+void
+HandBackToTraffic(CVehicle *vehicle)
+{
+	if(vehicle == nil)
+		return;
+	if(vehicle->VehicleCreatedBy != MISSION_VEHICLE)
+		return;
+	vehicle->bIsLocked = false;
+	CCarCtrl::RemoveFromInterestingVehicleList(vehicle);
+	vehicle->VehicleCreatedBy = RANDOM_VEHICLE;
+	++CCarCtrl::NumRandomCars;
+}
+
 // A mode's own vehicle, handed back when the mode is over.
 //
 // The engine's CleanUpThisVehicle is not the right door for it.  It
@@ -897,15 +930,7 @@ ReleaseModeVehicle(CVehicle *vehicle)
 	if(vehicle == nil)
 		return;
 	if(PlayerUsingVehicle(vehicle)){
-		CTheScripts::CleanUpThisVehicle(vehicle);
-		// CleanUpThisVehicle added a random car and took a mission car off.
-		// Neither of those was ever true of this car, so both go back.
-		if(CCarCtrl::NumRandomCars > 0)
-			CCarCtrl::NumRandomCars--;
-		if(CCarCtrl::NumMissionCars < 0)
-			CCarCtrl::NumMissionCars = 0;
-		else
-			CCarCtrl::NumMissionCars++;
+		HandBackToTraffic(vehicle);
 		return;
 	}
 	CCarCtrl::RemoveFromInterestingVehicleList(vehicle);
@@ -1190,7 +1215,7 @@ RemoveSuspect(void)
 		car->CleanUpOldReference((CEntity**)&s_shift.suspectCar);
 		s_shift.suspectCar = nil;
 		if(PlayerUsingVehicle(car)){
-			CTheScripts::CleanUpThisVehicle(car);
+			HandBackToTraffic(car);
 			return;
 		}
 		CWorld::Remove(car);
@@ -1212,7 +1237,7 @@ ReleaseSuspect(void)
 		s_shift.suspectPed = nil;
 	}
 	if(car != nil){
-		CTheScripts::CleanUpThisVehicle(car);
+		HandBackToTraffic(car);
 		car->CleanUpOldReference((CEntity**)&s_shift.suspectCar);
 		s_shift.suspectCar = nil;
 	}
@@ -2390,8 +2415,13 @@ ReleaseLoaner(int player)
 	if(car != nil){
 		car->CleanUpOldReference((CEntity**)&s_derby.loaner[player]);
 		s_derby.loaner[player] = nil;
-		if(car->bIsLawEnforcer)
+		if(car->bIsLawEnforcer){
 			car->ChangeLawEnforcerState(false);
+			// The siren goes with the badge.  An ordinary car left standing
+			// in the street with its siren going is a car the police still
+			// think is one of theirs, and one nobody has switched off.
+			car->m_bSirenOrAlarm = false;
+		}
 		ReleaseModeVehicle(car);
 	}
 }
@@ -2766,6 +2796,31 @@ ReleaseMenuLoaners(void)
 {
 	for(int i = 0; i < NUMPLAYERS; i++)
 		ReleaseLoaner(i);
+}
+
+// The party out of the cars a menu start put them in.  A ped left standing
+// in a car that is about to be deleted is a ped the engine has to deal with,
+// so this comes before the cars go.
+void
+MenuLeaveParty(void)
+{
+	for(int i = 0; i < NUMPLAYERS; i++){
+		CPlayerPed *ped = CCoop::GetPlayerPed(i);
+		if(ped != nil && ped->bInVehicle)
+			MenuLeaveVehicle(ped);
+	}
+}
+
+// A menu start that failed half way has already moved the party to the venue
+// and put them in cars of its own making.  Those are given back: the party is
+// out of them, and the cars go back to the world.  A police cruiser left on
+// the apron with its siren on would be worse than a wasted menu row -- it
+// would also be a shift waiting to arm itself, the party still sitting in it.
+void
+UndoMenuStart(void)
+{
+	MenuLeaveParty();
+	ReleaseMenuLoaners();
 }
 
 void
@@ -4552,6 +4607,13 @@ EndDance(uint32 now, const char *why)
 	for(int i = 0; i < NUMPLAYERS; i++){
 		s_dance.prompt[i] = -1;
 		s_dance.promptHit[i] = false;
+		// Whether the nod was down when the round ended.  It is read to work
+		// out whether the nod has just gone down, and it was only ever written
+		// while a round was running -- so it kept the last round's value, and
+		// a player still holding the nod at the bell started the next round
+		// with it stale: every nod prompt then read as a miss while the
+		// button was down, and the run of hits could not build.
+		s_dance.triangleHeld[i] = false;
 	}
 	s_dance.active = false;
 	s_dance.finished = false;
@@ -4580,10 +4642,17 @@ FinishDance(uint32 now)
 	COOP_LOG("WII coop: dance-off, %d hits\n", totalHits);
 	if(best >= 0 && !tie){
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kDanceWinPot;
-		s_resultPot = kDanceWinPot;
+		// What the round actually paid: the hit money as well as the pot.
+		// Every other mode's headline is the money that left the wallet, and
+		// this one said the pot alone -- so a good round that banked hundreds
+		// of dollars of hits read on screen as the two hundred it won.
+		s_resultPot = kDanceHitPay*totalHits + kDanceWinPot;
 		COOP_LOG("WII coop: dance-off to player %d\n", best + 1);
-	}else if(tie)
+	}else{
+		// A draw pays the hits and nothing else, and says so.
+		s_resultPot = kDanceHitPay*totalHits;
 		COOP_LOG("WII coop: dance-off draw\n");
+	}
 	s_dance.finished = true;
 	s_dance.finishAt = now + kDanceLingerMs;
 }
@@ -4612,6 +4681,8 @@ StartDance(uint32 now, const CVector &centre)
 		s_dance.missFlash[i] = 0;
 		s_dance.score[i] = 0;
 		s_dance.combo[i] = 0;
+		// The nod's own state, for the reason given in EndDance.
+		s_dance.triangleHeld[i] = false;
 	}
 	COOP_LOG("WII coop: dance-off on\n");
 	CCoop::Notify("WII_CSF");
@@ -6180,8 +6251,10 @@ StartMenuShift(uint32 now)
 	}
 
 	CVehicle *car = MenuSpawnPolice(spot, 0.0f);
-	if(car == nil || !SeatMenuDriver(lead, car))
+	if(car == nil || !SeatMenuDriver(lead, car)){
+		UndoMenuStart();
 		return false;
+	}
 
 	for(int i = 1; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -6195,8 +6268,10 @@ StartMenuShift(uint32 now)
 		// rather than on a kerb that happens to be eight metres east.
 		const CVector beside = MenuGround(CVector(spot.x + 8.0f, spot.y, spot.z), 0.0f);
 		CVehicle *second = MenuSpawnPolice(beside, 0.0f);
-		if(second == nil || !SeatMenuDriver(ped, second))
+		if(second == nil || !SeatMenuDriver(ped, second)){
+			UndoMenuStart();
 			return false;
+		}
 		car = second;
 	}
 
@@ -6225,10 +6300,18 @@ StartMenuRun(uint32 now)
 	}
 
 	CVehicle *boat = MenuSpawnBoat(water, 0.0f);
-	if(boat == nil || !SeatMenuDriver(lead, boat))
+	if(boat == nil || !SeatMenuDriver(lead, boat)){
+		UndoMenuStart();
 		return false;
-	if(!StartRunAt(now, boat))
+	}
+	if(!StartRunAt(now, boat)){
+		// The route could not be planned -- three water nodes far enough
+		// apart, which a narrow channel does not always have.  The boat is
+		// still the menu's and nobody is in it but the lead, so it goes back
+		// to the world with them rather than being left in the bay.
+		UndoMenuStart();
 		return false;
+	}
 
 	for(int i = 1; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
@@ -6236,7 +6319,12 @@ StartMenuRun(uint32 now)
 			continue;
 		CVehicle *escort = CCoopModes::EscortBoat(i, boat);
 		if(escort == nil || !SeatMenuDriver(ped, escort)){
+			// The party is out of the boats first, so the run's own cleanup
+			// finds them empty and can take them away rather than handing
+			// them to the world with somebody sitting in them.
+			MenuLeaveParty();
 			EndRun(now, "menu start");
+			UndoMenuStart();
 			return false;
 		}
 	}
@@ -6322,8 +6410,14 @@ StartMenuCars(int mode, uint32 now)
 		// The ball is a Caddy model of its own, and a pitch with no ball is not
 		// a match.  The airport scene switch can drop a request, so ensure it
 		// after the scene is loaded as well as before the mode starts.
-		if(!MenuEnsureModel(MI_CADDY))
+		if(!MenuEnsureModel(MI_CADDY)){
+			// The party has already been moved to the golf course and put in
+			// Bloodring Bangers by now, so they are taken back out of them
+			// and the Bangers are given back: a menu row that fails must not
+			// leave the party sitting in loaners in a field with no match.
+			UndoMenuStart();
 			return false;
+		}
 		// The gesture check gives King of the Hill first refusal on a group
 		// aim-hold; a menu selection is already that decision.
 		const bool group = s_koth.groupAll;
@@ -6617,6 +6711,16 @@ void
 UpdateModeCancel(uint32 now)
 {
 	if(!ModeActive() || s_lobby.active){
+		for(int i = 0; i < NUMPLAYERS; i++)
+			s_endHold[i] = 0;
+		return;
+	}
+	// A mode that has been decided is only lingering, with its result on the
+	// screen.  Forfeiting it now would not end anything -- the pot is paid
+	// and the round is over -- it would only take the result away a second
+	// and a half after it appeared, which is the only moment the party hears
+	// who won and what it paid.
+	if(ModeLingering()){
 		for(int i = 0; i < NUMPLAYERS; i++)
 			s_endHold[i] = 0;
 		return;
