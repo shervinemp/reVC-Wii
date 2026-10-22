@@ -462,13 +462,16 @@ design. What they found, and what was done about it.
 
 ### Still to look at
 
-- The minigames' arming gestures are ordinary driving buttons, and the "are you parked together"
-  tests are loose: the football's brake within 24 m and the derby's horn within 12 m will arm them
-  in traffic. The derby, the run and the hill may also start while the party is wanted.
-- Nothing clears the arena of traffic or pedestrians, and no mode sets `m_bIgnoredByCops`, so
-  running somebody over mid-round brings the police.
-- The garages and the pay'n'Spray are player 1's, and the design says so. What they do not say is
-  that the party is more than one person.
+- The minigames' arming gestures are ordinary driving buttons. The football's
+  brake and the derby's horn will arm them in traffic. It is never a mode that
+  starts by itself -- the card waits for both players to press A -- but the
+  card on the screen is an interruption.
+- Nothing clears the arena of traffic or pedestrians, so a mode played in the
+  middle of the city has the city in it. The police no longer come for it.
+- The pay'n'Spray and the bomb shop are player 1's, and the design says so.
+  What it does not say is that the party is more than one person.
+- The arrest path still ends the hill, where the death path does not: the
+  busted sequence is the engine's and it takes player 1 away.
 
 ## Not covered
 
