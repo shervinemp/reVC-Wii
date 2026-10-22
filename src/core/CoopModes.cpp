@@ -978,8 +978,18 @@ PartyWanted(void)
 {
 	for(int player = 0; player < NUMPLAYERS; player++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(player);
-		if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() > 0)
+		if(ped != nil && ped->m_pWanted != nil && ped->m_pWanted->GetWantedLevel() > 0){
+			// Said once, not once a frame: the arming paths ask this every
+			// frame, and a test needs to be able to tell "the game refused"
+			// from "the gesture was not read".
+			static uint32 lastTold = 0;
+			const uint32 now = CTimer::GetTimeInMilliseconds();
+			if(now - lastTold > 2000){
+				lastTold = now;
+				COOP_LOG("WII coop: the party is wanted, a mode will not arm\n");
+			}
 			return true;
+		}
 	}
 	return false;
 }
@@ -2819,6 +2829,7 @@ MenuLeaveParty(void)
 void
 UndoMenuStart(void)
 {
+	COOP_LOG("WII coop: menu start undone\n");
 	MenuLeaveParty();
 	ReleaseMenuLoaners();
 }
@@ -2872,7 +2883,7 @@ FinishDerby(uint32 now)
 		s_derby.matchWinner = best;
 		s_resultPot = 500;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
-		COOP_LOG("WII coop: derby to player %d\n", best + 1);
+		COOP_LOG("WII coop: derby to player %d, +$500\n", best + 1);
 	}
 	s_derby.finished = true;
 	s_derby.finishAt = now + 4000;
@@ -3295,7 +3306,7 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 		s_resultPot = 500;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += 500;
 	}
-	COOP_LOG("WII coop: caddy football to %s %d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1);
+	COOP_LOG("WII coop: caddy football to %s %d, +$%d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1, s_resultPot);
 }
 
 void
@@ -3853,8 +3864,8 @@ FinishKoth(uint32 now)
 		s_koth.winner = best;
 		s_resultPot = kKothPay;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kKothPay;
-		COOP_LOG("WII coop: king of the hill to player %d (%u/%u ms)\n",
-		         best + 1, s_koth.scoreMs[0], s_koth.scoreMs[1]);
+		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u/%u ms)\n",
+		         best + 1, s_resultPot, s_koth.scoreMs[0], s_koth.scoreMs[1]);
 	}else
 		s_koth.winner = -1;
 	s_koth.holder = -1;
@@ -4509,7 +4520,7 @@ UpdateRc(uint32 now)
 		}
 		s_rc.finished = true;
 		s_rc.finishAt = now + kRcLingerMs;
-		COOP_LOG("WII coop: rc race over on time\n");
+		COOP_LOG("WII coop: rc race over on time, +$%d\n", kRcPot);
 		return;
 	}
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -4571,7 +4582,7 @@ UpdateRc(uint32 now)
 					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kRcPot;
 					s_rc.finished = true;
 					s_rc.finishAt = now + kRcLingerMs;
-					COOP_LOG("WII coop: rc race to player %d\n", i + 1);
+					COOP_LOG("WII coop: rc race to player %d, +$%d\n", i + 1, kRcPot);
 					return;
 				}
 			}
@@ -4657,7 +4668,7 @@ FinishDance(uint32 now)
 		// this one said the pot alone -- so a good round that banked hundreds
 		// of dollars of hits read on screen as the two hundred it won.
 		s_resultPot = kDanceHitPay*totalHits + kDanceWinPot;
-		COOP_LOG("WII coop: dance-off to player %d\n", best + 1);
+		COOP_LOG("WII coop: dance-off to player %d, +$%d\n", best + 1, s_resultPot);
 	}else{
 		// A draw pays the hits and nothing else, and says so.
 		s_resultPot = kDanceHitPay*totalHits;
@@ -4905,7 +4916,7 @@ FinishCnR(uint32 now, int winner)
 		s_cnr.winner = winner;
 		s_resultPot = kCnRPot;
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += kCnRPot;
-		COOP_LOG("WII coop: cops & robbers to player %d\n", winner + 1);
+		COOP_LOG("WII coop: cops & robbers to player %d, +$%d\n", winner + 1, s_resultPot);
 	}
 	s_cnr.finished = true;
 	s_cnr.finishAt = now + kCnRLingerMs;
@@ -7017,8 +7028,17 @@ CCoopModes::OnDuty(CEntity *criminal, CEntity *victim, bool gunfire)
 	// The cop shift is the one mode where the police are the point, so it
 	// keeps the ordinary law: the takedown is the job, and anything else the
 	// party does there is a crime like anywhere else.
-	if(ModeActive() && !s_shift.active)
+	if(ModeActive() && !s_shift.active){
+		// Once a mode, not once a crime: a derby full of cars through
+		// pedestrians would otherwise fill the log with the same line.
+		static uint32 lastTold = 0;
+		const uint32 now = CTimer::GetTimeInMilliseconds();
+		if(now - lastTold > 2000){
+			lastTold = now;
+			COOP_LOG("WII coop: a crime in a mode is not a crime\n");
+		}
 		return true;
+	}
 	if(s_shift.suspectCar == nil && s_shift.suspectPed == nil)
 		return false;
 	if(victim != nil && (victim == s_shift.suspectCar || victim == s_shift.suspectPed))

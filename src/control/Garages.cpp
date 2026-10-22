@@ -26,10 +26,33 @@
 #include "VarConsole.h"
 #include "SaveBuf.h"
 
+#ifdef NINTENDO_WII
+#include "wii-port/WiiTrace.h"
+// The same line the co-op layer writes: the port's log file on the console,
+// the engine's own on a desktop build.
+#define GARAGE_LOG(...) WiiTraceReport(__VA_ARGS__)
+#else
+#define GARAGE_LOG(...) debug(__VA_ARGS__)
+#endif
+
 #define ROTATED_DOOR_OPEN_SPEED (0.015f)
 #define ROTATED_DOOR_CLOSE_SPEED (0.02f)
 #define DEFAULT_DOOR_OPEN_SPEED (0.035f)
 #define DEFAULT_DOOR_CLOSE_SPEED (0.04f)
+
+// Couch co-op: whose car the garage is working on.  The respray and the bomb
+// shop used to be player 1's only, so a partner's own car standing in the
+// garage was not resprayed, not repaired and not even noticed.
+static int
+WhichPlayersCar(CVehicle *car)
+{
+	for (int i = 0; i < NUMPLAYERS; i++) {
+		CPlayerPed *ped = CWorld::Players[i].m_pPed;
+		if (ped != nil && ped->bInVehicle && ped->m_pMyVehicle == car)
+			return i + 1;
+	}
+	return 0;
+}
 
 // Couch co-op: whether any player is in this vehicle, or is on their way into
 // it.  The garages take the cars inside them and delete them, and deleting a
@@ -418,6 +441,7 @@ void CGarage::Update()
 				// player 1 in the world this is the car it always was.
 				CVehicle *car = CarToWorkOn();
 				if (car != nil) {
+					GARAGE_LOG("WII coop: respray on player %d's car\n", WhichPlayersCar(car));
 					if (CGarages::IsCarSprayable(car)) {
 						if (CWorld::Players[CWorld::PlayerInFocus].m_nMoney >= RESPRAY_PRICE || CGarages::RespraysAreFree) {
 							m_eGarageState = GS_CLOSING;
@@ -587,6 +611,7 @@ void CGarage::Update()
 				// anybody's.
 				CVehicle *car = CarToWorkOn();
 				if (car != nil) {
+					GARAGE_LOG("WII coop: bomb shop on player %d's car\n", WhichPlayersCar(car));
 					if (car->m_bombType) {
 						CGarages::TriggerMessage("GA_5", -1, 4000, -1); //"Your car is already fitted with a bomb"
 						m_eGarageState = GS_OPENEDCONTAINSCAR;
@@ -2068,8 +2093,10 @@ void CGarage::StoreAndRemoveCarsForThisHideout(CStoredCar* aCars, int32 nMax)
 				// inside it and deletes them, and deleting a car destroys
 				// whoever is riding in it -- so a partner's own car would go
 				// from under them at the next save.
-				if (AnyPlayerInThisVehicle(pVehicle))
+				if (AnyPlayerInThisVehicle(pVehicle)) {
+					GARAGE_LOG("WII coop: the safehouse kept a car with a player in it\n");
 					continue;
+				}
 				if (index < Max(NUM_GARAGE_STORED_CARS, nMax) && !EntityHasASphereWayOutsideGarage(pVehicle, 1.0f))
 					aCars[index++].StoreCar(pVehicle);
 				CWorld::Players[CWorld::PlayerInFocus].CancelPlayerEnteringCars(pVehicle);
