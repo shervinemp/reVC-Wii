@@ -706,3 +706,32 @@ About 100 `IsPlayer()` sites in `Ped.cpp` / `PedAI.cpp` (grep only), seat-entry 
 PLAYER2-4 (the data isn't in the repo), replay playback of a recorded partner, and anything that
 needs hardware: Wii frame cost, the librw async-present and skin-ring changes, whether VRes survives
 a remote reconnecting.
+
+### The Dolphin route, and what it needs
+
+The card is the route that works, and the port was written for it. Two things
+in the boot path are worth knowing, because they are what makes an emulator
+a different problem from a card.
+
+**The boot needs somewhere writable.** The log goes beside the DOL, and the
+SD card's app folder is the fallback when the DOL came from a read-only
+stick. On a card both are writable. On an emulator, where the game may be
+launched from a host path, the host filesystem is read-only: there is no log
+and nowhere for the saves, and the port's own banner -- the thing that
+would say "data found at ..." or "DATA/GTA_VC.DAT not found" -- is drawn
+after the console exists, so a failure before that leaves a black screen and
+nothing else. The app folder has to exist on the card even when the data
+itself stays on the host.
+
+**The case of the data files is the console's filesystem, not the game's.**
+The game walks `DATA/GTA_VC.DAT`; Windows stored the files as
+`data/gta_vc.dat`; the Wii's libntfs mounts FAT with IGNORE_CASE, which is
+what makes the two the same file. A case-sensitive host would break the
+game in a way that has nothing to do with the port, and the port's own boot
+probe is uppercase for the same reason the game's paths are.
+
+Dolphin 2609a is on this machine, its SD card is a raw FAT32 image with a
+host mirror, the GameCube discs are on F:, and the mirror now has the reVC
+app folder in it. What is left is Dolphin's own "Failed to init core", which
+is its message before the port has drawn a line.
+
