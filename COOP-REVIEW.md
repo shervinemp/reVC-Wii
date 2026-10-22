@@ -648,6 +648,34 @@ while the hill owes that clock, the arrest camera does not take the shared
 view away from the party for the seconds it lasts, and the resurrection
 clears the arrest, which it did not do for the dead.
 
+### The polish: what the screen and the log were still getting wrong
+
+Small things, and they add up.
+
+- **A draw said NO WINNER.** The rule had already changed -- a draw pays the
+  pot into the party's wallet and wins no trophy -- but the banner still said
+  NO WINNER, which reads as a mode that went wrong rather than one that ended
+  level. It says DRAW and the pot now.
+- **The pot leaked between modes.** What the last mode paid was never
+  forgotten, so a football abandoned because the party walked away from it
+  showed the derby's $500. The pot is cleared when a mode arms.
+- **The hill did not pay on a draw.** Three of the six matches did; the hill
+  did not, so a round that ended with nobody on the point paid nothing at
+  all. It pays now, like the rest.
+- **The log said the wrong money.** The toy race logged the base pot rather
+  than the pot the party was paid, and an abandoned football logged "to
+  player 0". The log is the evidence a session is read from; it should say
+  what happened.
+- **There is a sound for a mode won.** The game's own mission-complete sting,
+  on the one place every match goes through, so all six end on the same
+  sound and the two jobs never reach it, because they have no winner.
+- **The front end ignores the volume it is given.** The first version of the
+  sound helper had a volume argument and a comment about turning it down; the
+  engine queues a front-end sample in the centre at its own level and never
+  looks at the number. The argument was a lie about what the code could do,
+  so it is gone: the loudness of a sound here is the loudness the game gives
+  it.
+
 ### The advantage of Vice City, honestly
 
 The advantage is the props and the places, not the mechanics. Every objective

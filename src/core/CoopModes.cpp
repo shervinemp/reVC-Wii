@@ -107,7 +107,10 @@ CountdownBeep(uint32 bellAt, uint32 lengthMs, uint32 now)
 
 // A sound from the screen, for a moment that matters.  The game's own
 // sounds, played through the front-end entity so they belong to the room
-// and not to a car.
+// and not to a car.  The front end ignores the volume it is given -- it
+// queues the sample in the centre at the front end's own level -- so the
+// loudness of a sound here is the loudness the game gives it, and there is
+// no dial to turn.
 void
 ModeSound(uint16 sound)
 {
@@ -761,6 +764,11 @@ ArmStart(int mode, uint32 now, const CVector &centre, const CVector &forward, in
 	}
 	if(!CoopMinigames || !CCoop::PairActive() || ModeActive())
 		return false;
+	// What the last mode paid is not what this one paid.  The result line
+	// is read while a mode is finished, and a mode that pays nothing -- a
+	// football abandoned because the party walked away from it -- used to
+	// show the pot of the mode before it.
+	s_resultPot = 0;
 	if(!fromMenu && mode != MENU_SHIFT && mode != MENU_RUN){
 		float radius = 0.0f;
 		switch(mode){
@@ -3576,7 +3584,12 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 		s_resultPot = PotFor(500, PlayersPresent());
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 	}
-	COOP_LOG("WII coop: caddy football to %s %d, +$%d\n", winnerTeam >= 0 ? "team" : "player", winnerTeam >= 0 ? winnerTeam + 1 : winner + 1, s_resultPot);
+	if(winner >= 0)
+		COOP_LOG("WII coop: caddy football to %s %d, +$%d\n",
+			winnerTeam >= 0 ? "team" : "player",
+			winnerTeam >= 0 ? winnerTeam + 1 : winner + 1, s_resultPot);
+	else
+		COOP_LOG("WII coop: caddy football abandoned, +$%d\n", s_resultPot);
 }
 
 void
@@ -4159,8 +4172,15 @@ FinishKoth(uint32 now)
 		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 		COOP_LOG("WII coop: king of the hill to player %d, +$%d (%u ms held)\n",
 		         best + 1, s_resultPot, s_koth.scoreMs[best]);
-	}else
+	}else{
+		// A draw: the pot goes into the party's wallet and nobody gets the
+		// trophy, the same as everywhere else.  The hill used to pay nothing
+		// at all when nobody was holding the point at the bell.
 		s_koth.winner = -1;
+		s_resultPot = PotFor(kKothPay, PlayersPresent());
+		CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
+		COOP_LOG("WII coop: king of the hill draw, +$%d\n", s_resultPot);
+	}
 	s_koth.holder = -1;
 	s_koth.finished = true;
 	s_koth.finishAt = now + kKothFinishMs;
@@ -4879,7 +4899,7 @@ UpdateRc(uint32 now)
 		}
 		s_rc.finished = true;
 		s_rc.finishAt = now + kRcLingerMs;
-		COOP_LOG("WII coop: rc race over on time, +$%d\n", kRcPot);
+		COOP_LOG("WII coop: rc race over on time, +$%d\n", s_resultPot);
 		return;
 	}
 	for(int i = 0; i < NUMPLAYERS; i++){
@@ -4942,7 +4962,7 @@ UpdateRc(uint32 now)
 					CWorld::Players[CWorld::PlayerInFocus].m_nMoney += s_resultPot;
 					s_rc.finished = true;
 					s_rc.finishAt = now + kRcLingerMs;
-					COOP_LOG("WII coop: rc race to player %d, +$%d\n", i + 1, kRcPot);
+					COOP_LOG("WII coop: rc race to player %d, +$%d\n", i + 1, s_resultPot);
 					return;
 				}
 			}
@@ -5635,6 +5655,8 @@ UpdateCnR(uint32 now)
 		if((s_cnr.casePos - s_cnr.getaway).Magnitude2D() < kCnRDeliverRange){
 			const int scorer = s_cnr.carrier;
 			s_cnr.score[scorer]++;
+			// The case is home: the money for it, in the room.
+			ModeSound(SOUND_PICKUP_MONEY);
 			COOP_LOG("WII coop: case delivered by player %d\n", scorer + 1);
 			ClearCaseMarker();
 			s_cnr.carried = false;
@@ -5851,7 +5873,15 @@ void
 DrawWinner(int winner)
 {
 	if(winner < 0 || winner >= NUMPLAYERS){
-		DrawStatus("NO WINNER", CRGBA(255, 255, 255, 255));
+		// A draw is not an empty result.  The pot goes into the party's
+		// wallet and the screen says so: it used to say NO WINNER, which
+		// reads as a mode that went wrong rather than one that ended level.
+		if(s_resultPot > 0){
+			char line[32];
+			sprintf(line, "DRAW   PARTY +$%d", s_resultPot);
+			DrawStatus(line, CRGBA(255, 255, 255, 255));
+		}else
+			DrawStatus("NO WINNER", CRGBA(255, 255, 255, 255));
 		return;
 	}
 	char line[48];
@@ -7833,6 +7863,11 @@ CCoopModes::AwardTrophy(int player)
 	if(player < 0 || player >= NUMPLAYERS)
 		return;
 	s_trophies[player]++;
+	// The sound of a game won: the game's own mission-complete sting, which
+	// is the closest thing Vice City has to a bell for a job well done.  It
+	// is the one sound every match ends on, and the jobs -- the shift and
+	// the run -- never reach it, because they have no winner.
+	ModeSound(SOUND_PART_MISSION_COMPLETE);
 	COOP_LOG("WII coop: player %d has won %d mode(s)\n", player + 1, s_trophies[player]);
 }
 

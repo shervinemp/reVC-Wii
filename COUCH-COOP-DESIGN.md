@@ -623,7 +623,11 @@ trophy. The money is what the round earned by being played; the trophy is the
 prize for winning it. A mode that ends level used to pay nothing at all,
 which is the worst possible answer to five minutes of shoving each other
 round a ring. Every match pays the same $500, so the size of the party is the
-only thing that decides what a game is worth.
+only thing that decides what a game is worth. The screen says **DRAW** and the
+pot, not NO WINNER: a draw is a result, and "no winner" reads as a mode that
+went wrong. And what a mode paid is forgotten when the next one arms, so a
+mode that pays nothing -- a football abandoned because the party walked away
+from it -- cannot show the pot of the mode before it.
 
 **Cops & robbers, after a bust.** The case lies dead for three seconds:
 nobody can pick it up and nobody can be pinned. It used to be two rules --
@@ -685,13 +689,18 @@ made together: one shows the beat and one sounds it, and a player who can
 hear it does not need to watch the bar to find it.
 
 The countdowns speak too: the game's own three-two-one-go, over the last
-three seconds of a countdown, in the derby, the toy race, the football and the
-hill. The ten seconds between derby rounds are a wait, not a countdown, so
+three seconds of a countdown, in the derby, the toy race, the football and
+the hill. The ten seconds between derby rounds are a wait, not a countdown, so
 the screen says what is happening and only the last three of them count down.
 The moments that matter have their own sounds: the money for a case caught,
-the chime for a goal, the arrest for a bust, the pay for a drop. They are all
+the chime for a goal, the arrest for a bust, the pay for a drop, and the
+game's own mission-complete sting for the mode that was won -- which is the
+one sound every match ends on, and the jobs never reach, because they have no
+winner. They are all
 played through the front-end entity, so they come from the screen rather than
-from anybody's feet -- one screen, one room, one sound.
+from anybody's feet -- one screen, one room, one sound. The front end ignores
+the volume it is given, so the loudness of a sound here is the loudness the
+game gives it and there is no dial to turn.
 
 **The arming gestures are held, where they can be.** The nod that arms cops &
 robbers is held for 0.6 s, and the horn that arms the derby is now held for
