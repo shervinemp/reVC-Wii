@@ -732,6 +732,15 @@ probe is uppercase for the same reason the game's paths are.
 
 Dolphin 2609a is on this machine, its SD card is a raw FAT32 image with a
 host mirror, the GameCube discs are on F:, and the mirror now has the reVC
-app folder in it. What is left is Dolphin's own "Failed to init core", which
-is its message before the port has drawn a line.
+app folder in it.
+
+The emulator's Wii core works -- a Wii game off F:\Roms\Wii boots in it, and
+the title bar reads JIT64 SC, Direct3D 11, HLE -- so the emulator, the
+renderer and the CPU are all fine. What is missing is one file: the Wii's
+boot2. Given the reVC DOL, Dolphin says "Failed to init core", which is its
+own message, before the port has drawn a line. This build of Dolphin ships
+no system files, the network here is proxy-blocked, and there is no boot2 on
+the machine. Drop one at `%APPDATA%\Dolphin Emulator\Wii\boot2.elf` and the
+homebrew should start; that is the whole of what stands between the
+emulator and a session.
 
