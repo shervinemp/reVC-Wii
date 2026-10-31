@@ -6980,8 +6980,10 @@ StartMenuRun(uint32 now)
 		// The route could not be planned -- three water nodes far enough
 		// apart, which a narrow channel does not always have.  The boat is
 		// still the menu's and nobody is in it but the lead, so it goes back
-		// to the world with them rather than being left in the bay.
-		UndoMenuStart();
+		// to the world with them rather than being left in the bay.  Taking
+		// the lead out here would put them in the water; hand the boat back
+		// while they are still aboard.
+		ReleaseMenuLoaners();
 		return false;
 	}
 
@@ -7075,8 +7077,13 @@ StartMenuCars(int mode, uint32 now)
 	const bool caddy = mode == MENU_PITCH;
 	if(PartyWanted())
 		return false;
-	if(!MenuPrepareCars(s_menuVenue, caddy))
+	if(!MenuPrepareCars(s_menuVenue, caddy)){
+		// The party may already be at the venue and some of them may
+		// already be in loaners.  A failed row must not leave them
+		// sitting in cars that belong to a match that never started.
+		UndoMenuStart();
 		return false;
+	}
 
 	if(caddy){
 		// The ball is a Caddy model of its own, and a pitch with no ball is not
@@ -7097,7 +7104,14 @@ StartMenuCars(int mode, uint32 now)
 		s_pitch.rearmAt = 0;
 		TryStartPitch(now, true, true);
 		s_koth.groupAll = s_pitch.active ? false : group;
-		return s_pitch.active;
+		if(!s_pitch.active){
+			// The pitch refused after the party was already moved into
+			// their loaners.  Give the loaners back rather than leaving
+			// them standing on the golf course in a match that is not on.
+			UndoMenuStart();
+			return false;
+		}
+		return true;
 	}
 
 	s_derby.rearmAt = 0;
