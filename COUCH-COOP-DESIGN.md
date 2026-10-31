@@ -357,10 +357,10 @@ script directs.
 
   | | pitch | distance |
   |---|---|---|
-  | 0 low | 36° | 18 m |
-  | 1 middle (default) | 45° | 22 m |
-  | 2 high | 55° | 26 m |
-  | 3 overhead | 73° | 28 m |
+  | 0 low | 36° | 12 m |
+  | 1 middle (default) | 45° | 15 m |
+  | 2 high | 55° | 19 m |
+  | 3 overhead | 73° | 22 m |
 
   The distances are what the camera stands at six metres apart (the point the
   view starts backing off); closer together it comes in. The pitch has been
@@ -891,6 +891,8 @@ Recorded because each was stated as a verified fact.
 |---|---|---|
 | framings | `kCoopFramings`, `Cam.cpp` | see table above |
 | pull-back per metre apart | `kCoopSeparationGain` | 1.0, beyond 6 m |
+| push-in per metre together | `kCoopCloseGain` | 0.6, inside 6 m |
+| view opens by, fully at 24 m apart | `kCoopZoomFov` | +14° |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
 | leash (on foot) | `kLeash`, `Coop.cpp` | 28 m |
 | leash (driving) | `kLeashDriving`, `Coop.cpp` | 50 m |

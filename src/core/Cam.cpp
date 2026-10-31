@@ -166,10 +166,10 @@ struct CoopFraming
 	float distance;		// from the players, along the view
 };
 static const CoopFraming kCoopFramings[CCoop::NUM_FRAMINGS] = {
-	{ DEGTORAD(36.0f), 18.0f },	// low: the angle this camera started at, pulled back
-	{ DEGTORAD(45.0f), 22.0f },	// middle, and the default
-	{ DEGTORAD(55.0f), 26.0f },	// high
-	{ DEGTORAD(73.0f), 28.0f },	// overhead
+	{ DEGTORAD(36.0f), 12.0f },	// low: the angle this camera started at, pulled back
+	{ DEGTORAD(45.0f), 15.0f },	// middle, and the default
+	{ DEGTORAD(55.0f), 19.0f },	// high
+	{ DEGTORAD(73.0f), 22.0f },	// overhead
 };
 // How far apart the players can be before the camera starts backing off, and
 // how far it backs off per metre beyond that.  Sized against the limit CCoop
@@ -190,8 +190,9 @@ static const float kCoopMinDistance = 3.0f;
 // separate: the framing's distance is what it stands at kCoopSeparationFree
 // apart, and each metre closer than that brings it in this much.  A shared
 // camera that stayed at its full distance while both players stood still read as
-// a map rather than a game.
-static const float kCoopCloseGain = 1.8f;
+// a map rather than a game.  Gently: at 1.8 a metre of shuffling between two
+// players moved the camera nearly two, and the view breathed all the time.
+static const float kCoopCloseGain = 0.6f;
 // And while a car is being followed the view drops by this much: the walking
 // pitch looks straight at the roof from behind a car.  It comes back as the car
 // slows, so parking returns the framing the player chose.
@@ -219,7 +220,7 @@ static const float kCoopZoomRate = 2.5f;
 // The span is the wall CCoop::LimitSeparation puts on how far apart they can
 // walk, so the view is fully open by the time they are as far apart as they can
 // get.
-static const float kCoopZoomFov = 20.0f;
+static const float kCoopZoomFov = 14.0f;
 static const float kCoopZoomSpan = 18.0f;
 // Cops & Robbers: once the party is split this far, lean the shared target
 // toward the case carrier.  The view direction is left alone: a camera that
