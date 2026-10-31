@@ -333,16 +333,20 @@ releaseCallBuffer(void)
 	}
 }
 
-// Hands the call buffer to libogc, which then reads it at its own pace.  Done
-// once, either when the first of the line is encoded -- the usual way -- or when
-// the speaker finishes powering up with the line already written: a short line
-// can decode in full while the speaker is still coming up, and only an encode
-// ever hands a buffer over, so waiting for the next one can wait forever.
+// Hands the call buffer to libogc once there is something in it, the speaker is up
+// and no clip is still occupying the one stream: a second WPAD_SendStreamData while
+// the alarm runs would arm it twice.  A line that arrives behind a ring therefore
+// waits here, and is tried again from every encodeCall and from the service, because
+// a line decoded in full while it waited has no further encodeCall to start it.
 void
 startCallStream(void)
 {
-	const u64 now = gettime();
 	if(s_channel < 0)
+		return;
+	if(!s_call.active || s_call.started || s_call.written == 0 || s_state != STATE_ON)
+		return;
+	const u64 now = gettime();
+	if(now < s_clipEnd)
 		return;
 	WPAD_SendStreamData(s_channel, s_call.buffer, s_call.capacity);
 	s_call.started = true;
