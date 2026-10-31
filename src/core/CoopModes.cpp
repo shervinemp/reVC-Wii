@@ -3589,8 +3589,25 @@ FinishPitch(uint32 now, int winner, int winnerTeam)
 	s_pitch.finished = true;
 	s_pitch.finishAt = now + kPitchFinishMs;
 	s_pitch.winner = winner;
-	CCoopModes::AwardTrophy(winner);
 	s_pitch.winnerTeam = winnerTeam;
+	// A team win is a win for each of its players, not only for the one the
+	// result line names first: the trophy count is the one score that belongs
+	// to a player alone, and a 2v2 where only one of the two winners is
+	// credited is a scoreboard that lies.  The match's sting plays once.
+	if(winnerTeam >= 0){
+		bool sounded = false;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(CCoop::GetPlayerPed(i) == nil || s_pitch.team[i] != winnerTeam)
+				continue;
+			s_trophies[i]++;
+			if(!sounded){
+				ModeSound(SOUND_PART_MISSION_COMPLETE);
+				sounded = true;
+			}
+			COOP_LOG("WII coop: player %d has won %d mode(s)\n", i + 1, s_trophies[i]);
+		}
+	}else
+		CCoopModes::AwardTrophy(winner);
 	// A team whose last player left before the whistle has no one to pay, and
 	// no pot to show: what was paid is what the result says was paid.
 	if(winner >= 0){
@@ -6991,7 +7008,7 @@ StartMenuRun(uint32 now)
 bool
 StartMenuFoot(int mode, const MenuVenue &venue, uint32 now)
 {
-	if(mode != MENU_KOTH && PartyWanted())
+	if(PartyWanted())
 		return false;
 
 	// The venue was worked out when the mode was chosen, so the ready-up
@@ -7056,7 +7073,7 @@ bool
 StartMenuCars(int mode, uint32 now)
 {
 	const bool caddy = mode == MENU_PITCH;
-	if(caddy && PartyWanted())
+	if(PartyWanted())
 		return false;
 	if(!MenuPrepareCars(s_menuVenue, caddy))
 		return false;
