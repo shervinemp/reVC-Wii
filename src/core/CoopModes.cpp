@@ -7303,11 +7303,17 @@ UpdateLobby(uint32 now)
 	bool allReady = true;
 	for(int i = 0; i < NUMPLAYERS; i++){
 		CPlayerPed *ped = CCoop::GetPlayerPed(i);
-		if(ped == nil || ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
+		// An empty slot is a player who is not in this session, not a
+		// player who has not readied: with two of four slots filled the
+		// other two used to hold allReady false forever, so the card could
+		// never start a two-player game and timed out under their hands.
+		if(ped == nil)
+			continue;
+		present++;
+		if(ped->DyingOrDead() || ped->m_nPedState == PED_ARRESTED){
 			allReady = false;
 			continue;
 		}
-		present++;
 		CPad *pad = GetPadFromPlayer(ped);
 		if(pad->GetCircleJustDown()){
 			CloseLobby(now, "cancelled");
