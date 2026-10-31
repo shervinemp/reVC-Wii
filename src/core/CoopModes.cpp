@@ -6158,7 +6158,12 @@ DrawLobby(uint32 now)
 		sprintf(count, "STARTING IN %u", left);
 		PrintCentred(cx, SCREEN_SCALE_Y(276.0f), count,
 			CRGBA(255, 220, 90, 255), 0.9f, 1.3f);
-	}else
+	}else if(s_lobby.fromMenu)
+		// The row was the press: a menu start readies the party itself and
+		// leaves only the way out.
+		PrintCentred(cx, SCREEN_SCALE_Y(276.0f), "B: CANCEL",
+			CRGBA(200, 200, 200, 255), 0.65f, 0.9f);
+	else
 		PrintCentred(cx, SCREEN_SCALE_Y(276.0f), "A: READY    B: CANCEL",
 			CRGBA(200, 200, 200, 255), 0.65f, 0.9f);
 }
@@ -7319,7 +7324,10 @@ UpdateLobby(uint32 now)
 			CloseLobby(now, "cancelled");
 			return;
 		}
-		if(pad->GetCrossJustDown())
+		// A menu start is already a decision: the row was the press.  The
+		// card is there to name the venue, not to ask the same question
+		// twice, so it readies the party itself and counts down.
+		if(s_lobby.fromMenu || pad->GetCrossJustDown())
 			s_lobby.ready[i] = true;
 		if(!s_lobby.ready[i])
 			allReady = false;
