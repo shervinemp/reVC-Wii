@@ -6,6 +6,7 @@
 #include "Vehicle.h"
 #include "Automobile.h"
 #include "Boat.h"
+#include "CarCtrl.h"
 #include "Bones.h"
 #include "Ped.h"
 #include "PlayerPed.h"
@@ -235,6 +236,24 @@ static const float kCoopYawRate = 1.6f;
 static const float kCoopUnclipRate = 2.0f;
 // Below this speed (about 3 m/s) a car's heading is not worth following.
 static const float kCoopYawMinSpeed = 0.06f;
+// The spread the view is framed for goes out the moment the party does and comes
+// back in slowly, per second.  Followed frame for frame, two players shuffling
+// about each other made the zoom and the field of view breathe, and a partner
+// going down or leaving snapped the view in on whoever was left.
+static const float kCoopSpreadReleaseRate = 1.2f;
+// On foot the view leans the way the party is walking, so there is more picture
+// ahead of them than behind.  Seconds of walking it looks ahead by, the most it
+// leans in metres, how fast it settles per second, and the speed in m/s below
+// which a drifting stick or a moving floor is not a direction.  It fades out as
+// the party spreads, because at the wall's worst case the players are already
+// near the edge of the picture and the lean must not push one off it.  Zero
+// seconds switches it off.
+static const float kCoopLeadSeconds = 0.6f;
+static const float kCoopLeadMax = 2.5f;
+static const float kCoopLeadRate = 2.0f;
+static const float kCoopLeadMinSpeed = 1.0f;
+static const float kCoopLeadFadeStart = 8.0f;
+static const float kCoopLeadFadeEnd = 16.0f;
 
 int8 CCamera::bWiiCoopCamera = 0;
 
@@ -243,6 +262,8 @@ static float s_coopDistance;
 static float s_coopPitch;
 static float s_coopClip = 1.0f;
 static CVector s_coopTarget;
+static float s_coopSpread;
+static CVector s_coopLead;
 static bool s_coopArena;
 // The room behind the camera, and how many frames old it is.  Measuring it
 // is up to four line-of-sight tests of forty metres: the most expensive
@@ -1317,6 +1338,12 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	const bool snap = ResetStatics || jumped;
 	const float dt = CTimer::GetTimeStepInSeconds();
 
+	// The spread the view is framed for: out at once, back in slowly.
+	if(snap || separation >= s_coopSpread)
+		s_coopSpread = separation;
+	else
+		s_coopSpread += (separation - s_coopSpread)*(1.0f - exp(-kCoopSpreadReleaseRate*dt));
+
 	// Which way to look from.  Wherever the view was already facing when this
 	// camera took over, so switching to it does not also spin the world round.
 	// A teleport is different: the old direction belongs to the old place, so
@@ -1399,18 +1426,52 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		}
 	}
 
+	// Leaning the view the way the party is walking.  On foot only, and not in an
+	// arena, which is placed by hand.  It is the walkers' own velocity and not
+	// how the centre moved, which a partner arriving or leaving would turn into a
+	// sprint.  A snap starts it again from nothing.
+	CVector wantedLead(0.0f, 0.0f, 0.0f);
+	if(!arenaView && driveVehicle == nil && kCoopLeadSeconds > 0.0f){
+		CVector walking(0.0f, 0.0f, 0.0f);
+		int walkers = 0;
+		for(int i = 0; i < NUMPLAYERS; i++){
+			if(!present[i])
+				continue;
+			CPlayerPed *walker = CWorld::Players[i].m_pPed;
+			if(walker->bInVehicle || CWorld::Players[i].m_pRemoteVehicle != nil)
+				continue;
+			walking.x += walker->GetMoveSpeed().x;
+			walking.y += walker->GetMoveSpeed().y;
+			walkers++;
+		}
+		if(walkers > 0){
+			walking = walking/(float)walkers;
+			const float walkSpeed = walking.Magnitude2D();
+			const float metresPerSecond = walkSpeed*GAME_SPEED_TO_METERS_PER_SECOND;
+			if(metresPerSecond > kCoopLeadMinSpeed){
+				const float fade = Clamp((kCoopLeadFadeEnd - s_coopSpread)/(kCoopLeadFadeEnd - kCoopLeadFadeStart), 0.0f, 1.0f);
+				const float lean = Min((metresPerSecond - kCoopLeadMinSpeed)*kCoopLeadSeconds, kCoopLeadMax)*fade;
+				wantedLead = walking*(lean/walkSpeed);
+			}
+		}
+	}
+	if(snap)
+		s_coopLead = CVector(0.0f, 0.0f, 0.0f);
+	else
+		s_coopLead += (wantedLead - s_coopLead)*(1.0f - exp(-kCoopLeadRate*dt));
+
 	int framingIndex = CCoop::ms_nFraming;
 	if(framingIndex < 0 || framingIndex >= CCoop::NUM_FRAMINGS)
 		framingIndex = 1;
 	const CoopFraming &framing = kCoopFramings[framingIndex];
-	const float closeIn = Max(0.0f, kCoopSeparationFree - separation)*kCoopCloseGain;
+	const float closeIn = Max(0.0f, kCoopSeparationFree - s_coopSpread)*kCoopCloseGain;
 	// An arena has its own distance: far enough back that its whole ring is in
 	// shot, and never so far that the cars become specks.  The player's chosen
 	// framing still controls the pitch, but the ring gets a floor under it.
 	const float wantedDistance = arenaView ?
 		Clamp(arenaRadius*1.8f + 6.0f, 26.0f, 46.0f) :
 		Clamp(framing.distance - closeIn +
-			Max(0.0f, separation - kCoopSeparationFree)*kCoopSeparationGain +
+			Max(0.0f, s_coopSpread - kCoopSeparationFree)*kCoopSeparationGain +
 			Min(kCoopSpeedRoom, speed*kCoopSpeedGain), kCoopMinDistance, kCoopMaxDistance);
 
 	// Lower while a car is being followed, so driving looks down the road rather
@@ -1428,8 +1489,8 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		s_coopClip = 1.0f;
 	}else{
 		const float follow = 1.0f - exp(-kCoopFollowRate*dt);
-		s_coopTarget.x += (target.x - s_coopTarget.x)*follow;
-		s_coopTarget.y += (target.y - s_coopTarget.y)*follow;
+		s_coopTarget.x += (target.x + s_coopLead.x - s_coopTarget.x)*follow;
+		s_coopTarget.y += (target.y + s_coopLead.y - s_coopTarget.y)*follow;
 		s_coopTarget.z += (target.z - s_coopTarget.z)*(1.0f - exp(-kCoopHeightRate*dt));
 		// Slowly, but not from any further behind than this.  Left to the rate
 		// alone, a long fall or a fast lift leaves the players off the edge of
@@ -1450,7 +1511,7 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// It follows the separation, not the camera's distance, because that distance
 	// also carries the speed room -- which is there to bring the road on screen,
 	// and would otherwise shrink a fast car a second time for the same reason.
-	const float framingSeparation = arenaView ? Max(separation, arenaRadius*1.6f) : separation;
+	const float framingSeparation = arenaView ? Max(s_coopSpread, arenaRadius*1.6f) : s_coopSpread;
 	const float separationRoom = Max(0.0f, framingSeparation - kCoopSeparationFree)*kCoopSeparationGain;
 	const float zoom = Clamp(separationRoom/kCoopZoomSpan, 0.0f, 1.0f);
 	FOV = DefaultFOV + zoom*kCoopZoomFov;
@@ -1540,10 +1601,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		float reticleX = 0.0f, reticleY = 0.0f;
 		bool engaged = false;
 		const bool reticle = CCoop::GetReticle(0, reticleX, reticleY, engaged);
-		WiiTraceReport("WII coop: camera players=%d sep=%.1f framing=%d dist=%.1f clear=%.2f yaw=%.0f"
-		               " target=%.0f,%.0f,%.0f reticle=%c%.2f,%.2f frame=%ums\n",
-		               here, separation, framingIndex, s_coopDistance, s_coopClip,
-		               RADTODEG(s_coopYaw), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
+		WiiTraceReport("WII coop: camera players=%d sep=%.1f spread=%.1f framing=%d dist=%.1f fov=%.0f clear=%.2f yaw=%.0f"
+		               " lead=%.1f target=%.0f,%.0f,%.0f reticle=%c%.2f,%.2f frame=%ums\n",
+		               here, separation, s_coopSpread, framingIndex, s_coopDistance, FOV, s_coopClip,
+		               RADTODEG(s_coopYaw), s_coopLead.Magnitude2D(), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
 		               reticle ? '+' : '-', reticleX, reticleY,
 		               (unsigned)CTimer::GetTimeStepInMilliseconds());
 	}

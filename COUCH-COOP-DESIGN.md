@@ -326,6 +326,16 @@ script directs.
   fit is whichever two are furthest apart. With two players both reduce to the
   old pair framing exactly. Its height follows slowly, so kerbs and steps do
   not shake the view, but never from more than 6 m behind.
+- Frames for the spread the party has *had*, not the frame's own: it goes out at
+  once and comes back in slowly (`kCoopSpreadReleaseRate`), and the distance and
+  the field of view both read that. Two players shuffling about each other do not
+  make the view breathe, and a partner who goes down or leaves does not snap it in
+  on whoever is left.
+- On foot it leans the way the party is walking: 0.6 s of the walkers' own
+  velocity, at most 2.5 m, nothing below 1 m/s, settling at 2/s. It fades out
+  between 8 m and 16 m of spread so it can never push a player off the edge at the
+  wall, and it is off in a vehicle (the nose-follow and the speed room already
+  show the road) and in an arena. `kCoopLeadSeconds` of 0 switches it off.
 - Comes in along its own line when a building is in the way, so indoors it ends
   up under the ceiling rather than looking at the roof. The line that is tested
   runs back from **the players themselves**, not from the centroid: the
@@ -893,6 +903,8 @@ Recorded because each was stated as a verified fact.
 | pull-back per metre apart | `kCoopSeparationGain` | 1.0, beyond 6 m |
 | push-in per metre together | `kCoopCloseGain` | 0.6, inside 6 m |
 | view opens by, fully at 24 m apart | `kCoopZoomFov` | +14° |
+| spread comes back in at | `kCoopSpreadReleaseRate`, `Cam.cpp` | 1.2 per second |
+| look-ahead: seconds / most / settles / fades out | `kCoopLeadSeconds` / `kCoopLeadMax` / `kCoopLeadRate` / `kCoopLeadFadeStart`..`End` | 0.6 s / 2.5 m / 2 per second / 8 m to 16 m of spread |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
 | leash (on foot) | `kLeash`, `Coop.cpp` | 28 m |
 | leash (driving) | `kLeashDriving`, `Coop.cpp` | 50 m |
