@@ -142,11 +142,13 @@ float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 //   car speeds up, so splitting up zooms out rather than swinging the camera
 //   around.
 //
-// Its heading is fixed too, with one exception: it follows a car player 1 is
-// driving, because a camera pitched down from behind sees four times as far
-// ahead as behind, and driving toward it is driving blind.  On foot it stays
-// wherever it was, which is what lets each player's body turn to face their
-// reticle without the view turning with them.
+// Its heading follows a car player 1 is driving, because a camera pitched down
+// from behind sees four times as far ahead as behind, and driving toward it is
+// driving blind.  On foot it stays wherever it was, which is what lets each
+// player's body turn to face their reticle without the view turning with them,
+// and turns only slowly, to the way the whole party has settled on walking,
+// when nobody is fighting: see the turn in Process_WiiCoop for why every stick
+// is affected by it and what holds it back.
 //
 // The framing is the one thing here that has to be chosen by looking at it,
 // and this has been argued both ways on paper already (COUCH-COOP-DESIGN.md):
@@ -155,7 +157,7 @@ float PLAYERPED_TREND_SMOOTHING_CONST_INV = 0.8f;
 // evenly.  So there are three, and player 1's camera button steps through them
 // in game.  CCoop::ms_nFraming picks one; it is kept in the INI.
 //
-// And a fourth, which is not a matter of taste.  This camera does not turn on
+// And a fourth, which is not a matter of taste.  This camera barely turns on
 // foot, so a tall building on its side of the street stands between it and
 // anyone on that pavement, and all it can do about that is come in close
 // (see the line-of-sight test in Process_WiiCoop).  From nearly straight
@@ -252,8 +254,28 @@ static const float kCoopLeadSeconds = 0.6f;
 static const float kCoopLeadMax = 2.5f;
 static const float kCoopLeadRate = 2.0f;
 static const float kCoopLeadMinSpeed = 1.0f;
-static const float kCoopLeadFadeStart = 8.0f;
-static const float kCoopLeadFadeEnd = 16.0f;
+// Both the lean and the turn below fade out across these spreads, in metres.
+static const float kCoopWalkFadeStart = 8.0f;
+static const float kCoopWalkFadeEnd = 16.0f;
+// On foot the view also turns, slowly, to the way the party has settled on
+// walking; the reasons for every one of these are with the code in
+// Process_WiiCoop.  The rate at which the party's walking velocity is smoothed,
+// the rate the turn closes the angle left per second (zero switches turning
+// off), the fastest it may turn, the cone either side of the view's heading in
+// which it does not turn at all, the speed in m/s that counts as a jog, how much
+// of the party's walking has to be in one direction (mean velocity over mean
+// speed), and how fast that direction may itself still be changing.
+static const float kCoopWalkRate = 2.0f;
+static const float kCoopTurnRate = 0.5f;
+static const float kCoopTurnMax = DEGTORAD(24.0f);
+static const float kCoopTurnCone = DEGTORAD(60.0f);
+static const float kCoopTurnMinSpeed = 3.0f;
+static const float kCoopTurnCoherence = 0.8f;
+static const float kCoopTurnSteadyRate = DEGTORAD(8.0f);
+// And how the turn gives up on a stick held at a fixed angle to the view: every
+// kCoopTurnTrial of turning has to close this fraction of itself.
+static const float kCoopTurnTrial = DEGTORAD(12.0f);
+static const float kCoopTurnProgress = 0.35f;
 
 int8 CCamera::bWiiCoopCamera = 0;
 
@@ -264,6 +286,13 @@ static float s_coopClip = 1.0f;
 static CVector s_coopTarget;
 static float s_coopSpread;
 static CVector s_coopLead;
+static CVector s_coopWalk;
+static float s_coopWalkSpeed;
+static float s_coopTravelYaw;
+static bool s_coopTurning;
+static bool s_coopTurnLocked;
+static float s_coopChunkTurn;
+static float s_coopChunkExcess;
 static bool s_coopArena;
 // The room behind the camera, and how many frames old it is.  Measuring it
 // is up to four line-of-sight tests of forty metres: the most expensive
@@ -1311,7 +1340,9 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	// the carrier or the loose case.  The yaw is deliberately untouched; see
 	// the constants above.
 	CVector hint;
+	bool hinted = false;
 	if(separation > kCoopHintMinSeparation && CCoopModes::CameraHint(hint)){
+		hinted = true;
 		CVector toHint = hint - target;
 		const float hintDist = toHint.Magnitude();
 		if(hintDist > 0.01f)
@@ -1426,14 +1457,16 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		}
 	}
 
-	// Leaning the view the way the party is walking.  On foot only, and not in an
-	// arena, which is placed by hand.  It is the walkers' own velocity and not
-	// how the centre moved, which a partner arriving or leaving would turn into a
-	// sprint.  A snap starts it again from nothing.
-	CVector wantedLead(0.0f, 0.0f, 0.0f);
-	if(!arenaView && driveVehicle == nil && kCoopLeadSeconds > 0.0f){
-		CVector walking(0.0f, 0.0f, 0.0f);
-		int walkers = 0;
+	// The walkers: who is on foot, and where and how fast the party is walking.
+	// Their own velocity and not how the centre moved, which a partner arriving
+	// or leaving would turn into a sprint.  Nobody is counted in a vehicle (the
+	// nose-follow and the speed room cover that) or in an arena, which is placed
+	// by hand.
+	CVector walking(0.0f, 0.0f, 0.0f);	// the walkers' mean velocity
+	float walkSpeeds = 0.0f;		// the mean of each walker's own speed
+	int walkers = 0;
+	bool fighting = false;
+	if(!arenaView && driveVehicle == nil){
 		for(int i = 0; i < NUMPLAYERS; i++){
 			if(!present[i])
 				continue;
@@ -1442,23 +1475,115 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 				continue;
 			walking.x += walker->GetMoveSpeed().x;
 			walking.y += walker->GetMoveSpeed().y;
+			walkSpeeds += walker->GetMoveSpeed().Magnitude2D();
 			walkers++;
+			if(walker->m_nPedState == PED_ATTACK || walker->m_nPedState == PED_AIM_GUN)
+				fighting = true;
 		}
 		if(walkers > 0){
 			walking = walking/(float)walkers;
-			const float walkSpeed = walking.Magnitude2D();
-			const float metresPerSecond = walkSpeed*GAME_SPEED_TO_METERS_PER_SECOND;
-			if(metresPerSecond > kCoopLeadMinSpeed){
-				const float fade = Clamp((kCoopLeadFadeEnd - s_coopSpread)/(kCoopLeadFadeEnd - kCoopLeadFadeStart), 0.0f, 1.0f);
-				const float lean = Min((metresPerSecond - kCoopLeadMinSpeed)*kCoopLeadSeconds, kCoopLeadMax)*fade;
-				wantedLead = walking*(lean/walkSpeed);
-			}
+			walkSpeeds /= (float)walkers;
+		}
+	}
+	// Both the lean and the turn fade out as the party spreads: at the wall the
+	// players are already near the edge of the picture.
+	const float walkFade = Clamp((kCoopWalkFadeEnd - s_coopSpread)/(kCoopWalkFadeEnd - kCoopWalkFadeStart), 0.0f, 1.0f);
+
+	// Leaning the view the way the party is walking.  A snap starts it again
+	// from nothing.
+	CVector wantedLead(0.0f, 0.0f, 0.0f);
+	if(walkers > 0 && kCoopLeadSeconds > 0.0f){
+		const float walkSpeed = walking.Magnitude2D();
+		const float metresPerSecond = walkSpeed*GAME_SPEED_TO_METERS_PER_SECOND;
+		if(metresPerSecond > kCoopLeadMinSpeed){
+			const float lean = Min((metresPerSecond - kCoopLeadMinSpeed)*kCoopLeadSeconds, kCoopLeadMax)*walkFade;
+			wantedLead = walking*(lean/walkSpeed);
 		}
 	}
 	if(snap)
 		s_coopLead = CVector(0.0f, 0.0f, 0.0f);
 	else
 		s_coopLead += (wantedLead - s_coopLead)*(1.0f - exp(-kCoopLeadRate*dt));
+
+	// Turning with the party, on foot.  The view swings, slowly, to the way the
+	// party has settled on going, the way the stock follow camera does -- but
+	// everyone's stick is measured against this heading, so a turn is a turn of
+	// every thumb, and it is held back everywhere that would matter:
+	//  - the party has to be walking together at a jog, in one direction (the
+	//    mean velocity is most of the mean speed), and that direction has to have
+	//    stopped changing: a view that turned while the way they were going was
+	//    itself being turned by the view would only chase its own tail;
+	//  - anywhere in a cone either side of the way the view faces nothing
+	//    happens, so ordinary walking about leaves it alone, and past the cone it
+	//    turns only the angle that is left;
+	//  - not while anyone is fighting (a right stick aims against this heading),
+	//    in a pursuit mode, or in a mode that holds the view still;
+	//  - slowly, and no faster than kCoopTurnMax, so a thumb can follow it.
+	// A snap starts it again from nothing.  kCoopTurnRate of zero switches it off.
+	bool turning = false;
+	if(snap){
+		s_coopWalk = CVector(0.0f, 0.0f, 0.0f);
+		s_coopWalkSpeed = 0.0f;
+		s_coopTravelYaw = s_coopYaw;
+		s_coopTurnLocked = false;
+		s_coopChunkTurn = 0.0f;
+	}else if(dt > 0.0f){
+		const float settle = 1.0f - exp(-kCoopWalkRate*dt);
+		s_coopWalk += (walking - s_coopWalk)*settle;
+		s_coopWalkSpeed += (walkSpeeds - s_coopWalkSpeed)*settle;
+		const float travel = s_coopWalk.Magnitude2D();
+		float drift = 2*PI;
+		if(travel > 0.0001f){
+			const float travelYaw = Atan2(-s_coopWalk.x, s_coopWalk.y);
+			drift = travelYaw - s_coopTravelYaw;
+			while(drift >= PI) drift -= 2*PI;
+			while(drift < -PI) drift += 2*PI;
+			s_coopTravelYaw = travelYaw;
+		}
+		const bool jogging = kCoopTurnRate > 0.0f && walkers > 0 && !fighting && !hinted &&
+		   !CCoopModes::SteadyView() &&
+		   travel*GAME_SPEED_TO_METERS_PER_SECOND > kCoopTurnMinSpeed &&
+		   travel > kCoopTurnCoherence*s_coopWalkSpeed;
+		if(!jogging){
+			// Stopped, slowed, split up or fighting: whatever it gave up on
+			// is forgotten.
+			s_coopTurnLocked = false;
+			s_coopChunkTurn = 0.0f;
+		}else if(!s_coopTurnLocked && Abs(drift) <= kCoopTurnSteadyRate*dt){
+			float error = s_coopTravelYaw - s_coopYaw;
+			while(error >= PI) error -= 2*PI;
+			while(error < -PI) error += 2*PI;
+			const float excess = error - Clamp(error, -kCoopTurnCone, kCoopTurnCone);
+			if(excess == 0.0f)
+				s_coopChunkTurn = 0.0f;
+			else if(walkFade > 0.0f){
+				// A stick held at a fixed angle to the view drags the view round
+				// with it for ever: the way they are going turns as the view does,
+				// so the angle left never closes.  Every kCoopTurnTrial of turning
+				// has to have closed at least kCoopTurnProgress of itself, or the
+				// view gives up until the party next slows or stops.
+				const float left = Abs(excess);
+				if(s_coopChunkTurn <= 0.0f)
+					s_coopChunkExcess = left;
+				else if(s_coopChunkTurn >= kCoopTurnTrial){
+					if(s_coopChunkExcess - left < kCoopTurnProgress*s_coopChunkTurn)
+						s_coopTurnLocked = true;
+					s_coopChunkTurn = 0.0f;
+					s_coopChunkExcess = left;
+				}
+				if(!s_coopTurnLocked){
+					const float turn = Clamp(excess*(1.0f - exp(-kCoopTurnRate*dt))*walkFade,
+					                         -kCoopTurnMax*dt, kCoopTurnMax*dt);
+					s_coopYaw += turn;
+					while(s_coopYaw >= PI) s_coopYaw -= 2*PI;
+					while(s_coopYaw < -PI) s_coopYaw += 2*PI;
+					s_coopChunkTurn += Abs(turn);
+					turning = true;
+				}
+			}
+		}
+	}
+	s_coopTurning = turning;
 
 	int framingIndex = CCoop::ms_nFraming;
 	if(framingIndex < 0 || framingIndex >= CCoop::NUM_FRAMINGS)
@@ -1601,10 +1726,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		float reticleX = 0.0f, reticleY = 0.0f;
 		bool engaged = false;
 		const bool reticle = CCoop::GetReticle(0, reticleX, reticleY, engaged);
-		WiiTraceReport("WII coop: camera players=%d sep=%.1f spread=%.1f framing=%d dist=%.1f fov=%.0f clear=%.2f yaw=%.0f"
+		WiiTraceReport("WII coop: camera players=%d sep=%.1f spread=%.1f framing=%d dist=%.1f fov=%.0f clear=%.2f yaw=%.0f turn=%d"
 		               " lead=%.1f target=%.0f,%.0f,%.0f reticle=%c%.2f,%.2f frame=%ums\n",
 		               here, separation, s_coopSpread, framingIndex, s_coopDistance, FOV, s_coopClip,
-		               RADTODEG(s_coopYaw), s_coopLead.Magnitude2D(), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
+		               RADTODEG(s_coopYaw), s_coopTurning ? 1 : 0, s_coopLead.Magnitude2D(), s_coopTarget.x, s_coopTarget.y, s_coopTarget.z,
 		               reticle ? '+' : '-', reticleX, reticleY,
 		               (unsigned)CTimer::GetTimeStepInMilliseconds());
 	}

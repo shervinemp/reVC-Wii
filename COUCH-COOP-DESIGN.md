@@ -314,8 +314,10 @@ script directs.
   so driving looks down the road rather than at the roof. The distance comes in
   when the players are close together, and goes back out as they separate and as
   the car speeds up.
-- Fixed heading on foot — whatever way the view was facing when it took over.
-  While a car is being followed — by default the one carrying the most players,
+- Heading on foot starts as whatever way the view was facing when it took over,
+  and turns only with the party's walking (see "Turns with the party on foot"
+  below). While a
+  car is being followed — by default the one carrying the most players,
   so a party travelling together turns as one; any partner's camera button
   overrides it with their own car while they drive it, and pressing it again
   hands the view back — it turns with that car's nose, because a camera pitched
@@ -336,6 +338,23 @@ script directs.
   between 8 m and 16 m of spread so it can never push a player off the edge at the
   wall, and it is off in a vehicle (the nose-follow and the speed room already
   show the road) and in an arena. `kCoopLeadSeconds` of 0 switches it off.
+- **Turns with the party on foot**, slowly, the way the stock follow camera
+  does. Every player's stick is measured against the view's heading, so a turn is
+  a turn of every thumb, and it is held back everywhere that matters: the party
+  has to be walking together at a jog (3 m/s, with 80% of its walking in one
+  direction), and the way they are going has to have stopped changing (under
+  8°/s). Within 60° either side of the way the view faces nothing happens, and
+  past that it closes the angle left at 0.5 per second, no faster than 24°/s.
+  It does not turn while anyone is attacking or aiming a gun (a right stick aims
+  against this heading), in a pursuit or still-view mode, in a vehicle or arena,
+  or once the party is spread past 8 m (fading out by 16 m). And it gives up on
+  a stick held at a fixed angle to the view, which would drag the view round for
+  ever because the way they are going turns as the view does: every 12° of turning
+  has to have closed 35% of itself, or it stops until the party next slows or
+  stops. A simulation of the logic (not of the game) has a stick held up or 45°
+  off leave the view alone, one held sideways or toward the camera drag it
+  12–13° and lock, and a steady world heading 90° off bring the view round to the
+  edge of the cone in about five seconds. `kCoopTurnRate` of 0 switches it off.
 - Comes in along its own line when a building is in the way, so indoors it ends
   up under the ceiling rather than looking at the roof. The line that is tested
   runs back from **the players themselves**, not from the centroid: the
@@ -377,7 +396,7 @@ script directs.
   argued both ways on paper more than once and settled neither time; it has to
   be chosen by looking at it. That is what the button is for.
 
-  The fourth is there for a different reason. The camera does not turn on
+  The fourth is there for a different reason. The camera barely turns on
   foot, so a tall building on its side of the street is between it and anyone
   on that pavement, and the only thing it can do is come in close — within
   about 14 m of such a building the view tightens, and right against it the
@@ -904,7 +923,11 @@ Recorded because each was stated as a verified fact.
 | push-in per metre together | `kCoopCloseGain` | 0.6, inside 6 m |
 | view opens by, fully at 24 m apart | `kCoopZoomFov` | +14° |
 | spread comes back in at | `kCoopSpreadReleaseRate`, `Cam.cpp` | 1.2 per second |
-| look-ahead: seconds / most / settles / fades out | `kCoopLeadSeconds` / `kCoopLeadMax` / `kCoopLeadRate` / `kCoopLeadFadeStart`..`End` | 0.6 s / 2.5 m / 2 per second / 8 m to 16 m of spread |
+| look-ahead: seconds / most / settles | `kCoopLeadSeconds` / `kCoopLeadMax` / `kCoopLeadRate` | 0.6 s / 2.5 m / 2 per second |
+| lean and turn fade out across | `kCoopWalkFadeStart`..`End`, `Cam.cpp` | 8 m to 16 m of spread |
+| on-foot turn: rate / fastest / cone | `kCoopTurnRate` / `kCoopTurnMax` / `kCoopTurnCone` | 0.5 per second / 24°/s / 60° |
+| on-foot turn: jog / one direction / direction steady | `kCoopTurnMinSpeed` / `kCoopTurnCoherence` / `kCoopTurnSteadyRate` | 3 m/s / 0.8 / 8°/s |
+| on-foot turn gives up: every / must close | `kCoopTurnTrial` / `kCoopTurnProgress` | 12° / 35% |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
 | leash (on foot) | `kLeash`, `Coop.cpp` | 28 m |
 | leash (driving) | `kLeashDriving`, `Coop.cpp` | 50 m |
