@@ -273,9 +273,14 @@ static const float kCoopTurnMinSpeed = 3.0f;
 static const float kCoopTurnCoherence = 0.8f;
 static const float kCoopTurnSteadyRate = DEGTORAD(8.0f);
 // And how the turn gives up on a stick held at a fixed angle to the view: every
-// kCoopTurnTrial of turning has to close this fraction of itself.
+// kCoopTurnTrial of turning has to close this fraction of itself.  Having given
+// up it stays given up until the party has not been jogging for this many
+// seconds, or the way they are going has moved this far from where it was when
+// the turn gave up.
 static const float kCoopTurnTrial = DEGTORAD(12.0f);
 static const float kCoopTurnProgress = 0.35f;
+static const float kCoopTurnForgetSeconds = 0.8f;
+static const float kCoopTurnRelease = DEGTORAD(40.0f);
 
 int8 CCamera::bWiiCoopCamera = 0;
 
@@ -293,6 +298,8 @@ static bool s_coopTurning;
 static bool s_coopTurnLocked;
 static float s_coopChunkTurn;
 static float s_coopChunkExcess;
+static float s_coopTurnIdle;
+static float s_coopLockError;
 static bool s_coopArena;
 // The room behind the camera, and how many frames old it is.  Measuring it
 // is up to four line-of-sight tests of forty metres: the most expensive
@@ -1473,6 +1480,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 			CPlayerPed *walker = CWorld::Players[i].m_pPed;
 			if(walker->bInVehicle || CWorld::Players[i].m_pRemoteVehicle != nil)
 				continue;
+			// Standing on a car, a boat or a train: their speed is the vehicle's,
+			// not a walk.
+			if(walker->m_pCurrentPhysSurface != nil && walker->m_pCurrentPhysSurface->IsVehicle())
+				continue;
 			walking.x += walker->GetMoveSpeed().x;
 			walking.y += walker->GetMoveSpeed().y;
 			walkSpeeds += walker->GetMoveSpeed().Magnitude2D();
@@ -1490,9 +1501,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 	const float walkFade = Clamp((kCoopWalkFadeEnd - s_coopSpread)/(kCoopWalkFadeEnd - kCoopWalkFadeStart), 0.0f, 1.0f);
 
 	// Leaning the view the way the party is walking.  A snap starts it again
-	// from nothing.
+	// from nothing.  Not in a pursuit, where the view is already leaning towards
+	// the case.
 	CVector wantedLead(0.0f, 0.0f, 0.0f);
-	if(walkers > 0 && kCoopLeadSeconds > 0.0f){
+	if(walkers > 0 && !hinted && kCoopLeadSeconds > 0.0f){
 		const float walkSpeed = walking.Magnitude2D();
 		const float metresPerSecond = walkSpeed*GAME_SPEED_TO_METERS_PER_SECOND;
 		if(metresPerSecond > kCoopLeadMinSpeed){
@@ -1527,6 +1539,7 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		s_coopTravelYaw = s_coopYaw;
 		s_coopTurnLocked = false;
 		s_coopChunkTurn = 0.0f;
+		s_coopTurnIdle = 0.0f;
 	}else if(dt > 0.0f){
 		const float settle = 1.0f - exp(-kCoopWalkRate*dt);
 		s_coopWalk += (walking - s_coopWalk)*settle;
@@ -1544,12 +1557,32 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 		   !CCoopModes::SteadyView() &&
 		   travel*GAME_SPEED_TO_METERS_PER_SECOND > kCoopTurnMinSpeed &&
 		   travel > kCoopTurnCoherence*s_coopWalkSpeed;
+		if(jogging)
+			s_coopTurnIdle = 0.0f;
 		if(!jogging){
-			// Stopped, slowed, split up or fighting: whatever it gave up on
-			// is forgotten.
-			s_coopTurnLocked = false;
-			s_coopChunkTurn = 0.0f;
-		}else if(!s_coopTurnLocked && Abs(drift) <= kCoopTurnSteadyRate*dt){
+			// Stopped, slowed, split up or fighting: whatever it gave up on is
+			// forgotten -- but only once that has lasted.  A stick held at a fixed
+			// angle drags the view again the moment the lock lets go, and a held
+			// stick is not steady: speed wobbles, one of the party hesitates.
+			s_coopTurnIdle += dt;
+			if(s_coopTurnIdle >= kCoopTurnForgetSeconds){
+				s_coopTurnLocked = false;
+				s_coopChunkTurn = 0.0f;
+			}
+		}else if(s_coopTurnLocked){
+			// Given up, and staying given up while the stick stays where it is.
+			// A new heading -- the party really did steer -- ends it.
+			float error = s_coopTravelYaw - s_coopYaw;
+			while(error >= PI) error -= 2*PI;
+			while(error < -PI) error += 2*PI;
+			float moved = error - s_coopLockError;
+			while(moved >= PI) moved -= 2*PI;
+			while(moved < -PI) moved += 2*PI;
+			if(Abs(moved) > kCoopTurnRelease){
+				s_coopTurnLocked = false;
+				s_coopChunkTurn = 0.0f;
+			}
+		}else if(Abs(drift) <= kCoopTurnSteadyRate*dt){
 			float error = s_coopTravelYaw - s_coopYaw;
 			while(error >= PI) error -= 2*PI;
 			while(error < -PI) error += 2*PI;
@@ -1566,8 +1599,10 @@ CCam::Process_WiiCoop(const CVector &, float, float, float)
 				if(s_coopChunkTurn <= 0.0f)
 					s_coopChunkExcess = left;
 				else if(s_coopChunkTurn >= kCoopTurnTrial){
-					if(s_coopChunkExcess - left < kCoopTurnProgress*s_coopChunkTurn)
+					if(s_coopChunkExcess - left < kCoopTurnProgress*s_coopChunkTurn){
 						s_coopTurnLocked = true;
+						s_coopLockError = error;
+					}
 					s_coopChunkTurn = 0.0f;
 					s_coopChunkExcess = left;
 				}

@@ -337,7 +337,10 @@ script directs.
   velocity, at most 2.5 m, nothing below 1 m/s, settling at 2/s. It fades out
   between 8 m and 16 m of spread so it can never push a player off the edge at the
   wall, and it is off in a vehicle (the nose-follow and the speed room already
-  show the road) and in an arena. `kCoopLeadSeconds` of 0 switches it off.
+  show the road), in an arena and in a pursuit (the view is already leaning
+  towards the case). Someone standing on a car, a boat or a train is not walking
+  as far as the lean and the turn are concerned: their speed is the vehicle's.
+  `kCoopLeadSeconds` of 0 switches it off.
 - **Turns with the party on foot**, slowly, the way the stock follow camera
   does. Every player's stick is measured against the view's heading, so a turn is
   a turn of every thumb, and it is held back everywhere that matters: the party
@@ -350,11 +353,16 @@ script directs.
   or once the party is spread past 8 m (fading out by 16 m). And it gives up on
   a stick held at a fixed angle to the view, which would drag the view round for
   ever because the way they are going turns as the view does: every 12° of turning
-  has to have closed 35% of itself, or it stops until the party next slows or
-  stops. A simulation of the logic (not of the game) has a stick held up or 45°
-  off leave the view alone, one held sideways or toward the camera drag it
-  12–13° and lock, and a steady world heading 90° off bring the view round to the
-  edge of the cone in about five seconds. `kCoopTurnRate` of 0 switches it off.
+  has to have closed 35% of itself, or it stops. Having given up it stays given up
+  until the party has not been jogging for 0.8 s (a held stick is not steady:
+  speed wobbles, someone hesitates, and a lock that let go at once let the view be
+  dragged again) or until the way they are going has moved 40° from where it was
+  when it gave up. A simulation of the logic (not of the game) has a stick held up
+  or 45° off leave the view alone, one held sideways or toward the camera drag it
+  12–13° and lock, a steady world heading 90° off bring the view round to the edge
+  of the cone in about five seconds, and, with held sticks, wobbling speeds and
+  brief stops thrown at it for a minute, never turn the view more than 48° in all.
+  `kCoopTurnRate` of 0 switches it off.
 - Comes in along its own line when a building is in the way, so indoors it ends
   up under the ceiling rather than looking at the roof. The line that is tested
   runs back from **the players themselves**, not from the centroid: the
@@ -928,6 +936,7 @@ Recorded because each was stated as a verified fact.
 | on-foot turn: rate / fastest / cone | `kCoopTurnRate` / `kCoopTurnMax` / `kCoopTurnCone` | 0.5 per second / 24°/s / 60° |
 | on-foot turn: jog / one direction / direction steady | `kCoopTurnMinSpeed` / `kCoopTurnCoherence` / `kCoopTurnSteadyRate` | 3 m/s / 0.8 / 8°/s |
 | on-foot turn gives up: every / must close | `kCoopTurnTrial` / `kCoopTurnProgress` | 12° / 35% |
+| on-foot turn forgets: not jogging for / heading moves | `kCoopTurnForgetSeconds` / `kCoopTurnRelease` | 0.8 s / 40° |
 | the wall on foot | `kTetherStart` / `kTetherMax`, `Coop.cpp` | slows from 18 m, stops at 24 m |
 | leash (on foot) | `kLeash`, `Coop.cpp` | 28 m |
 | leash (driving) | `kLeashDriving`, `Coop.cpp` | 50 m |
